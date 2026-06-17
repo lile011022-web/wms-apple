@@ -624,13 +624,21 @@ apps/api/src/modules/<module-name>/
 要完成的内容：
 
 - 异常列表、类型 tab、分页。
+- <strong><font color="red">🔴 已完成：`GET /exceptions` 支持状态、类型、客户、仓库、关键词、分页和排序。</font></strong>
 - 异常详情。
+- <strong><font color="red">🔴 已完成：`GET /exceptions/:id` 返回异常、客户、仓库、商品、入库行、库存和最新装箱上下文。</font></strong>
 - 确认处理。
+- <strong><font color="red">🔴 已完成：`POST /exceptions/:id/resolve`。</font></strong>
 - 忽略异常。
+- <strong><font color="red">🔴 已完成：`POST /exceptions/:id/ignore`。</font></strong>
 - 标记无效。
+- <strong><font color="red">🔴 已完成：`POST /exceptions/:id/invalidate`。</font></strong>
 - 批量处理。
+- <strong><font color="red">🔴 已完成：`POST /exceptions/batch-resolve` 逐条返回成功或失败结果。</font></strong>
 - 批量忽略。
+- <strong><font color="red">🔴 已完成：`POST /exceptions/batch-ignore` 逐条返回成功或失败结果。</font></strong>
 - 异常处理写 audit log。
+- <strong><font color="red">🔴 已完成：单条和批量处理都会为成功处理的记录写 `EXCEPTION_HANDLE` audit log。</font></strong>
 
 异常类型标题：
 
@@ -639,6 +647,7 @@ apps/api/src/modules/<module-name>/
 - `UPS_DUPLICATED`: UPS 重复。
 - `CUSTOMER_OWNERSHIP_MISMATCH`: 客户归属错误。
 - `IMEI_NOT_INBOUNDED`: IMEI 未入库。
+- <strong><font color="red">🔴 已完成：Prisma 与 shared 枚举已统一为以上标题。</font></strong>
 
 建议接口标题：
 
@@ -654,7 +663,9 @@ apps/api/src/modules/<module-name>/
 文档同步：
 
 - `docs/api/12-exceptions.md`
+- <strong><font color="red">🔴 已完成：`docs/api/12-exceptions.md`。</font></strong>
 - `docs/product/08-exception-rules.md`
+- <strong><font color="red">🔴 已完成：`docs/product/08-exception-rules.md`。</font></strong>
 
 测试重点：
 
@@ -691,13 +702,13 @@ apps/api/src/modules/customers/customer-change/
 
 要完成的内容：
 
-- 按时间、当前客户、UPS、UPC、IMEI、商品名筛选可修改记录。
-- 选择记录。
-- 预览修改影响。
-- 提交新客户和修改原因。
-- 同步更新入库明细、库存明细和相关客户统计。
-- 生成 `CustomerChangeLog`。
-- 生成 audit log。
+- <strong><font color="red">🔴 已完成：按时间、当前客户、仓库、UPS、UPC、IMEI、商品名和搜索文本筛选可修改记录。</font></strong>
+- <strong><font color="red">🔴 已完成：支持选择入库记录进入批量改客户。</font></strong>
+- <strong><font color="red">🔴 已完成：预览修改影响并返回 `previewToken`。</font></strong>
+- <strong><font color="red">🔴 已完成：提交新客户和修改原因，提交时校验 preview token 防止记录集变更。</font></strong>
+- <strong><font color="red">🔴 已完成：同步更新入库明细、库存明细和关联异常记录客户归属。</font></strong>
+- <strong><font color="red">🔴 已完成：生成 `CustomerChangeLog`。</font></strong>
+- <strong><font color="red">🔴 已完成：生成 `CUSTOMER_BATCH_CHANGE` audit log。</font></strong>
 
 建议接口标题：
 
@@ -716,8 +727,8 @@ apps/api/src/modules/customers/customer-change/
 
 文档同步：
 
-- `docs/api/13-batch-customer-change.md`
-- `docs/product/09-batch-customer-change-rules.md`
+- <strong><font color="red">🔴 已完成：`docs/api/13-batch-customer-change.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/product/09-batch-customer-change-rules.md`。</font></strong>
 
 测试重点：
 
@@ -729,7 +740,7 @@ apps/api/src/modules/customers/customer-change/
 
 验收标准：
 
-- 批量修改客户页面可筛选、预览、提交并查看修改日志。
+- <strong><font color="red">🔴 已完成：批量修改客户页面可筛选、预览、提交并查看修改日志。</font></strong>
 
 ## 17 阶段十三：明细下载与报表导出
 
@@ -747,15 +758,15 @@ apps/api/src/modules/customers/customer-change/
 
 要完成的内容：
 
-- 报表类型选择。
-- 日期、客户、商品筛选。
-- 字段选择。
-- CSV 导出。
-- Excel 导出。
-- 导出预览统计。
-- 下载历史。
-- 重新下载。
-- 导出操作写 audit log。
+- <strong><font color="red">🔴 已完成：报表类型选择。</font></strong>
+- <strong><font color="red">🔴 已完成：日期、客户、商品筛选。</font></strong>
+- <strong><font color="red">🔴 已完成：字段选择和字段白名单校验。</font></strong>
+- <strong><font color="red">🔴 已完成：CSV 导出。</font></strong>
+- <strong><font color="red">🔴 已完成：Excel XML 导出。</font></strong>
+- <strong><font color="red">🔴 已完成：导出预览统计。</font></strong>
+- <strong><font color="red">🔴 已完成：下载历史。</font></strong>
+- <strong><font color="red">🔴 已完成：基于历史导出的重新下载。</font></strong>
+- <strong><font color="red">🔴 已完成：导出操作写 audit log。</font></strong>
 
 建议接口标题：
 
@@ -776,15 +787,15 @@ apps/api/src/modules/customers/customer-change/
 
 文档同步：
 
-- `docs/api/14-reports.md`
-- `docs/product/10-report-rules.md`
+- <strong><font color="red">🔴 已完成：`docs/api/14-reports.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/product/10-report-rules.md`。</font></strong>
 
 测试重点：
 
-- 字段白名单，不能导出未授权字段。
-- 大报表走后台任务。
-- 下载链接权限校验。
-- 导出历史状态准确。
+- <strong><font color="red">🔴 已完成：字段白名单，不能导出未授权字段。</font></strong>
+- <strong><font color="red">🔴 已完成：大报表同步导出阻断并提示后台任务。</font></strong>
+- <strong><font color="red">🔴 已完成：下载链接权限校验。</font></strong>
+- <strong><font color="red">🔴 已完成：导出历史状态准确。</font></strong>
 
 验收标准：
 

@@ -120,7 +120,7 @@ export class InboundService {
         },
         settings.exceptionHandling.createUnmatchedUpcException
           ? {
-              type: ExceptionType.UPC_NOT_FOUND,
+              type: ExceptionType.UPC_NOT_MATCHED,
               customer: { connect: { id: draft.customerId } },
               warehouse: { connect: { id: draft.warehouseId } },
               rawValue: upc,

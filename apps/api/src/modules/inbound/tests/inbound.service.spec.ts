@@ -193,7 +193,7 @@ describe('InboundService', () => {
       exceptions: [
         {
           id: 'exception-1',
-          type: ExceptionType.UPC_NOT_FOUND,
+          type: ExceptionType.UPC_NOT_MATCHED,
           status: ExceptionStatus.OPEN,
           customerId: 'customer-1',
           warehouseId: 'warehouse-1',
@@ -223,7 +223,7 @@ describe('InboundService', () => {
     await expect(service.addItem('draft-1', { upc: '884909876543' })).resolves.toMatchObject({
       status: InboundItemStatus.EXCEPTION,
       product: null,
-      exceptions: [{ type: ExceptionType.UPC_NOT_FOUND }],
+      exceptions: [{ type: ExceptionType.UPC_NOT_MATCHED }],
     });
     expect(repository.createItem).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -231,7 +231,7 @@ describe('InboundService', () => {
         status: InboundItemStatus.EXCEPTION,
       }),
       expect.objectContaining({
-        type: ExceptionType.UPC_NOT_FOUND,
+        type: ExceptionType.UPC_NOT_MATCHED,
         rawValue: '884909876543',
       }),
     );

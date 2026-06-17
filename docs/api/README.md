@@ -30,3 +30,6 @@ Current documents:
 - `09-inbound-records.md`: inbound record filtering, detail lookup, batch item lookup, batch customer-change selection, and export-preview filter reuse.
 - `10-inventory.md`: customer inventory summary, SKU summary, item details, outbound availability, and export-preview filter reuse.
 - `11-outbound-packing.md`: outbound box creation, available inventory lookup, item packing/removal, box clearing, sealing, and audit behavior.
+- `12-exceptions.md`: exception list, summary, detail, resolve, ignore, invalidate, and batch handling behavior.
+- `13-batch-customer-change.md`: candidate lookup, preview token, commit transaction, and customer-change log behavior.
+- `14-reports.md`: report preview, CSV/Excel export creation, export history, re-download, and download behavior.

@@ -58,7 +58,7 @@ Returns normalized UPS data and duplicate status. This endpoint validates and ch
 Rules:
 
 - UPC must match an active UPC mapping and active product, otherwise the preview item is saved as `EXCEPTION`.
-- If unmatched UPC exceptions are enabled, an `UPC_NOT_FOUND` exception record is created.
+- If unmatched UPC exceptions are enabled, an `UPC_NOT_MATCHED` exception record is created.
 - Products with `requiresImei = true` require a valid IMEI.
 - Products with `requiresImei = false` require either Serial or IMEI in this phase.
 - Duplicate IMEI or Serial creates an exception preview item when duplicate detection is enabled.

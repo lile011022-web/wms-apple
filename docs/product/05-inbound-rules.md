@@ -16,7 +16,7 @@ The customer must be locked before scan data becomes operational inventory. UPS,
 
 - UPC values are normalized and validated with the shared UPC validator.
 - Only active UPC mappings that point to active products can be used for normal inbound preview rows.
-- Unmatched UPC values are saved as exception preview rows and can create `UPC_NOT_FOUND` exception records.
+- Unmatched UPC values are saved as exception preview rows and can create `UPC_NOT_MATCHED` exception records.
 
 ## IMEI And Serial
 
