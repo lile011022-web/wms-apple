@@ -28,3 +28,4 @@ Current documents:
 - `07-products-upc-library.md`: UPC product catalog CRUD, UPC lookup, import behavior, and audit rules.
 - `08-inbound-scan.md`: inbound draft creation, scan preview, exception behavior, confirmation, and record lookup.
 - `09-inbound-records.md`: inbound record filtering, detail lookup, batch item lookup, batch customer-change selection, and export-preview filter reuse.
+- `10-inventory.md`: customer inventory summary, SKU summary, item details, outbound availability, and export-preview filter reuse.

@@ -511,12 +511,12 @@ apps/api/src/modules/<module-name>/
 
 要完成的内容：
 
-- 按客户查询库存汇总。
-- 按商品汇总 SKU、在库数量、已出库数量、异常数量。
-- 展开 IMEI 明细。
-- 搜索 UPC、商品名、IMEI。
-- 导出库存数据。
-- 提供出库装箱可用库存查询。
+- <strong><font color="red">🔴 已完成：按客户查询库存汇总。</font></strong>
+- <strong><font color="red">🔴 已完成：按商品汇总 SKU、在库数量、已出库数量、异常数量。</font></strong>
+- <strong><font color="red">🔴 已完成：展开 IMEI 明细。</font></strong>
+- <strong><font color="red">🔴 已完成：搜索 UPC、商品名、IMEI、Serial、UPS。</font></strong>
+- <strong><font color="red">🔴 已完成：提供库存导出预览 payload；实际文件生成保留给 reports 模块。</font></strong>
+- <strong><font color="red">🔴 已完成：提供出库装箱可用库存查询。</font></strong>
 
 建议接口标题：
 
@@ -528,20 +528,20 @@ apps/api/src/modules/<module-name>/
 
 文档同步：
 
-- `docs/api/10-inventory.md`
-- `docs/product/06-inventory-rules.md`
+- <strong><font color="red">🔴 已完成：`docs/api/10-inventory.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/product/06-inventory-rules.md`。</font></strong>
 
 测试重点：
 
-- 库存状态流转准确。
-- 只统计当前客户库存。
-- 异常库存不允许直接出库。
-- IMEI 明细分页准确。
+- <strong><font color="red">🔴 已完成：库存状态计数准确。</font></strong>
+- <strong><font color="red">🔴 已完成：只统计当前客户库存。</font></strong>
+- <strong><font color="red">🔴 已完成：异常库存不允许直接出库，可出库列表强制 `IN_STOCK`。</font></strong>
+- <strong><font color="red">🔴 已完成：IMEI 明细分页准确。</font></strong>
 
 验收标准：
 
-- 客户库存页面可按客户查看 SKU 汇总和 IMEI 明细。
-- 出库装箱页面能复用可装箱库存。
+- <strong><font color="red">🔴 已完成：客户库存页面可按客户查看 SKU 汇总和 IMEI 明细。</font></strong>
+- <strong><font color="red">🔴 已完成：出库装箱页面能复用可装箱库存。</font></strong>
 
 ## 14 阶段十：出库装箱
 
