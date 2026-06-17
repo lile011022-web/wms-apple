@@ -16,3 +16,4 @@ Current documents:
 - `02-entity-relationship.md`: core phase 2 entity relationships and ownership boundaries.
 - `03-inventory-state-machine.md`: allowed inventory status transitions and transaction rules.
 - `04-audit-log-schema.md`: audit log fields, audited operations, and writing rules.
+- `05-inbound-inventory-transaction.md`: phase-seven inbound draft to inventory transaction boundary.

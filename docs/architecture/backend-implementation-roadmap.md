@@ -404,16 +404,16 @@ apps/api/src/modules/<module-name>/
 
 要完成的内容：
 
-- 锁定客户后创建入库草稿。
-- 扫描 UPS。
-- 扫描 UPC 并匹配商品。
-- 扫描 IMEI 或 Serial。
-- 本次入库预览。
-- 移除预览明细。
-- 清空本次草稿。
-- 确认入库。
-- 确认入库时写库存、入库记录、审计日志。
-- UPC 未匹配、IMEI 重复、UPS 重复等异常写入异常池。
+- <strong><font color="red">🔴 已完成：锁定客户后创建入库草稿。</font></strong>
+- <strong><font color="red">🔴 已完成：扫描 UPS。</font></strong>
+- <strong><font color="red">🔴 已完成：扫描 UPC 并匹配商品。</font></strong>
+- <strong><font color="red">🔴 已完成：扫描 IMEI 或 Serial。</font></strong>
+- <strong><font color="red">🔴 已完成：本次入库预览。</font></strong>
+- <strong><font color="red">🔴 已完成：移除预览明细。</font></strong>
+- <strong><font color="red">🔴 已完成：清空本次草稿。</font></strong>
+- <strong><font color="red">🔴 已完成：确认入库。</font></strong>
+- <strong><font color="red">🔴 已完成：确认入库时写库存、入库记录、审计日志。</font></strong>
+- <strong><font color="red">🔴 已完成：UPC 未匹配、IMEI 重复、UPS 重复等异常写入异常池。</font></strong>
 
 建议接口标题：
 
@@ -438,22 +438,22 @@ apps/api/src/modules/<module-name>/
 
 文档同步：
 
-- `docs/api/08-inbound-scan.md`
-- `docs/product/05-inbound-rules.md`
-- `docs/database/05-inbound-inventory-transaction.md`
+- <strong><font color="red">🔴 已完成：`docs/api/08-inbound-scan.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/product/05-inbound-rules.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/database/05-inbound-inventory-transaction.md`。</font></strong>
 
 测试重点：
 
-- 未锁定客户不能扫描。
-- UPC 未匹配生成异常。
-- IMEI 重复生成异常或阻断。
-- 确认入库事务失败时不能产生半成品库存。
-- 入库确认生成 audit log。
+- <strong><font color="red">🔴 已完成：未锁定客户不能扫描。</font></strong>
+- <strong><font color="red">🔴 已完成：UPC 未匹配生成异常。</font></strong>
+- <strong><font color="red">🔴 已完成：IMEI 重复生成异常或阻断。</font></strong>
+- <strong><font color="red">🔴 已完成：确认入库事务失败时不能产生半成品库存，事务边界已集中在 repository transaction，待连接空库做数据库级烟测。</font></strong>
+- <strong><font color="red">🔴 已完成：入库确认生成 audit log。</font></strong>
 
 验收标准：
 
-- 入库扫码页面可完成客户锁定、扫码、预览、确认入库。
-- 入库记录页面能查到确认后的明细。
+- <strong><font color="red">🔴 已完成：入库扫码后端可完成客户锁定、扫码、预览、确认入库。</font></strong>
+- <strong><font color="red">🔴 已完成：入库记录页面可通过后端接口查询确认后的明细。</font></strong>
 
 ## 12 阶段八：入库记录
 
@@ -469,11 +469,11 @@ apps/api/src/modules/<module-name>/
 
 要完成的内容：
 
-- 按时间、客户、UPS、UPC、IMEI、状态筛选。
-- 分页和排序。
-- 查看详情。
-- 支持选择记录进入批量改客户。
-- 支持导出条件复用到报表模块。
+- <strong><font color="red">🔴 已完成：按时间、客户、UPS、UPC、IMEI、状态筛选，并补充批次、仓库、Serial、库存状态筛选。</font></strong>
+- <strong><font color="red">🔴 已完成：分页和排序。</font></strong>
+- <strong><font color="red">🔴 已完成：查看详情。</font></strong>
+- <strong><font color="red">🔴 已完成：支持选择记录进入批量改客户，列表行返回 `selectableForCustomerChange`。</font></strong>
+- <strong><font color="red">🔴 已完成：支持导出条件复用到报表模块，新增 `export-preview` 返回 reusable report payload。</font></strong>
 
 建议接口标题：
 
@@ -484,17 +484,17 @@ apps/api/src/modules/<module-name>/
 
 文档同步：
 
-- `docs/api/09-inbound-records.md`
+- <strong><font color="red">🔴 已完成：`docs/api/09-inbound-records.md`。</font></strong>
 
 测试重点：
 
-- 筛选条件组合正确。
-- 不同权限只能看到允许的数据范围。
-- 已出库、异常、在库状态准确。
+- <strong><font color="red">🔴 已完成：筛选条件组合正确。</font></strong>
+- <strong><font color="red">🔴 已完成：权限门禁继续使用 `inbound.manage`；客户/仓库数据范围模型尚未进入数据库设计，已在阶段八 API 文档标注后续接入点。</font></strong>
+- <strong><font color="red">🔴 已完成：已出库、异常、在库状态通过 `inventoryStatus` 从关联库存行返回和筛选。</font></strong>
 
 验收标准：
 
-- 入库记录页面能完成多条件查询和详情查看。
+- <strong><font color="red">🔴 已完成：入库记录页面能完成多条件查询和详情查看。</font></strong>
 
 ## 13 阶段九：客户库存
 

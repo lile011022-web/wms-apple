@@ -26,3 +26,5 @@ Current documents:
 - `05-warehouses-settings.md`: warehouse profile APIs, grouped system settings, stable setting keys, and audit rules.
 - `06-customers.md`: customer CRUD, customer options, status changes, summary counts, and audit rules.
 - `07-products-upc-library.md`: UPC product catalog CRUD, UPC lookup, import behavior, and audit rules.
+- `08-inbound-scan.md`: inbound draft creation, scan preview, exception behavior, confirmation, and record lookup.
+- `09-inbound-records.md`: inbound record filtering, detail lookup, batch item lookup, batch customer-change selection, and export-preview filter reuse.

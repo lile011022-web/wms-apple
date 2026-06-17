@@ -1,0 +1,76 @@
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import type { AuthenticatedUser } from '../../common/types/authenticated-user';
+import { AddInboundItemDto } from './dto/add-inbound-item.dto';
+import { CreateInboundDraftDto } from './dto/create-inbound-draft.dto';
+import { ListInboundRecordsQueryDto } from './dto/list-inbound-records-query.dto';
+import { ScanInboundUpsDto } from './dto/scan-inbound-ups.dto';
+import { InboundService } from './inbound.service';
+
+@ApiTags('Inbound')
+@ApiBearerAuth('access-token')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Permissions('inbound.manage')
+@Controller('inbound')
+export class InboundController {
+  constructor(private readonly inboundService: InboundService) {}
+
+  @Post('drafts')
+  createDraft(@Body() dto: CreateInboundDraftDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.inboundService.createDraft(dto, user);
+  }
+
+  @Get('drafts/:id')
+  getDraft(@Param('id') id: string) {
+    return this.inboundService.getDraft(id);
+  }
+
+  @Post('drafts/:id/ups')
+  scanUps(@Param('id') id: string, @Body() dto: ScanInboundUpsDto) {
+    return this.inboundService.scanUps(id, dto);
+  }
+
+  @Post('drafts/:id/items')
+  addItem(@Param('id') id: string, @Body() dto: AddInboundItemDto) {
+    return this.inboundService.addItem(id, dto);
+  }
+
+  @Delete('drafts/:id/items/:itemId')
+  removeItem(@Param('id') id: string, @Param('itemId') itemId: string) {
+    return this.inboundService.removeItem(id, itemId);
+  }
+
+  @Delete('drafts/:id/items')
+  clearDraftItems(@Param('id') id: string) {
+    return this.inboundService.clearDraftItems(id);
+  }
+
+  @Post('drafts/:id/confirm')
+  confirmDraft(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.inboundService.confirmDraft(id, user);
+  }
+
+  @Get('records')
+  listRecords(@Query() query: ListInboundRecordsQueryDto) {
+    return this.inboundService.listRecords(query);
+  }
+
+  @Post('records/export-preview')
+  createExportPreview(@Body() dto: ListInboundRecordsQueryDto) {
+    return this.inboundService.createExportPreview(dto);
+  }
+
+  @Get('records/:id/items')
+  getRecordItems(@Param('id') id: string, @Query() query: ListInboundRecordsQueryDto) {
+    return this.inboundService.getRecordItems(id, query);
+  }
+
+  @Get('records/:id')
+  getRecord(@Param('id') id: string) {
+    return this.inboundService.getRecord(id);
+  }
+}
