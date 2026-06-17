@@ -12,7 +12,7 @@
     <header class="page-header">
       <div>
         <h1 class="page-title">出库装箱</h1>
-        <p class="page-subtitle">选择客户 → 创建箱号 → 扫描 IMEI 加入箱子</p>
+        <p class="page-subtitle">选择客户 → 选择已入库包裹 → 勾选明细加入箱子</p>
       </div>
       <div class="btn-group">
         <button class="btn btn-success btn-lg">
@@ -79,34 +79,156 @@
         </div>
       </div>
 
-      <!-- IMEI Scan -->
+      <!-- Inbound Package Pick -->
       <div class="card mb-20">
         <div class="card-header">
-          <span class="card-title">③ 扫描 IMEI 加入箱子</span>
+          <span class="card-title">③ 选择已入库包裹与明细</span>
+          <div class="btn-group">
+            <span class="badge badge-blue">已选 18 件</span>
+            <span class="badge badge-gray">3 个 UPS 包裹</span>
+          </div>
         </div>
         <div class="card-body">
-          <div class="scan-zone active" id="imeiScanZone">
-            <div class="scan-zone-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h12"/></svg>
+          <div class="filter-bar" style="margin-bottom:16px">
+            <select class="form-select">
+              <option selected>TechFlow Inc. (CUST-001)</option>
+              <option>AppleReseller LLC (CUST-003)</option>
+              <option>MobileHub Corp (CUST-007)</option>
+            </select>
+            <div class="search-input-wrap" style="flex:1; min-width:260px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              <input type="text" class="form-input" placeholder="搜索 UPS 单号、UPC、IMEI 或商品名称">
             </div>
-            <h3>扫描 IMEI 条码</h3>
-            <p>系统将校验 IMEI 是否属于当前客户 <strong>TechFlow Inc.</strong></p>
-            <input type="text" class="form-input form-input-lg" placeholder="扫描 IMEI..." id="imeiInput">
+            <select class="form-select">
+              <option selected>只看可装箱</option>
+              <option>包含已部分出库</option>
+              <option>全部入库记录</option>
+            </select>
+            <button class="btn btn-secondary">刷新库存</button>
           </div>
 
-          <!-- Error State Demo -->
-          <div class="alert alert-error mt-16 imei-error-flash" id="imeiError">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
-            <div>
-              <strong>IMEI 归属校验失败 — 禁止加入箱子</strong><br>
-              IMEI <span class="mono">356789099999999</span> 属于客户 <strong>AppleReseller LLC (CUST-003)</strong>，不属于当前客户 TechFlow Inc. (CUST-001)
+          <div class="package-list">
+            <div class="package-card selected">
+              <div class="package-header">
+                <label class="package-check">
+                  <input type="checkbox" checked>
+                  <span class="package-title mono">1Z999AA10123456784</span>
+                </label>
+                <div class="package-meta">
+                  <span class="badge badge-green">已入库</span>
+                  <span>入库: 2026-06-16 14:32</span>
+                  <span>可装箱: <strong class="num">3</strong> 件</span>
+                  <span>已选: <strong class="num">3</strong> 件</span>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table package-detail-table">
+                  <thead>
+                    <tr>
+                      <th class="checkbox-cell"><input type="checkbox" checked></th>
+                      <th>商品</th>
+                      <th>UPC</th>
+                      <th>IMEI</th>
+                      <th>颜色</th>
+                      <th>容量</th>
+                      <th>状态</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><input type="checkbox" checked></td>
+                      <td>
+                        <div class="product-cell">
+                          <div class="product-thumb">📱</div>
+                          <div><div class="product-name">iPhone 16 Pro</div><div class="product-meta">Apple · A3294</div></div>
+                        </div>
+                      </td>
+                      <td class="mono">194253910234</td>
+                      <td class="mono">356789012345678</td>
+                      <td>Black Titanium</td>
+                      <td>256GB</td>
+                      <td><span class="badge badge-blue">待装箱</span></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" checked></td>
+                      <td>
+                        <div class="product-cell">
+                          <div class="product-thumb">📱</div>
+                          <div><div class="product-name">iPhone 16 Pro</div><div class="product-meta">Apple · A3294</div></div>
+                        </div>
+                      </td>
+                      <td class="mono">194253910234</td>
+                      <td class="mono">356789012345679</td>
+                      <td>Black Titanium</td>
+                      <td>256GB</td>
+                      <td><span class="badge badge-blue">待装箱</span></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" checked></td>
+                      <td>
+                        <div class="product-cell">
+                          <div class="product-thumb">📱</div>
+                          <div><div class="product-name">iPhone 16 Pro Max</div><div class="product-meta">Apple · A3296</div></div>
+                        </div>
+                      </td>
+                      <td class="mono">194253910241</td>
+                      <td class="mono">356789012345680</td>
+                      <td>Desert Titanium</td>
+                      <td>512GB</td>
+                      <td><span class="badge badge-blue">待装箱</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="package-card selected">
+              <div class="package-header">
+                <label class="package-check">
+                  <input type="checkbox" checked>
+                  <span class="package-title mono">1Z999AA10123456785</span>
+                </label>
+                <div class="package-meta">
+                  <span class="badge badge-green">已入库</span>
+                  <span>入库: 2026-06-16 15:08</span>
+                  <span>可装箱: <strong class="num">12</strong> 件</span>
+                  <span>已选: <strong class="num">10</strong> 件</span>
+                </div>
+              </div>
+              <div class="package-summary-row">
+                <span class="badge badge-blue">iPhone 16 Pro × 6</span>
+                <span class="badge badge-blue">MacBook Air M3 × 2</span>
+                <span class="badge badge-blue">AirPods Pro 2 × 4</span>
+                <button class="btn btn-sm btn-secondary">展开明细</button>
+              </div>
+            </div>
+
+            <div class="package-card">
+              <div class="package-header">
+                <label class="package-check">
+                  <input type="checkbox">
+                  <span class="package-title mono">1Z999AA10123456786</span>
+                </label>
+                <div class="package-meta">
+                  <span class="badge badge-green">已入库</span>
+                  <span>入库: 2026-06-16 16:21</span>
+                  <span>可装箱: <strong class="num">8</strong> 件</span>
+                  <span>已选: <strong class="num">0</strong> 件</span>
+                </div>
+              </div>
+              <div class="package-summary-row">
+                <span class="badge badge-gray">iPad Air M3 × 5</span>
+                <span class="badge badge-gray">Apple Watch Series 10 × 3</span>
+                <button class="btn btn-sm btn-secondary">展开明细</button>
+              </div>
             </div>
           </div>
 
-          <div class="alert alert-success mt-16" style="margin-top:12px">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
-            <div>
-              <strong>IMEI 校验通过</strong> — 356789012345690 · iPhone 16 Pro · Black Titanium · 256GB · 已加入 BOX-20260616-089
+          <div class="package-actions">
+            <span class="text-muted">已选 <strong class="num">18</strong> 件，将加入箱号 <strong class="mono">BOX-20260616-089</strong></span>
+            <div class="btn-group">
+              <button class="btn btn-secondary">取消选择</button>
+              <button class="btn btn-primary">加入当前箱</button>
             </div>
           </div>
         </div>
@@ -116,7 +238,7 @@
         <!-- Current Box Items -->
         <div class="card">
           <div class="card-header">
-            <span class="card-title">当前箱内商品 (18)</span>
+            <span class="card-title">④ 当前箱内商品 (18)</span>
             <button class="btn btn-sm btn-ghost" style="color:var(--red-600)">清空本箱</button>
           </div>
           <div class="table-wrap">
@@ -193,69 +315,66 @@
           </div>
         </div>
 
-        <!-- Customer Inventory Quick Pick -->
+        <!-- Selected Package Queue -->
         <div class="card">
           <div class="card-header">
-            <span class="card-title">客户库存 — 快速选取</span>
-            <div class="search-input-wrap" style="width:200px">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-              <input type="text" class="form-input" placeholder="搜索..." style="padding:6px 12px 6px 36px; font-size:12px">
-            </div>
+            <span class="card-title">已选包裹明细汇总</span>
+            <span class="badge badge-blue">18 件</span>
           </div>
           <div class="table-wrap">
             <table class="data-table">
               <thead>
                 <tr>
+                  <th>UPS 单号</th>
                   <th>商品</th>
-                  <th>UPC</th>
-                  <th>在库</th>
-                  <th>操作</th>
+                  <th>数量</th>
+                  <th>已入箱</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
+                  <td class="mono">1Z999AA10123456784</td>
                   <td>
                     <div class="product-cell">
                       <div class="product-thumb">📱</div>
                       <div><div class="product-name">iPhone 16 Pro</div><div class="product-meta">Black · 256GB</div></div>
                     </div>
                   </td>
-                  <td class="mono">194253910234</td>
-                  <td class="num">842</td>
-                  <td><button class="btn btn-sm btn-secondary">选取</button></td>
+                  <td class="num">2</td>
+                  <td><span class="badge badge-green">已加入</span></td>
                 </tr>
                 <tr>
+                  <td class="mono">1Z999AA10123456784</td>
                   <td>
                     <div class="product-cell">
                       <div class="product-thumb">📱</div>
                       <div><div class="product-name">iPhone 16 Pro Max</div><div class="product-meta">Desert · 512GB</div></div>
                     </div>
                   </td>
-                  <td class="mono">194253910241</td>
-                  <td class="num">623</td>
-                  <td><button class="btn btn-sm btn-secondary">选取</button></td>
+                  <td class="num">1</td>
+                  <td><span class="badge badge-green">已加入</span></td>
                 </tr>
                 <tr>
-                  <td>
-                    <div class="product-cell">
-                      <div class="product-thumb">📱</div>
-                      <div><div class="product-name">iPad Air M3</div><div class="product-meta">Blue · 256GB</div></div>
-                    </div>
-                  </td>
-                  <td class="mono">194253345678</td>
-                  <td class="num">412</td>
-                  <td><button class="btn btn-sm btn-secondary">选取</button></td>
-                </tr>
-                <tr>
+                  <td class="mono">1Z999AA10123456785</td>
                   <td>
                     <div class="product-cell">
                       <div class="product-thumb">💻</div>
                       <div><div class="product-name">MacBook Air M3</div><div class="product-meta">Midnight · 16/512</div></div>
                     </div>
                   </td>
-                  <td class="mono">195949123456</td>
-                  <td class="num">298</td>
-                  <td><button class="btn btn-sm btn-secondary">选取</button></td>
+                  <td class="num">2</td>
+                  <td><span class="badge badge-green">已加入</span></td>
+                </tr>
+                <tr>
+                  <td class="mono">1Z999AA10123456785</td>
+                  <td>
+                    <div class="product-cell">
+                      <div class="product-thumb">🎧</div>
+                      <div><div class="product-name">AirPods Pro 2</div><div class="product-meta">White</div></div>
+                    </div>
+                  </td>
+                  <td class="num">4</td>
+                  <td><span class="badge badge-green">已加入</span></td>
                 </tr>
               </tbody>
             </table>
