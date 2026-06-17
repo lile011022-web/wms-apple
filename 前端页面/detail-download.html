@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>明细下载 — WMS Scan</title>
+  <link rel="stylesheet" href="css/design-system.css">
+</head>
+<body data-page="detail-download">
+<div id="app" class="app-layout">
+  <main class="main-content">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">明细下载</h1>
+        <p class="page-subtitle">按条件导出入库、出库、库存明细报表</p>
+      </div>
+    </header>
+
+    <div class="page-body">
+      <div class="grid-2 mb-24">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">导出配置</span>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label class="form-label">报表类型 <span class="required">*</span></label>
+              <select class="form-select">
+                <option>入库明细</option>
+                <option>出库明细</option>
+                <option selected>客户库存明细</option>
+                <option>异常明细</option>
+                <option>客户归属变更日志</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">开始日期</label>
+                <input type="date" class="form-input" value="2026-06-01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">结束日期</label>
+                <input type="date" class="form-input" value="2026-06-16">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">客户</label>
+              <select class="form-select">
+                <option value="">全部客户</option>
+                <option selected>TechFlow Inc. (CUST-001)</option>
+                <option>AppleReseller LLC (CUST-003)</option>
+                <option>MobileHub Corp (CUST-007)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">商品筛选</label>
+              <input type="text" class="form-input" placeholder="UPC / 商品名称（可选）">
+            </div>
+            <div class="form-group">
+              <label class="form-label">导出字段</label>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px">
+                <label style="display:flex; align-items:center; gap:6px; font-size:13px"><input type="checkbox" checked> 入库时间</label>
+                <label style="display:flex; align-items:center; gap:6px; font-size:13px"><input type="checkbox" checked> 客户</label>
+                <label style="display:flex; align-items:center; gap:6px; font-size:13px"><input type="checkbox" checked> UPS 单号</label>
+                <label style="display:flex; align-items:center; gap:6px; font-size:13px"><input type="checkbox" checked> 商品名称</label>
+                <label style="display:flex; align-items:center; gap:6px; font-size:13px"><input type="checkbox" checked> UPC</label>
+                <label style="display:flex; align-items:center; gap:6px; font-size:13px"><input type="checkbox" checked> IMEI</label>
+                <label style="display:flex; align-items:center; gap:6px; font-size:13px"><input type="checkbox" checked> 颜色</label>
+                <label style="display:flex; align-items:center; gap:6px; font-size:13px"><input type="checkbox" checked> 容量</label>
+                <label style="display:flex; align-items:center; gap:6px; font-size:13px"><input type="checkbox" checked> 状态</label>
+                <label style="display:flex; align-items:center; gap:6px; font-size:13px"><input type="checkbox"> 操作员</label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">文件格式</label>
+              <div class="btn-group">
+                <button class="btn btn-primary">CSV</button>
+                <button class="btn btn-secondary">Excel (.xlsx)</button>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-lg" style="width:100%; margin-top:8px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l4-4m-4 4L8 11M4 17v2h16v-2"/></svg>
+              生成并下载
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">预览统计</span>
+          </div>
+          <div class="card-body">
+            <div class="stats-grid" style="grid-template-columns:1fr 1fr; margin-bottom:20px">
+              <div class="stat-card" style="padding:16px">
+                <div class="stat-label">预计导出行数</div>
+                <div class="stat-value" style="font-size:24px; color:var(--blue-600)">4,892</div>
+              </div>
+              <div class="stat-card" style="padding:16px">
+                <div class="stat-label">涉及 SKU</div>
+                <div class="stat-value" style="font-size:24px">47</div>
+              </div>
+            </div>
+            <div class="alert alert-info">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+              <div>当前筛选: TechFlow Inc. · 2026-06-01 ~ 2026-06-16 · 客户库存明细 · 9 个字段</div>
+            </div>
+            <div style="margin-top:16px">
+              <div class="detail-field-label" style="margin-bottom:8px">预览 (前 3 行)</div>
+              <div class="table-wrap" style="border:1px solid var(--border); border-radius:var(--radius-sm)">
+                <table class="data-table" style="font-size:11px">
+                  <thead>
+                    <tr>
+                      <th>客户</th>
+                      <th>商品</th>
+                      <th>UPC</th>
+                      <th>IMEI</th>
+                      <th>状态</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>TechFlow</td>
+                      <td>iPhone 16 Pro</td>
+                      <td class="mono">194253910234</td>
+                      <td class="mono">356789012345678</td>
+                      <td>在库</td>
+                    </tr>
+                    <tr>
+                      <td>TechFlow</td>
+                      <td>iPhone 16 Pro</td>
+                      <td class="mono">194253910234</td>
+                      <td class="mono">356789012345679</td>
+                      <td>在库</td>
+                    </tr>
+                    <tr>
+                      <td>TechFlow</td>
+                      <td>iPhone 16 Pro Max</td>
+                      <td class="mono">194253910241</td>
+                      <td class="mono">356789012345680</td>
+                      <td>在库</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">下载历史</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>导出时间</th>
+                <th>报表类型</th>
+                <th>筛选条件</th>
+                <th>行数</th>
+                <th>格式</th>
+                <th>操作员</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">2026-06-16 14:00:22</td>
+                <td>客户库存明细</td>
+                <td>TechFlow · 06-01~06-16</td>
+                <td class="num">4,892</td>
+                <td><span class="badge badge-gray">CSV</span></td>
+                <td>James Wilson</td>
+                <td><span class="badge badge-green">已完成</span></td>
+                <td><button class="btn btn-sm btn-secondary">重新下载</button></td>
+              </tr>
+              <tr>
+                <td class="mono">2026-06-15 17:30:08</td>
+                <td>入库明细</td>
+                <td>全部客户 · 06-15</td>
+                <td class="num">1,156</td>
+                <td><span class="badge badge-blue">Excel</span></td>
+                <td>Admin</td>
+                <td><span class="badge badge-green">已完成</span></td>
+                <td><button class="btn btn-sm btn-secondary">重新下载</button></td>
+              </tr>
+              <tr>
+                <td class="mono">2026-06-15 09:12:44</td>
+                <td>出库明细</td>
+                <td>AppleReseller · 06-01~06-15</td>
+                <td class="num">892</td>
+                <td><span class="badge badge-gray">CSV</span></td>
+                <td>Maria Chen</td>
+                <td><span class="badge badge-green">已完成</span></td>
+                <td><button class="btn btn-sm btn-secondary">重新下载</button></td>
+              </tr>
+              <tr>
+                <td class="mono">2026-06-14 11:45:33</td>
+                <td>异常明细</td>
+                <td>全部 · 近 30 天</td>
+                <td class="num">67</td>
+                <td><span class="badge badge-gray">CSV</span></td>
+                <td>James Wilson</td>
+                <td><span class="badge badge-green">已完成</span></td>
+                <td><button class="btn btn-sm btn-secondary">重新下载</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/layout.js"></script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>Dashboard — WMS Scan</title>
+  <link rel="stylesheet" href="css/design-system.css">
+</head>
+<body data-page="dashboard">
+<div id="app" class="app-layout">
+  <main class="main-content">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">LA Warehouse · 2026-06-16 周二 · 实时运营概览</p>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
+          刷新
+        </button>
+        <a href="inbound-scan.html" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h4v4H4V4zm12 0h4v4h-4V4zM4 16h4v4H4v-4zm12 0h4v4h-4v-4z"/></svg>
+          开始入库扫码
+        </a>
+      </div>
+    </header>
+
+    <div class="page-body">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">今日入库</div>
+          <div class="stat-value" style="color: var(--blue-600)">1,284</div>
+          <div class="stat-change up">↑ 12.4% vs 昨日</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">今日出库装箱</div>
+          <div class="stat-value" style="color: var(--green-600)">892</div>
+          <div class="stat-change up">↑ 8.1% vs 昨日</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">在库总量 (IMEI)</div>
+          <div class="stat-value">24,567</div>
+          <div class="stat-change">覆盖 18 位客户</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">待处理异常</div>
+          <div class="stat-value" style="color: var(--orange-600)">23</div>
+          <div class="stat-change down">↑ 5 较昨日新增</div>
+        </div>
+      </div>
+
+      <div class="grid-2 mb-24">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">近 7 日入库 / 出库趋势</span>
+            <span class="badge badge-blue">本周</span>
+          </div>
+          <div class="card-body">
+            <div class="chart-placeholder">
+              <div class="chart-bars">
+                <div class="chart-bar" style="height: 55%"></div>
+                <div class="chart-bar" style="height: 72%"></div>
+                <div class="chart-bar" style="height: 48%"></div>
+                <div class="chart-bar" style="height: 85%"></div>
+                <div class="chart-bar" style="height: 68%"></div>
+                <div class="chart-bar" style="height: 92%"></div>
+                <div class="chart-bar" style="height: 78%"></div>
+              </div>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-top:12px; font-size:11px; color:var(--text-muted)">
+              <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">异常分布</span>
+            <a href="exception-pool.html" class="btn btn-sm btn-ghost">查看全部 →</a>
+          </div>
+          <div class="card-body">
+            <div style="display:flex; flex-direction:column; gap:12px">
+              <div style="display:flex; align-items:center; gap:12px">
+                <span class="badge badge-red">UPC 未匹配</span>
+                <div class="progress-bar" style="flex:1"><div class="progress-bar-fill" style="width:35%; background:var(--red-500)"></div></div>
+                <span class="num font-semibold">8</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px">
+                <span class="badge badge-orange">IMEI 重复</span>
+                <div class="progress-bar" style="flex:1"><div class="progress-bar-fill" style="width:26%; background:var(--orange-500)"></div></div>
+                <span class="num font-semibold">6</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px">
+                <span class="badge badge-orange">UPS 重复</span>
+                <div class="progress-bar" style="flex:1"><div class="progress-bar-fill" style="width:17%; background:var(--orange-500)"></div></div>
+                <span class="num font-semibold">4</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px">
+                <span class="badge badge-red">客户归属错误</span>
+                <div class="progress-bar" style="flex:1"><div class="progress-bar-fill" style="width:13%; background:var(--red-500)"></div></div>
+                <span class="num font-semibold">3</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px">
+                <span class="badge badge-gray">IMEI 未入库</span>
+                <div class="progress-bar" style="flex:1"><div class="progress-bar-fill" style="width:9%; background:var(--text-muted)"></div></div>
+                <span class="num font-semibold">2</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">今日入库 TOP 客户</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>客户</th>
+                  <th>入库数</th>
+                  <th>SKU 数</th>
+                  <th>包裹数</th>
+                  <th>异常</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="font-semibold">TechFlow Inc.</span><br><span class="text-muted" style="font-size:11px">CUST-001</span></td>
+                  <td class="num">342</td>
+                  <td class="num">28</td>
+                  <td class="num">156</td>
+                  <td><span class="badge badge-orange">2</span></td>
+                </tr>
+                <tr>
+                  <td><span class="font-semibold">AppleReseller LLC</span><br><span class="text-muted" style="font-size:11px">CUST-003</span></td>
+                  <td class="num">289</td>
+                  <td class="num">22</td>
+                  <td class="num">134</td>
+                  <td><span class="badge badge-green">0</span></td>
+                </tr>
+                <tr>
+                  <td><span class="font-semibold">MobileHub Corp</span><br><span class="text-muted" style="font-size:11px">CUST-007</span></td>
+                  <td class="num">215</td>
+                  <td class="num">19</td>
+                  <td class="num">98</td>
+                  <td><span class="badge badge-red">3</span></td>
+                </tr>
+                <tr>
+                  <td><span class="font-semibold">Pacific Devices</span><br><span class="text-muted" style="font-size:11px">CUST-012</span></td>
+                  <td class="num">178</td>
+                  <td class="num">15</td>
+                  <td class="num">82</td>
+                  <td><span class="badge badge-green">0</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">最近操作日志</span>
+            <span class="text-muted" style="font-size:12px">实时</span>
+          </div>
+          <div class="card-body">
+            <div class="timeline-item">
+              <div class="timeline-dot"></div>
+              <div class="timeline-content">
+                <div class="timeline-time">14:32:08 · James Wilson</div>
+                <div class="timeline-text">入库确认 · TechFlow Inc. · 12 件 iPhone 16 Pro</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot" style="background:var(--green-500); border-color:var(--green-50)"></div>
+              <div class="timeline-content">
+                <div class="timeline-time">14:28:45 · Maria Chen</div>
+                <div class="timeline-text">出库装箱 · BOX-20260616-089 · 24 IMEI 已封箱</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot" style="background:var(--orange-500); border-color:var(--orange-50)"></div>
+              <div class="timeline-content">
+                <div class="timeline-time">14:15:22 · James Wilson</div>
+                <div class="timeline-text">异常处理 · UPC 未匹配 · 已手动关联 iPad Air M3</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot" style="background:var(--purple-500); border-color:var(--purple-50)"></div>
+              <div class="timeline-content">
+                <div class="timeline-time">13:58:01 · Admin</div>
+                <div class="timeline-text">批量修改客户 · 15 条记录 · CUST-003 → CUST-001</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot"></div>
+              <div class="timeline-content">
+                <div class="timeline-time">13:42:33 · Maria Chen</div>
+                <div class="timeline-text">入库扫码 · AppleReseller LLC · UPS 1Z999AA10123456784</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/layout.js"></script>
+</body>
+</html>

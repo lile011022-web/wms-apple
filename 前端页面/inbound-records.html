@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>入库记录 — WMS Scan</title>
+  <link rel="stylesheet" href="css/design-system.css">
+</head>
+<body data-page="inbound-records">
+<div id="app" class="app-layout">
+  <main class="main-content">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">入库记录</h1>
+        <p class="page-subtitle">查询历史入库明细，支持导出与批量操作</p>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l4-4m-4 4L8 11M4 17v2h16v-2"/></svg>
+          导出 CSV
+        </button>
+        <a href="batch-customer-change.html" class="btn btn-primary">批量修改客户</a>
+      </div>
+    </header>
+
+    <div class="page-body">
+      <div class="filter-bar">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">时间范围</label>
+          <select class="form-select">
+            <option>今天</option>
+            <option selected>近 7 天</option>
+            <option>近 30 天</option>
+            <option>自定义</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">客户</label>
+          <select class="form-select">
+            <option value="">全部客户</option>
+            <option>TechFlow Inc.</option>
+            <option>AppleReseller LLC</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">UPS 单号</label>
+          <input type="text" class="form-input" placeholder="1Z..." style="width:180px">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">UPC</label>
+          <input type="text" class="form-input" placeholder="UPC..." style="width:160px">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">IMEI</label>
+          <input type="text" class="form-input" placeholder="IMEI..." style="width:180px">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">状态</label>
+          <select class="form-select">
+            <option>全部</option>
+            <option>已入库</option>
+            <option>已出库</option>
+            <option>异常</option>
+          </select>
+        </div>
+        <div style="align-self:flex-end">
+          <button class="btn btn-primary">搜索</button>
+          <button class="btn btn-ghost">重置</button>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <span class="text-muted" style="font-size:13px">共 <strong class="num">2,847</strong> 条记录</span>
+          <span class="badge badge-blue">已选 0 条</span>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn btn-sm btn-secondary" disabled>批量修改客户</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="checkbox-cell"><input type="checkbox"></th>
+                <th>入库时间</th>
+                <th>客户</th>
+                <th>UPS 单号</th>
+                <th>商品</th>
+                <th>UPC</th>
+                <th>IMEI</th>
+                <th>颜色</th>
+                <th>容量</th>
+                <th>操作员</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td class="mono">2026-06-16 14:32:08</td>
+                <td><span class="font-semibold">TechFlow Inc.</span><br><span class="text-muted" style="font-size:11px">CUST-001</span></td>
+                <td class="mono">1Z999AA10123456784</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPhone 16 Pro</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253910234</td>
+                <td class="mono">356789012345678</td>
+                <td>Black Titanium</td>
+                <td>256GB</td>
+                <td>James Wilson</td>
+                <td><span class="badge badge-green">在库</span></td>
+                <td><button class="btn btn-sm btn-ghost">详情</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td class="mono">2026-06-16 14:32:05</td>
+                <td><span class="font-semibold">TechFlow Inc.</span><br><span class="text-muted" style="font-size:11px">CUST-001</span></td>
+                <td class="mono">1Z999AA10123456784</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPhone 16 Pro Max</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253910241</td>
+                <td class="mono">356789012345680</td>
+                <td>Desert Titanium</td>
+                <td>512GB</td>
+                <td>James Wilson</td>
+                <td><span class="badge badge-green">在库</span></td>
+                <td><button class="btn btn-sm btn-ghost">详情</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td class="mono">2026-06-16 13:58:22</td>
+                <td><span class="font-semibold">AppleReseller LLC</span><br><span class="text-muted" style="font-size:11px">CUST-003</span></td>
+                <td class="mono">1Z999AA10123456790</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">💻</div>
+                    <div><div class="product-name">MacBook Pro 14" M4</div></div>
+                  </div>
+                </td>
+                <td class="mono">195949234567</td>
+                <td class="mono">FVFYX2345678</td>
+                <td>Space Black</td>
+                <td>24GB/1TB</td>
+                <td>Maria Chen</td>
+                <td><span class="badge badge-blue">已出库</span></td>
+                <td><button class="btn btn-sm btn-ghost">详情</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td class="mono">2026-06-16 13:42:15</td>
+                <td><span class="font-semibold">MobileHub Corp</span><br><span class="text-muted" style="font-size:11px">CUST-007</span></td>
+                <td class="mono">1Z999AA10123456791</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPad Pro 13" M4</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253567890</td>
+                <td class="mono">356789012345690</td>
+                <td>Silver</td>
+                <td>512GB WiFi</td>
+                <td>James Wilson</td>
+                <td><span class="badge badge-green">在库</span></td>
+                <td><button class="btn btn-sm btn-ghost">详情</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td class="mono">2026-06-16 12:15:33</td>
+                <td><span class="font-semibold">Pacific Devices</span><br><span class="text-muted" style="font-size:11px">CUST-012</span></td>
+                <td class="mono">1Z999AA10123456792</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">🎧</div>
+                    <div><div class="product-name">AirPods Max</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253678901</td>
+                <td class="mono">—</td>
+                <td>Midnight</td>
+                <td>—</td>
+                <td>Maria Chen</td>
+                <td><span class="badge badge-orange">异常</span></td>
+                <td><button class="btn btn-sm btn-ghost">详情</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td class="mono">2026-06-16 11:08:47</td>
+                <td><span class="font-semibold">TechFlow Inc.</span><br><span class="text-muted" style="font-size:11px">CUST-001</span></td>
+                <td class="mono">1Z999AA10123456793</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">⌚</div>
+                    <div><div class="product-name">Apple Watch Ultra 2</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253789012</td>
+                <td class="mono">356789012345691</td>
+                <td>Natural Titanium</td>
+                <td>49mm</td>
+                <td>James Wilson</td>
+                <td><span class="badge badge-green">在库</span></td>
+                <td><button class="btn btn-sm btn-ghost">详情</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <span>第 1-20 条，共 2,847 条</span>
+          <div class="pagination-btns">
+            <button class="pagination-btn">上一页</button>
+            <button class="pagination-btn active">1</button>
+            <button class="pagination-btn">2</button>
+            <button class="pagination-btn">3</button>
+            <button class="pagination-btn">...</button>
+            <button class="pagination-btn">143</button>
+            <button class="pagination-btn">下一页</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/layout.js"></script>
+</body>
+</html>

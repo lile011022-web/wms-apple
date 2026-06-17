@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>入库扫码 — WMS Scan</title>
+  <link rel="stylesheet" href="css/design-system.css">
+</head>
+<body data-page="inbound-scan">
+<div id="app" class="app-layout">
+  <main class="main-content">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">入库扫码</h1>
+        <p class="page-subtitle">先选择并锁定客户，再进行 UPS / 商品条码扫描</p>
+      </div>
+      <div class="btn-group">
+        <a href="batch-customer-change.html" class="btn btn-secondary">批量修改客户</a>
+        <button class="btn btn-success btn-lg" id="confirmBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+          确认入库 (8)
+        </button>
+      </div>
+    </header>
+
+    <div class="page-body">
+      <!-- Step 1: Customer Lock -->
+      <div class="card lock-card mb-20">
+        <div class="lock-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          客户已锁定
+        </div>
+        <div class="card-header" style="border:none; padding-bottom:0">
+          <span class="card-title">① 选择客户</span>
+          <button class="btn btn-sm btn-ghost" id="unlockBtn">更换客户</button>
+        </div>
+        <div class="card-body">
+          <div class="grid-2 gap-16">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">客户 <span class="required">*</span></label>
+              <select class="form-select" id="customerSelect">
+                <option value="">— 请选择客户 —</option>
+                <option value="CUST-001" selected>TechFlow Inc. (CUST-001)</option>
+                <option value="CUST-003">AppleReseller LLC (CUST-003)</option>
+                <option value="CUST-007">MobileHub Corp (CUST-007)</option>
+                <option value="CUST-012">Pacific Devices (CUST-012)</option>
+              </select>
+            </div>
+            <div style="display:flex; align-items:flex-end; gap:12px">
+              <div style="flex:1">
+                <div class="alert alert-info" style="margin:0">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                  <div>
+                    <strong>TechFlow Inc.</strong> 已锁定 · 本次扫描的所有 UPS、UPC、IMEI 将自动绑定至该客户
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Scan Zones -->
+      <div class="grid-2 mb-20">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">② UPS 单号扫描</span>
+            <span class="badge badge-blue">当前: 1Z999AA10123456784</span>
+          </div>
+          <div class="card-body">
+            <div class="scan-zone active">
+              <div class="scan-zone-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h4v4H4V4zm12 0h4v4h-4V4zM4 16h4v4H4v-4zm12 0h4v4h-4v-4z"/></svg>
+              </div>
+              <h3>扫描 UPS 追踪号</h3>
+              <p>支持 UPS 1Z 格式条码，扫描后自动关联当前包裹</p>
+              <input type="text" class="form-input form-input-lg" placeholder="1Z999AA10123456784" value="1Z999AA10123456784" autofocus>
+            </div>
+            <div style="margin-top:12px; font-size:12px; color:var(--text-secondary)">
+              本包裹已扫商品: <strong class="num">3</strong> 件 · UPS 扫描时间: 14:32:01
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">③ 商品条码扫描 (UPC / IMEI)</span>
+            <span class="badge badge-green">就绪</span>
+          </div>
+          <div class="card-body">
+            <div class="scan-zone active">
+              <div class="scan-zone-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h12"/></svg>
+              </div>
+              <h3>扫描 UPC 或 IMEI</h3>
+              <p>先扫 UPC 识别商品，再扫 IMEI 绑定序列号</p>
+              <input type="text" class="form-input form-input-lg" placeholder="扫描 UPC / IMEI...">
+            </div>
+            <div style="margin-top:12px; display:flex; gap:8px">
+              <span class="badge badge-gray">UPC: 194253910234</span>
+              <span class="badge badge-blue">→ iPhone 16 Pro 256GB</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview Table -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">④ 本次入库预览</span>
+          <div class="btn-group">
+            <span class="text-muted" style="font-size:12px">共 <strong class="num">8</strong> 条 · 绑定客户: TechFlow Inc.</span>
+            <button class="btn btn-sm btn-ghost" style="color:var(--red-600)">清空全部</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="checkbox-cell"><input type="checkbox" checked></th>
+                <th>#</th>
+                <th>UPS 单号</th>
+                <th>商品</th>
+                <th>UPC</th>
+                <th>IMEI</th>
+                <th>颜色</th>
+                <th>容量</th>
+                <th>客户</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td class="num">1</td>
+                <td class="mono">1Z999AA10123456784</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPhone 16 Pro</div><div class="product-meta">Apple · A3294</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253910234</td>
+                <td class="mono">356789012345678</td>
+                <td>Black Titanium</td>
+                <td>256GB</td>
+                <td><span class="badge badge-blue">TechFlow</span></td>
+                <td><span class="badge badge-green">待确认</span></td>
+                <td><button class="btn btn-sm btn-ghost">移除</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td class="num">2</td>
+                <td class="mono">1Z999AA10123456784</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPhone 16 Pro</div><div class="product-meta">Apple · A3294</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253910234</td>
+                <td class="mono">356789012345679</td>
+                <td>Black Titanium</td>
+                <td>256GB</td>
+                <td><span class="badge badge-blue">TechFlow</span></td>
+                <td><span class="badge badge-green">待确认</span></td>
+                <td><button class="btn btn-sm btn-ghost">移除</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td class="num">3</td>
+                <td class="mono">1Z999AA10123456784</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPhone 16 Pro Max</div><div class="product-meta">Apple · A3296</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253910241</td>
+                <td class="mono">356789012345680</td>
+                <td>Desert Titanium</td>
+                <td>512GB</td>
+                <td><span class="badge badge-blue">TechFlow</span></td>
+                <td><span class="badge badge-green">待确认</span></td>
+                <td><button class="btn btn-sm btn-ghost">移除</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td class="num">4</td>
+                <td class="mono">1Z999AA10123456785</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">💻</div>
+                    <div><div class="product-name">MacBook Air M3</div><div class="product-meta">Apple · MC8Q4LL/A</div></div>
+                  </div>
+                </td>
+                <td class="mono">195949123456</td>
+                <td class="mono">FVFYX1234567</td>
+                <td>Midnight</td>
+                <td>16GB/512GB</td>
+                <td><span class="badge badge-blue">TechFlow</span></td>
+                <td><span class="badge badge-green">待确认</span></td>
+                <td><button class="btn btn-sm btn-ghost">移除</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td class="num">5</td>
+                <td class="mono">1Z999AA10123456785</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">🎧</div>
+                    <div><div class="product-name">AirPods Pro 2</div><div class="product-meta">Apple · MTJV3AM/A</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253234567</td>
+                <td class="mono">—</td>
+                <td>White</td>
+                <td>—</td>
+                <td><span class="badge badge-blue">TechFlow</span></td>
+                <td><span class="badge badge-orange">无 IMEI</span></td>
+                <td><button class="btn btn-sm btn-ghost">移除</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td class="num">6</td>
+                <td class="mono">1Z999AA10123456786</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPad Air M3</div><div class="product-meta">Apple · MC9X4LL/A</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253345678</td>
+                <td class="mono">356789012345681</td>
+                <td>Blue</td>
+                <td>256GB WiFi</td>
+                <td><span class="badge badge-blue">TechFlow</span></td>
+                <td><span class="badge badge-green">待确认</span></td>
+                <td><button class="btn btn-sm btn-ghost">移除</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td class="num">7</td>
+                <td class="mono">1Z999AA10123456786</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPad Air M3</div><div class="product-meta">Apple · MC9X4LL/A</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253345678</td>
+                <td class="mono">356789012345682</td>
+                <td>Starlight</td>
+                <td>128GB WiFi</td>
+                <td><span class="badge badge-blue">TechFlow</span></td>
+                <td><span class="badge badge-green">待确认</span></td>
+                <td><button class="btn btn-sm btn-ghost">移除</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td class="num">8</td>
+                <td class="mono">1Z999AA10123456786</td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">⌚</div>
+                    <div><div class="product-name">Apple Watch Series 10</div><div class="product-meta">Apple · MWWA3LL/A</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253456789</td>
+                <td class="mono">356789012345683</td>
+                <td>Jet Black</td>
+                <td>46mm GPS</td>
+                <td><span class="badge badge-blue">TechFlow</span></td>
+                <td><span class="badge badge-green">待确认</span></td>
+                <td><button class="btn btn-sm btn-ghost">移除</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <span>显示 8 / 8 条预览记录</span>
+          <div class="btn-group">
+            <button class="btn btn-secondary">批量修改客户 (0)</button>
+            <button class="btn btn-success btn-lg">确认入库 (8)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/layout.js"></script>
+</body>
+</html>

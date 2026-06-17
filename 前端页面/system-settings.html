@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>系统设置 — WMS Scan</title>
+  <link rel="stylesheet" href="css/design-system.css">
+</head>
+<body data-page="system-settings">
+<div id="app" class="app-layout">
+  <main class="main-content">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">系统设置</h1>
+        <p class="page-subtitle">仓库、用户、扫码规则与系统参数配置</p>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-secondary">重置</button>
+        <button class="btn btn-primary">保存设置</button>
+      </div>
+    </header>
+
+    <div class="page-body">
+      <div class="settings-layout">
+        <div class="card" style="padding:12px; height:fit-content">
+          <nav class="settings-nav">
+            <button class="settings-nav-item active">仓库信息</button>
+            <button class="settings-nav-item">用户与权限</button>
+            <button class="settings-nav-item">扫码规则</button>
+            <button class="settings-nav-item">异常处理</button>
+            <button class="settings-nav-item">通知设置</button>
+            <button class="settings-nav-item">数据保留</button>
+          </nav>
+        </div>
+
+        <div>
+          <div class="card mb-20">
+            <div class="card-header">
+              <span class="card-title">仓库信息</span>
+            </div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">仓库名称</label>
+                  <input type="text" class="form-input" value="LA Warehouse - Building A">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">仓库编号</label>
+                  <input type="text" class="form-input" value="LA-01" readonly style="background:#fafbfc">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">地址</label>
+                  <input type="text" class="form-input" value="1234 Warehouse Blvd, Los Angeles, CA 90001">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">时区</label>
+                  <select class="form-select">
+                    <option selected>America/Los_Angeles (PST/PDT)</option>
+                    <option>America/New_York (EST/EDT)</option>
+                    <option>America/Chicago (CST/CDT)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mb-20">
+            <div class="card-header">
+              <span class="card-title">扫码规则</span>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500">
+                  <input type="checkbox" checked> 入库必须先选择并锁定客户
+                </label>
+                <div class="form-hint">开启后，未锁定客户时禁止 UPS / UPC / IMEI 扫描</div>
+              </div>
+              <div class="form-group">
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500">
+                  <input type="checkbox" checked> 出库校验 IMEI 客户归属
+                </label>
+                <div class="form-hint">IMEI 不属于当前客户时，红色提示并禁止加入箱子</div>
+              </div>
+              <div class="form-group">
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500">
+                  <input type="checkbox" checked> 自动检测 IMEI 重复
+                </label>
+              </div>
+              <div class="form-group">
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500">
+                  <input type="checkbox" checked> 自动检测 UPS 重复
+                </label>
+              </div>
+              <div class="form-group">
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500">
+                  <input type="checkbox"> 允许无 IMEI 商品入库（AirPods 等）
+                </label>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">UPS 单号格式校验</label>
+                  <select class="form-select">
+                    <option selected>UPS 1Z 标准格式</option>
+                    <option>不校验</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">IMEI 长度</label>
+                  <select class="form-select">
+                    <option selected>15 位数字</option>
+                    <option>15 位 + 字母数字混合</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mb-20">
+            <div class="card-header">
+              <span class="card-title">用户与权限</span>
+              <button class="btn btn-sm btn-primary">+ 添加用户</button>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>邮箱</th>
+                    <th>角色</th>
+                    <th>仓库</th>
+                    <th>最后登录</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <div class="product-cell">
+                        <div class="user-avatar" style="width:28px;height:28px;font-size:10px;border-radius:6px">JW</div>
+                        <div><div class="product-name">James Wilson</div></div>
+                      </div>
+                    </td>
+                    <td>james@warehouse.com</td>
+                    <td><span class="badge badge-blue">仓库主管</span></td>
+                    <td>LA-01</td>
+                    <td class="mono">2026-06-16 14:32</td>
+                    <td><span class="badge badge-green">活跃</span></td>
+                    <td><button class="btn btn-sm btn-ghost">编辑</button></td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="product-cell">
+                        <div class="user-avatar" style="width:28px;height:28px;font-size:10px;border-radius:6px;background:linear-gradient(135deg,#10b981,#059669)">MC</div>
+                        <div><div class="product-name">Maria Chen</div></div>
+                      </div>
+                    </td>
+                    <td>maria@warehouse.com</td>
+                    <td><span class="badge badge-green">操作员</span></td>
+                    <td>LA-01</td>
+                    <td class="mono">2026-06-16 14:28</td>
+                    <td><span class="badge badge-green">活跃</span></td>
+                    <td><button class="btn btn-sm btn-ghost">编辑</button></td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="product-cell">
+                        <div class="user-avatar" style="width:28px;height:28px;font-size:10px;border-radius:6px;background:linear-gradient(135deg,#8b5cf6,#6d28d9)">AD</div>
+                        <div><div class="product-name">Admin</div></div>
+                      </div>
+                    </td>
+                    <td>admin@warehouse.com</td>
+                    <td><span class="badge badge-purple">系统管理员</span></td>
+                    <td>全部</td>
+                    <td class="mono">2026-06-16 13:58</td>
+                    <td><span class="badge badge-green">活跃</span></td>
+                    <td><button class="btn btn-sm btn-ghost">编辑</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">数据保留策略</span>
+            </div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">入库记录保留</label>
+                  <select class="form-select">
+                    <option>1 年</option>
+                    <option selected>2 年</option>
+                    <option>永久</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">异常记录保留</label>
+                  <select class="form-select">
+                    <option selected>1 年</option>
+                    <option>2 年</option>
+                    <option>永久</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">操作日志保留</label>
+                  <select class="form-select">
+                    <option>6 个月</option>
+                    <option selected>1 年</option>
+                    <option>2 年</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/layout.js"></script>
+</body>
+</html>

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>异常池 — WMS Scan</title>
+  <link rel="stylesheet" href="css/design-system.css">
+</head>
+<body data-page="exception-pool">
+<div id="app" class="app-layout">
+  <main class="main-content">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">异常池</h1>
+        <p class="page-subtitle">待处理异常 23 条 · 需人工审核与处理</p>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-secondary">批量忽略</button>
+        <button class="btn btn-primary">批量处理</button>
+      </div>
+    </header>
+
+    <div class="page-body">
+      <div class="tabs">
+        <button class="tab active">全部 (23)</button>
+        <button class="tab">UPC 未匹配 (8)</button>
+        <button class="tab">IMEI 重复 (6)</button>
+        <button class="tab">UPS 重复 (4)</button>
+        <button class="tab">客户归属错误 (3)</button>
+        <button class="tab">IMEI 未入库 (2)</button>
+      </div>
+
+      <div class="split-layout">
+        <div class="split-main">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <span class="badge badge-red">23 待处理</span>
+              <span class="text-muted" style="font-size:12px">已选 1 条</span>
+            </div>
+            <div class="toolbar-right">
+              <select class="form-select" style="width:auto">
+                <option>按时间 ↓</option>
+                <option>按类型</option>
+                <option>按客户</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th class="checkbox-cell"><input type="checkbox"></th>
+                    <th>异常类型</th>
+                    <th>发生时间</th>
+                    <th>客户</th>
+                    <th>扫码内容</th>
+                    <th>关联商品</th>
+                    <th>操作员</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style="background:var(--blue-50)">
+                    <td><input type="checkbox" checked></td>
+                    <td><span class="badge badge-red">UPC 未匹配</span></td>
+                    <td class="mono">2026-06-16 14:15:22</td>
+                    <td>TechFlow Inc.</td>
+                    <td class="mono">884909876543</td>
+                    <td><span class="text-muted">—</span></td>
+                    <td>James Wilson</td>
+                    <td><span class="badge badge-orange">待处理</span></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox"></td>
+                    <td><span class="badge badge-orange">IMEI 重复</span></td>
+                    <td class="mono">2026-06-16 13:58:01</td>
+                    <td>MobileHub Corp</td>
+                    <td class="mono">356789012345600</td>
+                    <td>iPhone 16 Pro</td>
+                    <td>Maria Chen</td>
+                    <td><span class="badge badge-orange">待处理</span></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox"></td>
+                    <td><span class="badge badge-orange">UPS 重复</span></td>
+                    <td class="mono">2026-06-16 13:42:15</td>
+                    <td>AppleReseller LLC</td>
+                    <td class="mono">1Z999AA10123456790</td>
+                    <td>—</td>
+                    <td>James Wilson</td>
+                    <td><span class="badge badge-orange">待处理</span></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox"></td>
+                    <td><span class="badge badge-red">客户归属错误</span></td>
+                    <td class="mono">2026-06-16 12:30:44</td>
+                    <td>TechFlow Inc.</td>
+                    <td class="mono">356789099999999</td>
+                    <td>iPhone 16 Pro Max</td>
+                    <td>Maria Chen</td>
+                    <td><span class="badge badge-orange">待处理</span></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox"></td>
+                    <td><span class="badge badge-gray">IMEI 未入库</span></td>
+                    <td class="mono">2026-06-16 11:15:08</td>
+                    <td>Pacific Devices</td>
+                    <td class="mono">356789088888888</td>
+                    <td>—</td>
+                    <td>James Wilson</td>
+                    <td><span class="badge badge-orange">待处理</span></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox"></td>
+                    <td><span class="badge badge-red">UPC 未匹配</span></td>
+                    <td class="mono">2026-06-16 10:48:33</td>
+                    <td>TechFlow Inc.</td>
+                    <td class="mono">884909111222</td>
+                    <td><span class="text-muted">—</span></td>
+                    <td>James Wilson</td>
+                    <td><span class="badge badge-orange">待处理</span></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox"></td>
+                    <td><span class="badge badge-orange">IMEI 重复</span></td>
+                    <td class="mono">2026-06-16 09:22:17</td>
+                    <td>AppleReseller LLC</td>
+                    <td class="mono">356789012345550</td>
+                    <td>MacBook Air M3</td>
+                    <td>Maria Chen</td>
+                    <td><span class="badge badge-green">已处理</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <span>第 1-20 条，共 23 条</span>
+              <div class="pagination-btns">
+                <button class="pagination-btn active">1</button>
+                <button class="pagination-btn">2</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detail Panel -->
+        <div class="split-panel">
+          <div class="detail-panel">
+            <div class="detail-panel-header">
+              <span class="card-title">异常详情</span>
+              <span class="badge badge-red">UPC 未匹配</span>
+            </div>
+            <div class="detail-panel-body">
+              <div class="detail-field">
+                <div class="detail-field-label">异常 ID</div>
+                <div class="detail-field-value mono">EXC-20260616-00142</div>
+              </div>
+              <div class="detail-field">
+                <div class="detail-field-label">异常原因</div>
+                <div class="detail-field-value">
+                  扫描的 UPC <strong>884909876543</strong> 在 UPC 商品库中未找到匹配记录。系统无法自动识别商品信息。
+                </div>
+              </div>
+              <div class="detail-field">
+                <div class="detail-field-label">原始扫码内容</div>
+                <div class="detail-field-value mono">884909876543</div>
+              </div>
+              <div class="detail-field">
+                <div class="detail-field-label">关联 UPS</div>
+                <div class="detail-field-value mono">1Z999AA10123456795</div>
+              </div>
+              <div class="detail-field">
+                <div class="detail-field-label">绑定客户</div>
+                <div class="detail-field-value">TechFlow Inc. (CUST-001)</div>
+              </div>
+              <div class="detail-field">
+                <div class="detail-field-label">操作员 / 时间</div>
+                <div class="detail-field-value">James Wilson · 2026-06-16 14:15:22</div>
+              </div>
+
+              <div class="detail-field">
+                <div class="detail-field-label">关联图片</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
+                  <div style="aspect-ratio:4/3; background:#f3f4f6; border-radius:var(--radius-sm); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:11px">
+                    📷 条码照片
+                  </div>
+                  <div style="aspect-ratio:4/3; background:#f3f4f6; border-radius:var(--radius-sm); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:11px">
+                    📷 包裹照片
+                  </div>
+                </div>
+              </div>
+
+              <div class="detail-field">
+                <div class="detail-field-label">手动关联商品</div>
+                <select class="form-select">
+                  <option>— 选择 UPC 商品 —</option>
+                  <option>iPhone 16 Pro 256GB (194253910234)</option>
+                  <option>iPad Air M3 256GB (194253345678)</option>
+                  <option>+ 新增 UPC 到商品库</option>
+                </select>
+              </div>
+
+              <div class="detail-field">
+                <div class="detail-field-label">处理备注</div>
+                <textarea class="form-textarea" placeholder="填写处理说明..."></textarea>
+              </div>
+
+              <div class="btn-group" style="margin-top:20px; flex-direction:column">
+                <button class="btn btn-primary" style="width:100%">确认处理</button>
+                <button class="btn btn-secondary" style="width:100%">忽略异常</button>
+                <button class="btn btn-ghost" style="width:100%; color:var(--red-600)">标记为无效</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/layout.js"></script>
+</body>
+</html>

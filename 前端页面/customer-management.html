@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>客户管理 — WMS Scan</title>
+  <link rel="stylesheet" href="css/design-system.css">
+</head>
+<body data-page="customer-management">
+<div id="app" class="app-layout">
+  <main class="main-content">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">客户管理</h1>
+        <p class="page-subtitle">管理仓库客户信息与库存概览</p>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary">+ 新增客户</button>
+      </div>
+    </header>
+
+    <div class="page-body">
+      <div class="stats-grid mb-24">
+        <div class="stat-card">
+          <div class="stat-label">活跃客户</div>
+          <div class="stat-value">18</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">总在库 IMEI</div>
+          <div class="stat-value" style="color:var(--blue-600)">24,567</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">本月新增客户</div>
+          <div class="stat-value" style="color:var(--green-600)">2</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">停用客户</div>
+          <div class="stat-value" style="color:var(--text-muted)">3</div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="search-input-wrap" style="width:280px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input type="text" class="form-input" placeholder="搜索客户名称 / 编号...">
+          </div>
+          <select class="form-select" style="width:auto">
+            <option>全部状态</option>
+            <option selected>活跃</option>
+            <option>停用</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>客户编号</th>
+                <th>客户名称</th>
+                <th>联系人</th>
+                <th>邮箱</th>
+                <th>在库 IMEI</th>
+                <th>SKU 数</th>
+                <th>本月入库</th>
+                <th>本月出库</th>
+                <th>创建时间</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono font-semibold">CUST-001</td>
+                <td><span class="font-semibold">TechFlow Inc.</span></td>
+                <td>John Smith</td>
+                <td>john@techflow.com</td>
+                <td class="num" style="color:var(--blue-600)">4,892</td>
+                <td class="num">47</td>
+                <td class="num">1,284</td>
+                <td class="num">892</td>
+                <td class="mono">2025-03-15</td>
+                <td><span class="badge badge-green">活跃</span></td>
+                <td>
+                  <div class="btn-group">
+                    <a href="customer-inventory.html" class="btn btn-sm btn-secondary">库存</a>
+                    <button class="btn btn-sm btn-ghost">编辑</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td class="mono font-semibold">CUST-003</td>
+                <td><span class="font-semibold">AppleReseller LLC</span></td>
+                <td>Sarah Johnson</td>
+                <td>sarah@applereseller.com</td>
+                <td class="num" style="color:var(--blue-600)">3,456</td>
+                <td class="num">38</td>
+                <td class="num">956</td>
+                <td class="num">678</td>
+                <td class="mono">2025-04-02</td>
+                <td><span class="badge badge-green">活跃</span></td>
+                <td>
+                  <div class="btn-group">
+                    <a href="customer-inventory.html" class="btn btn-sm btn-secondary">库存</a>
+                    <button class="btn btn-sm btn-ghost">编辑</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td class="mono font-semibold">CUST-007</td>
+                <td><span class="font-semibold">MobileHub Corp</span></td>
+                <td>Michael Lee</td>
+                <td>mlee@mobilehub.com</td>
+                <td class="num" style="color:var(--blue-600)">2,891</td>
+                <td class="num">32</td>
+                <td class="num">723</td>
+                <td class="num">512</td>
+                <td class="mono">2025-05-18</td>
+                <td><span class="badge badge-green">活跃</span></td>
+                <td>
+                  <div class="btn-group">
+                    <a href="customer-inventory.html" class="btn btn-sm btn-secondary">库存</a>
+                    <button class="btn btn-sm btn-ghost">编辑</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td class="mono font-semibold">CUST-012</td>
+                <td><span class="font-semibold">Pacific Devices</span></td>
+                <td>Emily Chen</td>
+                <td>emily@pacificdevices.com</td>
+                <td class="num" style="color:var(--blue-600)">1,987</td>
+                <td class="num">25</td>
+                <td class="num">445</td>
+                <td class="num">389</td>
+                <td class="mono">2025-06-22</td>
+                <td><span class="badge badge-green">活跃</span></td>
+                <td>
+                  <div class="btn-group">
+                    <a href="customer-inventory.html" class="btn btn-sm btn-secondary">库存</a>
+                    <button class="btn btn-sm btn-ghost">编辑</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td class="mono font-semibold">CUST-015</td>
+                <td><span class="font-semibold">West Coast Mobile</span></td>
+                <td>David Park</td>
+                <td>david@wcmobile.com</td>
+                <td class="num" style="color:var(--blue-600)">1,234</td>
+                <td class="num">19</td>
+                <td class="num">312</td>
+                <td class="num">267</td>
+                <td class="mono">2025-08-10</td>
+                <td><span class="badge badge-green">活跃</span></td>
+                <td>
+                  <div class="btn-group">
+                    <a href="customer-inventory.html" class="btn btn-sm btn-secondary">库存</a>
+                    <button class="btn btn-sm btn-ghost">编辑</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td class="mono font-semibold">CUST-002</td>
+                <td><span class="font-semibold">OldTech Trading</span></td>
+                <td>—</td>
+                <td>—</td>
+                <td class="num">0</td>
+                <td class="num">0</td>
+                <td class="num">0</td>
+                <td class="num">0</td>
+                <td class="mono">2025-02-01</td>
+                <td><span class="badge badge-gray">停用</span></td>
+                <td>
+                  <div class="btn-group">
+                    <button class="btn btn-sm btn-ghost">编辑</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <span>显示 6 / 18 客户</span>
+          <div class="pagination-btns">
+            <button class="pagination-btn active">1</button>
+            <button class="pagination-btn">2</button>
+            <button class="pagination-btn">下一页</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/layout.js"></script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>UPC 商品库 — WMS Scan</title>
+  <link rel="stylesheet" href="css/design-system.css">
+</head>
+<body data-page="upc-library">
+<div id="app" class="app-layout">
+  <main class="main-content">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">UPC 商品库</h1>
+        <p class="page-subtitle">管理 Apple 产品 UPC 条码与商品信息映射</p>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-secondary">批量导入</button>
+        <button class="btn btn-primary">+ 新增商品</button>
+      </div>
+    </header>
+
+    <div class="page-body">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="search-input-wrap" style="width:320px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input type="text" class="form-input" placeholder="搜索 UPC / 商品名称 / 型号...">
+          </div>
+          <select class="form-select" style="width:auto">
+            <option>全部分类</option>
+            <option>iPhone</option>
+            <option>iPad</option>
+            <option>MacBook</option>
+            <option>AirPods</option>
+            <option>Apple Watch</option>
+            <option>配件</option>
+          </select>
+        </div>
+        <div class="toolbar-right">
+          <span class="text-muted" style="font-size:13px">共 <strong class="num">186</strong> 个 UPC</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>商品</th>
+                <th>UPC</th>
+                <th>型号</th>
+                <th>分类</th>
+                <th>颜色</th>
+                <th>容量/规格</th>
+                <th>是否需要 IMEI</th>
+                <th>更新时间</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPhone 16 Pro</div><div class="product-meta">Apple</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253910234</td>
+                <td class="mono">A3294</td>
+                <td><span class="badge badge-blue">iPhone</span></td>
+                <td>Black Titanium</td>
+                <td>256GB</td>
+                <td><span class="badge badge-green">是</span></td>
+                <td class="mono">2026-06-10</td>
+                <td><span class="badge badge-green">启用</span></td>
+                <td><button class="btn btn-sm btn-ghost">编辑</button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPhone 16 Pro Max</div><div class="product-meta">Apple</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253910241</td>
+                <td class="mono">A3296</td>
+                <td><span class="badge badge-blue">iPhone</span></td>
+                <td>Desert Titanium</td>
+                <td>512GB</td>
+                <td><span class="badge badge-green">是</span></td>
+                <td class="mono">2026-06-10</td>
+                <td><span class="badge badge-green">启用</span></td>
+                <td><button class="btn btn-sm btn-ghost">编辑</button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPad Air M3</div><div class="product-meta">Apple</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253345678</td>
+                <td class="mono">MC9X4LL/A</td>
+                <td><span class="badge badge-purple">iPad</span></td>
+                <td>Blue</td>
+                <td>256GB WiFi</td>
+                <td><span class="badge badge-green">是</span></td>
+                <td class="mono">2026-06-08</td>
+                <td><span class="badge badge-green">启用</span></td>
+                <td><button class="btn btn-sm btn-ghost">编辑</button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">💻</div>
+                    <div><div class="product-name">MacBook Air M3</div><div class="product-meta">Apple</div></div>
+                  </div>
+                </td>
+                <td class="mono">195949123456</td>
+                <td class="mono">MC8Q4LL/A</td>
+                <td><span class="badge badge-gray">MacBook</span></td>
+                <td>Midnight</td>
+                <td>16GB / 512GB</td>
+                <td><span class="badge badge-green">是</span></td>
+                <td class="mono">2026-06-05</td>
+                <td><span class="badge badge-green">启用</span></td>
+                <td><button class="btn btn-sm btn-ghost">编辑</button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">💻</div>
+                    <div><div class="product-name">MacBook Pro 14" M4</div><div class="product-meta">Apple</div></div>
+                  </div>
+                </td>
+                <td class="mono">195949234567</td>
+                <td class="mono">MX2H3LL/A</td>
+                <td><span class="badge badge-gray">MacBook</span></td>
+                <td>Space Black</td>
+                <td>24GB / 1TB</td>
+                <td><span class="badge badge-green">是</span></td>
+                <td class="mono">2026-06-05</td>
+                <td><span class="badge badge-green">启用</span></td>
+                <td><button class="btn btn-sm btn-ghost">编辑</button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">🎧</div>
+                    <div><div class="product-name">AirPods Pro 2</div><div class="product-meta">Apple</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253234567</td>
+                <td class="mono">MTJV3AM/A</td>
+                <td><span class="badge badge-orange">AirPods</span></td>
+                <td>White</td>
+                <td>—</td>
+                <td><span class="badge badge-gray">否</span></td>
+                <td class="mono">2026-05-28</td>
+                <td><span class="badge badge-green">启用</span></td>
+                <td><button class="btn btn-sm btn-ghost">编辑</button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">⌚</div>
+                    <div><div class="product-name">Apple Watch Series 10</div><div class="product-meta">Apple</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253456789</td>
+                <td class="mono">MWWA3LL/A</td>
+                <td><span class="badge badge-green">Watch</span></td>
+                <td>Jet Black</td>
+                <td>46mm GPS</td>
+                <td><span class="badge badge-green">是</span></td>
+                <td class="mono">2026-05-28</td>
+                <td><span class="badge badge-green">启用</span></td>
+                <td><button class="btn btn-sm btn-ghost">编辑</button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">⌚</div>
+                    <div><div class="product-name">Apple Watch Ultra 2</div><div class="product-meta">Apple</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253789012</td>
+                <td class="mono">MX003LL/A</td>
+                <td><span class="badge badge-green">Watch</span></td>
+                <td>Natural Titanium</td>
+                <td>49mm</td>
+                <td><span class="badge badge-green">是</span></td>
+                <td class="mono">2026-05-20</td>
+                <td><span class="badge badge-green">启用</span></td>
+                <td><button class="btn btn-sm btn-ghost">编辑</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <span>第 1-20 条，共 186 条</span>
+          <div class="pagination-btns">
+            <button class="pagination-btn active">1</button>
+            <button class="pagination-btn">2</button>
+            <button class="pagination-btn">3</button>
+            <button class="pagination-btn">...</button>
+            <button class="pagination-btn">10</button>
+            <button class="pagination-btn">下一页</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/layout.js"></script>
+</body>
+</html>

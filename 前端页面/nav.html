@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>WMS Scan — UI 原型导航</title>
+  <link rel="stylesheet" href="css/design-system.css">
+  <style>
+    body { background: var(--sidebar-bg); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .nav-page { max-width: 960px; width: 100%; padding: 48px 32px; }
+    .nav-page h1 { color: #fff; font-size: 32px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 8px; }
+    .nav-page p { color: var(--sidebar-text); font-size: 15px; margin-bottom: 40px; }
+    .page-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .page-link {
+      display: block;
+      background: var(--sidebar-hover);
+      border: 1px solid var(--sidebar-border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      text-decoration: none;
+      color: #fff;
+      transition: all 0.2s;
+    }
+    .page-link:hover { background: var(--sidebar-active); border-color: var(--blue-500); transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+    .page-link .num { font-size: 11px; font-weight: 600; color: var(--blue-500); margin-bottom: 8px; }
+    .page-link .title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .page-link .desc { font-size: 12px; color: var(--sidebar-text); line-height: 1.5; }
+    .design-tokens { margin-top: 40px; padding: 24px; background: var(--sidebar-hover); border-radius: var(--radius-lg); border: 1px solid var(--sidebar-border); }
+    .design-tokens h3 { color: #fff; font-size: 14px; margin-bottom: 16px; }
+    .token-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .token { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sidebar-text); }
+    .token-swatch { width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); }
+  </style>
+</head>
+<body>
+  <div class="nav-page">
+    <h1>WMS Scan</h1>
+    <p>美国仓库扫码管理系统 · 高保真 UI 原型 · 1440px Desktop · 共 11 个页面</p>
+
+    <div class="page-grid">
+      <a href="index.html" class="page-link">
+        <div class="num">01</div>
+        <div class="title">Dashboard</div>
+        <div class="desc">首页总览 · 运营数据 · 异常分布 · 操作日志</div>
+      </a>
+      <a href="inbound-scan.html" class="page-link">
+        <div class="num">02 ★ 重点</div>
+        <div class="title">入库扫码</div>
+        <div class="desc">客户锁定 · UPS/UPC/IMEI 扫描 · 预览表格 · 确认入库</div>
+      </a>
+      <a href="inbound-records.html" class="page-link">
+        <div class="num">03</div>
+        <div class="title">入库记录</div>
+        <div class="desc">历史入库查询 · 多维度筛选 · 批量操作</div>
+      </a>
+      <a href="customer-inventory.html" class="page-link">
+        <div class="num">04 ★ 重点</div>
+        <div class="title">客户库存</div>
+        <div class="desc">SKU 汇总 · IMEI 展开明细 · 异常统计</div>
+      </a>
+      <a href="outbound-packing.html" class="page-link">
+        <div class="num">05 ★ 重点</div>
+        <div class="title">出库装箱</div>
+        <div class="desc">创建箱号 · IMEI 扫描 · 客户归属校验</div>
+      </a>
+      <a href="exception-pool.html" class="page-link">
+        <div class="num">06 ★ 重点</div>
+        <div class="title">异常池</div>
+        <div class="desc">5 类异常 · 右侧详情面板 · 处理操作</div>
+      </a>
+      <a href="batch-customer-change.html" class="page-link">
+        <div class="num">07 ★ 重点</div>
+        <div class="title">批量修改客户</div>
+        <div class="desc">筛选记录 · 影响范围 · 修改日志</div>
+      </a>
+      <a href="detail-download.html" class="page-link">
+        <div class="num">08</div>
+        <div class="title">明细下载</div>
+        <div class="desc">报表导出 · 字段选择 · 下载历史</div>
+      </a>
+      <a href="upc-library.html" class="page-link">
+        <div class="num">09</div>
+        <div class="title">UPC 商品库</div>
+        <div class="desc">Apple 产品 UPC 映射 · 分类管理</div>
+      </a>
+      <a href="customer-management.html" class="page-link">
+        <div class="num">10</div>
+        <div class="title">客户管理</div>
+        <div class="desc">客户 CRUD · 库存概览 · 状态管理</div>
+      </a>
+      <a href="system-settings.html" class="page-link">
+        <div class="num">11</div>
+        <div class="title">系统设置</div>
+        <div class="desc">仓库信息 · 扫码规则 · 用户权限</div>
+      </a>
+    </div>
+
+    <div class="design-tokens">
+      <h3>设计规范 Design Tokens</h3>
+      <div class="token-row">
+        <div class="token"><div class="token-swatch" style="background:#0f1117"></div> Sidebar #0F1117</div>
+        <div class="token"><div class="token-swatch" style="background:#f4f5f7"></div> Background #F4F5F7</div>
+        <div class="token"><div class="token-swatch" style="background:#2563eb"></div> Primary #2563EB</div>
+        <div class="token"><div class="token-swatch" style="background:#10b981"></div> Success #10B981</div>
+        <div class="token"><div class="token-swatch" style="background:#f97316"></div> Warning #F97316</div>
+        <div class="token"><div class="token-swatch" style="background:#ef4444"></div> Error #EF4444</div>
+        <div class="token"><div class="token-swatch" style="background:#fff;border-color:#e5e7eb"></div> Card #FFFFFF</div>
+        <div class="token">Font: Inter · Width: 1440px · Radius: 6/10/14px</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

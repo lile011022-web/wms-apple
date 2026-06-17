@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>客户库存 — WMS Scan</title>
+  <link rel="stylesheet" href="css/design-system.css">
+</head>
+<body data-page="customer-inventory">
+<div id="app" class="app-layout">
+  <main class="main-content">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">客户库存</h1>
+        <p class="page-subtitle">按客户查看在库商品、SKU 汇总与 IMEI 明细</p>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l4-4m-4 4L8 11M4 17v2h16v-2"/></svg>
+          导出库存
+        </button>
+        <a href="outbound-packing.html" class="btn btn-primary">前往出库装箱</a>
+      </div>
+    </header>
+
+    <div class="page-body">
+      <div class="card mb-20">
+        <div class="card-body">
+          <div class="form-row" style="align-items:flex-end">
+            <div class="form-group" style="margin:0; flex:1">
+              <label class="form-label">选择客户 <span class="required">*</span></label>
+              <select class="form-select">
+                <option value="">— 请选择客户 —</option>
+                <option selected>TechFlow Inc. (CUST-001)</option>
+                <option>AppleReseller LLC (CUST-003)</option>
+                <option>MobileHub Corp (CUST-007)</option>
+                <option>Pacific Devices (CUST-012)</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0; flex:1">
+              <label class="form-label">搜索商品</label>
+              <div class="search-input-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                <input type="text" class="form-input" placeholder="UPC / 商品名称 / IMEI...">
+              </div>
+            </div>
+            <button class="btn btn-primary">查询</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-grid mb-24">
+        <div class="stat-card">
+          <div class="stat-label">在库 IMEI 总数</div>
+          <div class="stat-value" style="color: var(--blue-600)">4,892</div>
+          <div class="stat-change">TechFlow Inc.</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">SKU 数量</div>
+          <div class="stat-value">47</div>
+          <div class="stat-change">iPhone / iPad / Mac / 配件</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">包裹数量 (UPS)</div>
+          <div class="stat-value">1,256</div>
+          <div class="stat-change">未出库包裹</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">异常数量</div>
+          <div class="stat-value" style="color: var(--orange-600)">5</div>
+          <div class="stat-change"><a href="exception-pool.html" style="color:var(--orange-600)">查看异常 →</a></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">商品库存明细 — TechFlow Inc.</span>
+          <span class="text-muted" style="font-size:12px">点击行展开 IMEI 明细</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:32px"></th>
+                <th>商品</th>
+                <th>UPC</th>
+                <th>颜色</th>
+                <th>容量</th>
+                <th>在库数量</th>
+                <th>已出库</th>
+                <th>异常</th>
+                <th>最近入库</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="expand-row expanded">
+                <td><span class="expand-icon">▶</span></td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPhone 16 Pro</div><div class="product-meta">Apple · A3294 · Black Titanium</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253910234</td>
+                <td>Black Titanium</td>
+                <td>256GB</td>
+                <td class="num" style="font-size:16px; color:var(--blue-600)">842</td>
+                <td class="num">156</td>
+                <td><span class="badge badge-orange">1</span></td>
+                <td class="mono" style="font-size:11px">2026-06-16 14:32</td>
+              </tr>
+              <tr class="detail-row">
+                <td colspan="9">
+                  <div class="detail-content">
+                    <div style="font-size:12px; font-weight:600; margin-bottom:8px; color:var(--text-secondary)">IMEI 明细 (显示前 5 条，共 842 条)</div>
+                    <table class="data-table" style="background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm)">
+                      <thead>
+                        <tr>
+                          <th>IMEI</th>
+                          <th>UPS 单号</th>
+                          <th>入库时间</th>
+                          <th>状态</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td class="mono">356789012345678</td>
+                          <td class="mono">1Z999AA10123456784</td>
+                          <td class="mono">2026-06-16 14:32:08</td>
+                          <td><span class="badge badge-green">在库</span></td>
+                        </tr>
+                        <tr>
+                          <td class="mono">356789012345679</td>
+                          <td class="mono">1Z999AA10123456784</td>
+                          <td class="mono">2026-06-16 14:32:05</td>
+                          <td><span class="badge badge-green">在库</span></td>
+                        </tr>
+                        <tr>
+                          <td class="mono">356789012345680</td>
+                          <td class="mono">1Z999AA10123456785</td>
+                          <td class="mono">2026-06-16 13:15:22</td>
+                          <td><span class="badge badge-green">在库</span></td>
+                        </tr>
+                        <tr>
+                          <td class="mono">356789012345681</td>
+                          <td class="mono">1Z999AA10123456786</td>
+                          <td class="mono">2026-06-16 12:08:44</td>
+                          <td><span class="badge badge-green">在库</span></td>
+                        </tr>
+                        <tr>
+                          <td class="mono">356789012345682</td>
+                          <td class="mono">1Z999AA10123456786</td>
+                          <td class="mono">2026-06-16 12:08:41</td>
+                          <td><span class="badge badge-orange">异常</span></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <button class="btn btn-sm btn-ghost mt-16">加载更多 IMEI...</button>
+                  </div>
+                </td>
+              </tr>
+              <tr class="expand-row">
+                <td><span class="expand-icon">▶</span></td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPhone 16 Pro Max</div><div class="product-meta">Apple · A3296</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253910241</td>
+                <td>Desert Titanium</td>
+                <td>512GB</td>
+                <td class="num" style="font-size:16px; color:var(--blue-600)">623</td>
+                <td class="num">89</td>
+                <td><span class="badge badge-green">0</span></td>
+                <td class="mono" style="font-size:11px">2026-06-16 14:32</td>
+              </tr>
+              <tr class="expand-row">
+                <td><span class="expand-icon">▶</span></td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">📱</div>
+                    <div><div class="product-name">iPad Air M3</div><div class="product-meta">Apple · MC9X4LL/A</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253345678</td>
+                <td>Blue</td>
+                <td>256GB WiFi</td>
+                <td class="num" style="font-size:16px; color:var(--blue-600)">412</td>
+                <td class="num">67</td>
+                <td><span class="badge badge-green">0</span></td>
+                <td class="mono" style="font-size:11px">2026-06-16 12:08</td>
+              </tr>
+              <tr class="expand-row">
+                <td><span class="expand-icon">▶</span></td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">💻</div>
+                    <div><div class="product-name">MacBook Air M3</div><div class="product-meta">Apple · MC8Q4LL/A</div></div>
+                  </div>
+                </td>
+                <td class="mono">195949123456</td>
+                <td>Midnight</td>
+                <td>16GB/512GB</td>
+                <td class="num" style="font-size:16px; color:var(--blue-600)">298</td>
+                <td class="num">45</td>
+                <td><span class="badge badge-green">0</span></td>
+                <td class="mono" style="font-size:11px">2026-06-15 16:22</td>
+              </tr>
+              <tr class="expand-row">
+                <td><span class="expand-icon">▶</span></td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">🎧</div>
+                    <div><div class="product-name">AirPods Pro 2</div><div class="product-meta">Apple · MTJV3AM/A</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253234567</td>
+                <td>White</td>
+                <td>—</td>
+                <td class="num" style="font-size:16px; color:var(--blue-600)">1,156</td>
+                <td class="num">234</td>
+                <td><span class="badge badge-orange">2</span></td>
+                <td class="mono" style="font-size:11px">2026-06-16 11:45</td>
+              </tr>
+              <tr class="expand-row">
+                <td><span class="expand-icon">▶</span></td>
+                <td>
+                  <div class="product-cell">
+                    <div class="product-thumb">⌚</div>
+                    <div><div class="product-name">Apple Watch Series 10</div><div class="product-meta">Apple · MWWA3LL/A</div></div>
+                  </div>
+                </td>
+                <td class="mono">194253456789</td>
+                <td>Jet Black</td>
+                <td>46mm GPS</td>
+                <td class="num" style="font-size:16px; color:var(--blue-600)">187</td>
+                <td class="num">32</td>
+                <td><span class="badge badge-green">0</span></td>
+                <td class="mono" style="font-size:11px">2026-06-15 09:18</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <span>显示 6 / 47 SKU</span>
+          <div class="pagination-btns">
+            <button class="pagination-btn active">1</button>
+            <button class="pagination-btn">2</button>
+            <button class="pagination-btn">3</button>
+            <button class="pagination-btn">下一页</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/layout.js"></script>
+</body>
+</html>
