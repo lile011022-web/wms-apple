@@ -1,0 +1,992 @@
+# Backend Implementation Roadmap
+
+## 01 文档目的
+
+这份文档用于指导 WMS Scan 后端从当前 NestJS 骨架开始，按前端页面功能逐个实现，直到部署服务器上线。
+
+后续搭建目录、拆任务、维护代码时，优先按本文标题定位。每个阶段都必须保持小步交付，不一次性实现全部功能。
+
+## 02 当前项目基线
+
+当前项目已经具备：
+
+- `apps/web`: React + Vite + TypeScript 前端应用，已有 11 个页面入口。
+- `apps/api`: NestJS + TypeScript 后端应用，已有配置、健康检查、Swagger、全局异常过滤器、请求 ID 拦截器和业务模块骨架。
+- `packages/shared`: 前后端共享枚举、扫码校验、API 响应类型。
+- `docs/ui-prototype/original-html`: 原始高保真 HTML 原型，作为产品和 UI 参考，禁止删除。
+
+当前后端主要缺口：
+
+- Prisma schema 只有最小 `User` 模型，业务实体还未完整建模。
+- 业务模块只有 module/service 骨架，缺少 controller、repository、dto、tests。
+- 还未形成完整 API 合同、数据库模型文档、部署文档和上线检查清单。
+
+## 03 后端维护总目录标题
+
+后端代码固定维护在：
+
+```text
+apps/api/src/
+  common/                 # 通用错误、过滤器、拦截器、管道、守卫、装饰器
+  config/                 # 环境变量、应用、数据库、Redis、JWT 配置
+  database/               # Prisma 连接边界
+  health/                 # 健康检查
+  jobs/                   # 队列和后台任务
+  modules/
+    auth/                 # 登录、登出、令牌、当前用户
+    users/                # 用户账号
+    roles/                # 角色
+    permissions/          # 权限点
+    warehouses/           # 仓库资料
+    customers/            # 客户管理
+    products/             # UPC 商品库
+    inbound/              # 入库扫码和入库确认
+    inventory/            # 客户库存、IMEI 状态
+    outbound/             # 出库装箱、箱号、封箱
+    exceptions/           # 异常池和异常处理
+    reports/              # 明细下载和导出任务
+    audit-logs/           # 审计日志
+    settings/             # 系统设置、扫码规则、保留策略
+```
+
+共享规则固定维护在：
+
+```text
+packages/shared/src/
+  enums/                  # 前后端共享枚举
+  types/                  # 前后端共享类型
+  validators/             # UPS、UPC、IMEI、Serial 扫码校验
+  constants/              # 稳定业务常量
+```
+
+文档固定维护在：
+
+```text
+docs/api/                 # API 合同、请求响应、错误码
+docs/database/            # 数据库模型、状态流转、迁移说明
+docs/product/             # 产品规则和业务说明
+docs/architecture/        # 架构、模块边界、开发路线
+docs/changelog/           # 每次交付记录
+infra/                    # Docker、部署、服务器基础设施
+```
+
+## 04 标准业务模块标题
+
+每个业务模块按同一结构维护：
+
+```text
+apps/api/src/modules/<module-name>/
+  <module-name>.module.ts
+  <module-name>.controller.ts
+  <module-name>.service.ts
+  <module-name>.repository.ts
+  dto/
+  entities/
+  constants/
+  tests/
+```
+
+职责边界：
+
+- `controller`: 只处理 HTTP 路由、认证、权限、DTO 绑定。
+- `service`: 处理业务规则、状态流转、事务编排。
+- `repository`: 只处理数据库读写。
+- `dto`: 请求和响应结构。
+- `entities`: 模块内部领域对象。
+- `constants`: 模块内部常量。
+- `tests`: 关键业务测试。
+
+## 05 阶段一：后端基础工程加固
+
+对应页面：全部页面共用。
+
+后端目录：
+
+- `apps/api/src/common`
+- `apps/api/src/config`
+- `apps/api/src/database`
+- `apps/api/src/health`
+
+要完成的内容：
+
+- <strong><font color="red">🔴 已完成：完善统一响应和错误码规则。</font></strong>
+- <strong><font color="red">🔴 已完成：补齐认证失败、权限失败、业务失败、参数失败、系统失败的错误格式。</font></strong>
+- <strong><font color="red">🔴 已完成：确认 Swagger 分组、接口 tag 和全局 Bearer Auth。</font></strong>
+- <strong><font color="red">🔴 已完成：统一分页、排序、搜索参数 DTO。</font></strong>
+- <strong><font color="red">🔴 已完成：接入 Prisma Client 生成脚本。</font></strong>
+- <strong><font color="red">🔴 已完成：明确本地 PostgreSQL、Redis 启动方式。</font></strong>
+
+文档同步：
+
+- <strong><font color="red">🔴 已完成：`docs/api/01-rest-conventions.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/api/02-error-codes.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/database/01-database-overview.md`。</font></strong>
+
+测试重点：
+
+- <strong><font color="red">🔴 已完成：`GET /api/v1/health`。</font></strong>
+- <strong><font color="red">🔴 已完成：参数校验失败格式。</font></strong>
+- <strong><font color="red">🔴 已完成：业务异常格式。</font></strong>
+- <strong><font color="red">🔴 已完成：requestId 是否贯穿错误响应。</font></strong>
+
+验收标准：
+
+- <strong><font color="red">🔴 已完成：API 可启动。</font></strong>
+- <strong><font color="red">🔴 已完成：Swagger 可打开。</font></strong>
+- <strong><font color="red">🔴 已完成：健康检查可用。</font></strong>
+- <strong><font color="red">🔴 已完成：错误响应结构稳定，前端可以统一处理。</font></strong>
+
+## 06 阶段二：数据库核心模型设计
+
+对应页面：全部页面共用。
+
+后端目录：
+
+- `apps/api/prisma/schema.prisma`
+- `apps/api/prisma/migrations`
+- `apps/api/prisma/seed.ts`
+
+核心模型标题：
+
+- `User`: 用户。
+- `Role`: 角色。
+- `Permission`: 权限点。
+- `Warehouse`: 仓库。
+- `Customer`: 客户。
+- `Product`: UPC 商品。
+- `InboundBatch`: 入库批次或入库确认单。
+- `InboundItem`: 入库明细，绑定 UPS、UPC、IMEI、Serial、客户。
+- `InventoryItem`: 库存单件，以 IMEI 或 Serial 为核心追踪对象。
+- `OutboundBox`: 出库箱。
+- `OutboundBoxItem`: 箱内明细。
+- `ExceptionRecord`: 异常记录。
+- `CustomerChangeLog`: 批量客户修改日志。
+- `ReportExport`: 报表导出历史。
+- `AuditLog`: 审计日志。
+- `SystemSetting`: 系统设置。
+
+关键状态标题：
+
+- `InventoryStatus`: `IN_STOCK`、`PACKED`、`OUTBOUND`、`EXCEPTION`、`VOIDED`。
+- `ExceptionStatus`: `OPEN`、`RESOLVED`、`IGNORED`、`INVALID`。
+- `OutboundBoxStatus`: `OPEN`、`SEALED`、`VOIDED`。
+- `ReportExportStatus`: `PENDING`、`PROCESSING`、`COMPLETED`、`FAILED`。
+
+文档同步：
+
+- `docs/database/02-entity-relationship.md`
+- `docs/database/03-inventory-state-machine.md`
+- `docs/database/04-audit-log-schema.md`
+
+测试重点：
+
+- Prisma schema 可 generate。
+- migration 可在空库执行。
+- seed 可创建开发账号、默认仓库、默认角色、测试客户和测试 UPC。
+
+验收标准：
+
+- 数据库可初始化。
+- 核心表结构支持全部前端页面。
+- 所有关键写操作有审计字段或审计日志关联能力。
+
+## 07 阶段三：认证、用户、角色、权限
+
+对应页面：
+
+- 系统设置：用户与权限。
+- Dashboard：最近操作日志需要当前操作员。
+
+后端目录：
+
+- `apps/api/src/modules/auth`
+- `apps/api/src/modules/users`
+- `apps/api/src/modules/roles`
+- `apps/api/src/modules/permissions`
+
+要完成的内容：
+
+- 登录、登出、刷新令牌。
+- 查询当前用户。
+- 用户列表、新增用户、编辑用户、停用用户。
+- 角色列表、角色授权。
+- 权限守卫和权限装饰器。
+- 登录登出写入审计日志。
+
+建议接口标题：
+
+- `POST /auth/login`
+- `POST /auth/logout`
+- `GET /auth/me`
+- `GET /users`
+- `POST /users`
+- `PATCH /users/:id`
+- `GET /roles`
+- `PATCH /roles/:id/permissions`
+
+文档同步：
+
+- `docs/api/03-auth.md`
+- `docs/api/04-users-roles-permissions.md`
+
+测试重点：
+
+- 密码不明文保存。
+- 停用用户不可登录。
+- 无权限用户不能访问关键写接口。
+- 登录和登出生成 audit log。
+
+验收标准：
+
+- 前端可基于 `/auth/me` 判断登录状态。
+- 系统设置页面可展示并维护用户和角色。
+
+## 08 阶段四：仓库与系统设置
+
+对应页面：
+
+- 系统设置：仓库信息、扫码规则、异常处理、通知设置、数据保留。
+
+后端目录：
+
+- `apps/api/src/modules/warehouses`
+- `apps/api/src/modules/settings`
+
+要完成的内容：
+
+- 查询和更新仓库资料。
+- 查询和更新扫码规则。
+- 查询和更新异常处理配置。
+- 查询和更新数据保留策略。
+- 设置变更写入审计日志。
+
+建议接口标题：
+
+- `GET /warehouses`
+- `POST /warehouses`
+- `PATCH /warehouses/:id`
+- `GET /settings`
+- `PATCH /settings`
+
+文档同步：
+
+- `docs/api/05-warehouses-settings.md`
+- `docs/product/02-system-settings-rules.md`
+
+测试重点：
+
+- 入库必须锁定客户开关。
+- 出库客户归属校验开关。
+- IMEI、UPS 重复检测开关。
+- 数据保留策略参数校验。
+
+验收标准：
+
+- 系统设置页面所有配置有后端来源。
+- 修改设置能审计并影响后续业务校验。
+
+## 09 阶段五：客户管理
+
+对应页面：
+
+- 客户管理。
+- 入库扫码客户选择。
+- 客户库存客户选择。
+- 出库装箱客户选择。
+- 批量修改客户新旧客户选择。
+- 明细下载客户筛选。
+
+后端目录：
+
+- `apps/api/src/modules/customers`
+
+要完成的内容：
+
+- 客户列表、搜索、分页。
+- 新增客户。
+- 编辑客户。
+- 启用、停用客户。
+- 客户统计：在库 IMEI、SKU 数、本月入库、本月出库。
+- 客户变更写入审计日志。
+
+建议接口标题：
+
+- `GET /customers`
+- `GET /customers/options`
+- `GET /customers/:id`
+- `POST /customers`
+- `PATCH /customers/:id`
+- `PATCH /customers/:id/status`
+- `GET /customers/:id/summary`
+
+文档同步：
+
+- `docs/api/06-customers.md`
+- `docs/product/03-customer-rules.md`
+
+测试重点：
+
+- 停用客户不可用于新入库。
+- 有库存客户不能被物理删除。
+- 客户编号唯一。
+- 客户统计准确。
+
+验收标准：
+
+- 客户管理页面可完成基本 CRUD。
+- 其他页面可复用客户下拉数据。
+
+## 10 阶段六：UPC 商品库
+
+对应页面：
+
+- UPC 商品库。
+- 入库扫码 UPC 识别。
+- 库存、出库、报表中的商品信息展示。
+
+后端目录：
+
+- `apps/api/src/modules/products`
+
+要完成的内容：
+
+- UPC 商品列表、搜索、分类筛选、分页。
+- 新增商品。
+- 编辑商品。
+- 启用、停用商品。
+- 批量导入商品。
+- 通过 UPC 查询商品。
+- 商品变更写入审计日志。
+
+建议接口标题：
+
+- `GET /products`
+- `GET /products/:id`
+- `GET /products/by-upc/:upc`
+- `POST /products`
+- `PATCH /products/:id`
+- `PATCH /products/:id/status`
+- `POST /products/import`
+
+文档同步：
+
+- `docs/api/07-products-upc-library.md`
+- `docs/product/04-upc-product-rules.md`
+
+测试重点：
+
+- UPC 唯一。
+- 停用 UPC 不可用于新入库。
+- 需要 IMEI 的商品必须提供 IMEI。
+- 不需要 IMEI 的商品允许使用 Serial 或数量型入库规则。
+
+验收标准：
+
+- UPC 商品库页面可维护商品。
+- 入库扫码能按 UPC 识别商品。
+
+## 11 阶段七：入库扫码
+
+对应页面：
+
+- 入库扫码。
+- 入库记录。
+- 异常池。
+- Dashboard。
+
+后端目录：
+
+- `apps/api/src/modules/inbound`
+- `apps/api/src/modules/inventory`
+- `apps/api/src/modules/exceptions`
+- `apps/api/src/modules/audit-logs`
+
+要完成的内容：
+
+- 锁定客户后创建入库草稿。
+- 扫描 UPS。
+- 扫描 UPC 并匹配商品。
+- 扫描 IMEI 或 Serial。
+- 本次入库预览。
+- 移除预览明细。
+- 清空本次草稿。
+- 确认入库。
+- 确认入库时写库存、入库记录、审计日志。
+- UPC 未匹配、IMEI 重复、UPS 重复等异常写入异常池。
+
+建议接口标题：
+
+- `POST /inbound/drafts`
+- `GET /inbound/drafts/:id`
+- `POST /inbound/drafts/:id/ups`
+- `POST /inbound/drafts/:id/items`
+- `DELETE /inbound/drafts/:id/items/:itemId`
+- `DELETE /inbound/drafts/:id/items`
+- `POST /inbound/drafts/:id/confirm`
+- `GET /inbound/records`
+- `GET /inbound/records/:id`
+
+核心业务规则：
+
+- 未锁定客户禁止扫描。
+- UPS、UPC、IMEI、Serial 必须绑定当前锁定客户。
+- UPC 必须匹配商品库；未匹配进入异常池。
+- IMEI 是单件库存核心追踪 ID。
+- 需要 IMEI 的商品必须校验 IMEI。
+- 确认入库必须在数据库事务中完成。
+
+文档同步：
+
+- `docs/api/08-inbound-scan.md`
+- `docs/product/05-inbound-rules.md`
+- `docs/database/05-inbound-inventory-transaction.md`
+
+测试重点：
+
+- 未锁定客户不能扫描。
+- UPC 未匹配生成异常。
+- IMEI 重复生成异常或阻断。
+- 确认入库事务失败时不能产生半成品库存。
+- 入库确认生成 audit log。
+
+验收标准：
+
+- 入库扫码页面可完成客户锁定、扫码、预览、确认入库。
+- 入库记录页面能查到确认后的明细。
+
+## 12 阶段八：入库记录
+
+对应页面：
+
+- 入库记录。
+- 批量修改客户。
+- 明细下载。
+
+后端目录：
+
+- `apps/api/src/modules/inbound`
+
+要完成的内容：
+
+- 按时间、客户、UPS、UPC、IMEI、状态筛选。
+- 分页和排序。
+- 查看详情。
+- 支持选择记录进入批量改客户。
+- 支持导出条件复用到报表模块。
+
+建议接口标题：
+
+- `GET /inbound/records`
+- `GET /inbound/records/:id`
+- `GET /inbound/records/:id/items`
+- `POST /inbound/records/export-preview`
+
+文档同步：
+
+- `docs/api/09-inbound-records.md`
+
+测试重点：
+
+- 筛选条件组合正确。
+- 不同权限只能看到允许的数据范围。
+- 已出库、异常、在库状态准确。
+
+验收标准：
+
+- 入库记录页面能完成多条件查询和详情查看。
+
+## 13 阶段九：客户库存
+
+对应页面：
+
+- 客户库存。
+- 出库装箱。
+- 明细下载。
+- Dashboard。
+
+后端目录：
+
+- `apps/api/src/modules/inventory`
+
+要完成的内容：
+
+- 按客户查询库存汇总。
+- 按商品汇总 SKU、在库数量、已出库数量、异常数量。
+- 展开 IMEI 明细。
+- 搜索 UPC、商品名、IMEI。
+- 导出库存数据。
+- 提供出库装箱可用库存查询。
+
+建议接口标题：
+
+- `GET /inventory/customer-summary`
+- `GET /inventory/products`
+- `GET /inventory/products/:productId/items`
+- `GET /inventory/items`
+- `GET /inventory/items/:id`
+
+文档同步：
+
+- `docs/api/10-inventory.md`
+- `docs/product/06-inventory-rules.md`
+
+测试重点：
+
+- 库存状态流转准确。
+- 只统计当前客户库存。
+- 异常库存不允许直接出库。
+- IMEI 明细分页准确。
+
+验收标准：
+
+- 客户库存页面可按客户查看 SKU 汇总和 IMEI 明细。
+- 出库装箱页面能复用可装箱库存。
+
+## 14 阶段十：出库装箱
+
+对应页面：
+
+- 出库装箱。
+- 客户库存。
+- Dashboard。
+- 明细下载。
+
+后端目录：
+
+- `apps/api/src/modules/outbound`
+- `apps/api/src/modules/inventory`
+- `apps/api/src/modules/audit-logs`
+
+要完成的内容：
+
+- 选择客户。
+- 创建箱号。
+- 查询当前客户可装箱库存。
+- 按 UPS、UPC、IMEI、商品名搜索可装箱明细。
+- 加入当前箱。
+- 从当前箱移除。
+- 清空当前箱。
+- 封箱确认。
+- 封箱后库存状态从 `IN_STOCK` 变为 `PACKED` 或 `OUTBOUND`。
+- 出库客户归属校验。
+
+建议接口标题：
+
+- `POST /outbound/boxes`
+- `GET /outbound/boxes/:id`
+- `GET /outbound/available-items`
+- `POST /outbound/boxes/:id/items`
+- `DELETE /outbound/boxes/:id/items/:itemId`
+- `DELETE /outbound/boxes/:id/items`
+- `POST /outbound/boxes/:id/seal`
+- `GET /outbound/boxes`
+
+核心业务规则：
+
+- 出库不能重新分配客户。
+- 只能装当前客户名下库存。
+- 非在库状态不能加入箱。
+- 封箱必须在数据库事务中完成。
+- 封箱必须写 audit log。
+
+文档同步：
+
+- `docs/api/11-outbound-packing.md`
+- `docs/product/07-outbound-rules.md`
+- `docs/database/06-outbound-transaction.md`
+
+测试重点：
+
+- IMEI 不属于当前客户时禁止装箱。
+- 重复加入同一箱要阻断。
+- 已出库或异常库存不能装箱。
+- 封箱事务失败不能改变部分库存状态。
+
+验收标准：
+
+- 出库装箱页面可创建箱号、加入明细、移除明细、封箱。
+
+## 15 阶段十一：异常池
+
+对应页面：
+
+- 异常池。
+- Dashboard。
+- 入库扫码。
+- 出库装箱。
+
+后端目录：
+
+- `apps/api/src/modules/exceptions`
+- `apps/api/src/modules/audit-logs`
+
+要完成的内容：
+
+- 异常列表、类型 tab、分页。
+- 异常详情。
+- 确认处理。
+- 忽略异常。
+- 标记无效。
+- 批量处理。
+- 批量忽略。
+- 异常处理写 audit log。
+
+异常类型标题：
+
+- `UPC_NOT_MATCHED`: UPC 未匹配。
+- `IMEI_DUPLICATED`: IMEI 重复。
+- `UPS_DUPLICATED`: UPS 重复。
+- `CUSTOMER_OWNERSHIP_MISMATCH`: 客户归属错误。
+- `IMEI_NOT_INBOUNDED`: IMEI 未入库。
+
+建议接口标题：
+
+- `GET /exceptions`
+- `GET /exceptions/summary`
+- `GET /exceptions/:id`
+- `POST /exceptions/:id/resolve`
+- `POST /exceptions/:id/ignore`
+- `POST /exceptions/:id/invalidate`
+- `POST /exceptions/batch-resolve`
+- `POST /exceptions/batch-ignore`
+
+文档同步：
+
+- `docs/api/12-exceptions.md`
+- `docs/product/08-exception-rules.md`
+
+测试重点：
+
+- 每类异常来源明确。
+- 处理说明必填规则。
+- 已处理异常不能重复处理。
+- 批量处理保留每条记录结果。
+
+验收标准：
+
+- 异常池页面可查询、查看详情、处理、忽略、标记无效。
+
+## 16 阶段十二：批量修改客户
+
+对应页面：
+
+- 批量修改客户。
+- 入库记录。
+- 客户库存。
+- Dashboard。
+
+后端目录：
+
+- `apps/api/src/modules/customers`
+- `apps/api/src/modules/inbound`
+- `apps/api/src/modules/inventory`
+- `apps/api/src/modules/audit-logs`
+
+建议内部子目录：
+
+```text
+apps/api/src/modules/customers/customer-change/
+```
+
+要完成的内容：
+
+- 按时间、当前客户、UPS、UPC、IMEI、商品名筛选可修改记录。
+- 选择记录。
+- 预览修改影响。
+- 提交新客户和修改原因。
+- 同步更新入库明细、库存明细和相关客户统计。
+- 生成 `CustomerChangeLog`。
+- 生成 audit log。
+
+建议接口标题：
+
+- `GET /customer-changes/candidates`
+- `POST /customer-changes/preview`
+- `POST /customer-changes/commit`
+- `GET /customer-changes/logs`
+
+核心业务规则：
+
+- 必须先 preview，再 commit。
+- 修改原因必填。
+- 已出库记录原则上禁止修改客户，除非后续产品规则明确允许。
+- 批量修改必须记录 before、after、operator、timestamp、reason、affected records。
+- 批量修改必须在事务中完成。
+
+文档同步：
+
+- `docs/api/13-batch-customer-change.md`
+- `docs/product/09-batch-customer-change-rules.md`
+
+测试重点：
+
+- preview 和 commit 记录集一致性。
+- 修改原因必填。
+- 已出库记录阻断。
+- 所有关联表客户归属一致更新。
+- 日志完整。
+
+验收标准：
+
+- 批量修改客户页面可筛选、预览、提交并查看修改日志。
+
+## 17 阶段十三：明细下载与报表导出
+
+对应页面：
+
+- 明细下载。
+- 入库记录导出。
+- 客户库存导出。
+- Dashboard 导出。
+
+后端目录：
+
+- `apps/api/src/modules/reports`
+- `apps/api/src/jobs`
+
+要完成的内容：
+
+- 报表类型选择。
+- 日期、客户、商品筛选。
+- 字段选择。
+- CSV 导出。
+- Excel 导出。
+- 导出预览统计。
+- 下载历史。
+- 重新下载。
+- 导出操作写 audit log。
+
+建议接口标题：
+
+- `POST /reports/preview`
+- `POST /reports/exports`
+- `GET /reports/exports`
+- `GET /reports/exports/:id`
+- `GET /reports/exports/:id/download`
+
+报表类型标题：
+
+- `INBOUND_DETAIL`: 入库明细。
+- `OUTBOUND_DETAIL`: 出库明细。
+- `INVENTORY_DETAIL`: 库存明细。
+- `EXCEPTION_DETAIL`: 异常明细。
+- `CUSTOMER_CHANGE_LOG`: 客户修改日志。
+- `AUDIT_LOG`: 操作日志。
+
+文档同步：
+
+- `docs/api/14-reports.md`
+- `docs/product/10-report-rules.md`
+
+测试重点：
+
+- 字段白名单，不能导出未授权字段。
+- 大报表走后台任务。
+- 下载链接权限校验。
+- 导出历史状态准确。
+
+验收标准：
+
+- 明细下载页面可预览统计、创建导出任务、查看历史、重新下载。
+
+## 18 阶段十四：Dashboard 和审计日志
+
+对应页面：
+
+- Dashboard。
+- 所有关键操作。
+
+后端目录：
+
+- `apps/api/src/modules/audit-logs`
+- `apps/api/src/modules/reports`
+- 各业务模块 service 内写审计。
+
+要完成的内容：
+
+- 今日入库数。
+- 今日出库装箱数。
+- 在库总量。
+- 待处理异常数。
+- 近 7 日入库/出库趋势。
+- 异常分布。
+- 今日入库 TOP 客户。
+- 最近操作日志。
+- 审计日志查询接口。
+
+建议接口标题：
+
+- `GET /dashboard/summary`
+- `GET /dashboard/trends`
+- `GET /dashboard/exception-distribution`
+- `GET /dashboard/top-inbound-customers`
+- `GET /audit-logs/recent`
+- `GET /audit-logs`
+
+实现位置建议：
+
+```text
+apps/api/src/modules/reports/dashboard/
+```
+
+文档同步：
+
+- `docs/api/15-dashboard-audit-logs.md`
+- `docs/product/11-dashboard-rules.md`
+
+测试重点：
+
+- 指标口径与产品文档一致。
+- 审计日志包含 actor、action、target、before、after、requestId、createdAt。
+- 用户只能查看授权范围内日志。
+
+验收标准：
+
+- Dashboard 所有指标来自真实 API。
+- 最近操作日志可追溯到具体业务操作。
+
+## 19 阶段十五：API 联调与前端接入顺序
+
+推荐联调顺序：
+
+1. `GET /health` 和统一错误格式。
+2. 登录、当前用户、权限。
+3. 客户 options。
+4. UPC 查询。
+5. 客户管理完整 CRUD。
+6. UPC 商品库完整 CRUD。
+7. 入库扫码草稿和确认。
+8. 入库记录查询。
+9. 客户库存查询。
+10. 出库装箱。
+11. 异常池。
+12. 批量修改客户。
+13. 明细下载。
+14. Dashboard。
+15. 系统设置全部保存。
+
+每个页面接入时必须同步：
+
+- 后端 controller、service、repository、dto、tests。
+- `docs/api/<topic>.md`。
+- 必要时更新 `docs/product/<topic>.md`。
+- 必要时更新 `docs/database/<topic>.md`。
+- `docs/changelog/YYYY-MM-DD.md`。
+
+## 20 阶段十六：测试体系
+
+测试目录标题：
+
+```text
+apps/api/src/modules/<module>/tests/
+```
+
+测试分层：
+
+- 单元测试：service 业务规则。
+- repository 测试：复杂查询和事务边界。
+- controller 测试：鉴权、DTO、响应格式。
+- e2e 测试：入库、出库、批量改客户等核心流程。
+
+必须覆盖的业务标题：
+
+- 扫码校验。
+- 入库客户锁定。
+- UPC 匹配。
+- IMEI 唯一性。
+- 库存状态流转。
+- 出库客户归属校验。
+- 封箱事务。
+- 异常处理。
+- 批量客户修改。
+- 权限检查。
+- 审计日志。
+
+## 21 阶段十七：部署服务器上线
+
+基础设施目录：
+
+```text
+infra/
+  docker/
+  deploy/
+  nginx/
+  scripts/
+```
+
+上线前要完成：
+
+- 生产环境 `.env` 模板，不提交真实 `.env`。
+- PostgreSQL 生产数据库。
+- Redis 生产实例。
+- Prisma migration 发布流程。
+- API Dockerfile。
+- Web Dockerfile 或静态产物部署。
+- Nginx 反向代理。
+- HTTPS 证书。
+- 日志目录和日志轮转。
+- 数据库备份策略。
+- 健康检查。
+- 回滚方案。
+
+建议部署标题：
+
+- `01 服务器基础环境`
+- `02 域名和 HTTPS`
+- `03 PostgreSQL 和 Redis`
+- `04 API 构建和启动`
+- `05 Web 构建和发布`
+- `06 Nginx 反向代理`
+- `07 Prisma Migration`
+- `08 Seed 最小生产数据`
+- `09 健康检查和烟雾测试`
+- `10 备份和回滚`
+
+上线验收：
+
+- `GET /api/v1/health` 正常。
+- Swagger 在受控环境可访问或生产关闭。
+- 前端可登录。
+- 客户、UPC、入库、库存、出库、异常、导出核心流程可跑通。
+- 审计日志有记录。
+- 生产日志不打印密码、token、API key。
+
+## 22 后续维护定位表
+
+| 要修改的功能          | 优先修改位置                                         |
+| --------------------- | ---------------------------------------------------- |
+| 登录、当前用户、token | `apps/api/src/modules/auth`                          |
+| 用户、角色、权限      | `apps/api/src/modules/users`, `roles`, `permissions` |
+| 仓库信息              | `apps/api/src/modules/warehouses`                    |
+| 系统设置、扫码规则    | `apps/api/src/modules/settings`                      |
+| 客户管理              | `apps/api/src/modules/customers`                     |
+| UPC 商品库            | `apps/api/src/modules/products`                      |
+| 入库扫码              | `apps/api/src/modules/inbound`                       |
+| 入库记录              | `apps/api/src/modules/inbound`                       |
+| 客户库存              | `apps/api/src/modules/inventory`                     |
+| 出库装箱              | `apps/api/src/modules/outbound`                      |
+| 异常池                | `apps/api/src/modules/exceptions`                    |
+| 批量修改客户          | `apps/api/src/modules/customers/customer-change`     |
+| 明细下载              | `apps/api/src/modules/reports`                       |
+| Dashboard             | `apps/api/src/modules/reports/dashboard`             |
+| 审计日志              | `apps/api/src/modules/audit-logs`                    |
+| 数据库模型            | `apps/api/prisma/schema.prisma`, `docs/database`     |
+| API 合同              | `docs/api`                                           |
+| 产品规则              | `docs/product`                                       |
+| 部署                  | `infra`                                              |
+
+## 23 推荐第一批开发标题
+
+第一批不要直接做入库扫码。推荐先完成以下小任务：
+
+1. `01 后端基础工程加固`
+2. `02 数据库核心模型设计`
+3. `03 客户管理 API`
+4. `04 UPC 商品库 API`
+5. `05 入库扫码草稿 API`
+
+原因：
+
+- 入库扫码依赖客户和 UPC。
+- 库存、出库、异常、报表都依赖入库数据。
+- 先做客户和 UPC，后续页面联调最稳。
