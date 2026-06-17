@@ -10,7 +10,11 @@
     "declaration": true,
     "sourceMap": true,
     "strictPropertyInitialization": false,
-    "types": ["node", "jest"]
+    "types": ["node", "jest"],
+    "paths": {
+      "@wms-scan/shared": ["../../packages/shared/dist/index.d.ts"],
+      "@wms-scan/shared/*": ["../../packages/shared/dist/*"]
+    }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
   "exclude": ["node_modules", "dist"]

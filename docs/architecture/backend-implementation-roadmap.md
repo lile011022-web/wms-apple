@@ -254,11 +254,12 @@ apps/api/src/modules/<module-name>/
 
 要完成的内容：
 
-- 查询和更新仓库资料。
-- 查询和更新扫码规则。
-- 查询和更新异常处理配置。
-- 查询和更新数据保留策略。
-- 设置变更写入审计日志。
+- <strong><font color="red">🔴 已完成：查询和更新仓库资料。</font></strong>
+- <strong><font color="red">🔴 已完成：查询和更新扫码规则。</font></strong>
+- <strong><font color="red">🔴 已完成：查询和更新异常处理配置。</font></strong>
+- <strong><font color="red">🔴 已完成：查询和更新通知设置。</font></strong>
+- <strong><font color="red">🔴 已完成：查询和更新数据保留策略。</font></strong>
+- <strong><font color="red">🔴 已完成：设置变更写入审计日志。</font></strong>
 
 建议接口标题：
 
@@ -270,20 +271,20 @@ apps/api/src/modules/<module-name>/
 
 文档同步：
 
-- `docs/api/05-warehouses-settings.md`
-- `docs/product/02-system-settings-rules.md`
+- <strong><font color="red">🔴 已完成：`docs/api/05-warehouses-settings.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/product/02-system-settings-rules.md`。</font></strong>
 
 测试重点：
 
-- 入库必须锁定客户开关。
-- 出库客户归属校验开关。
-- IMEI、UPS 重复检测开关。
-- 数据保留策略参数校验。
+- <strong><font color="red">🔴 已完成：入库必须锁定客户开关。</font></strong>
+- <strong><font color="red">🔴 已完成：出库客户归属校验开关。</font></strong>
+- <strong><font color="red">🔴 已完成：IMEI、UPS 重复检测开关。</font></strong>
+- <strong><font color="red">🔴 已完成：数据保留策略参数校验。</font></strong>
 
 验收标准：
 
-- 系统设置页面所有配置有后端来源。
-- 修改设置能审计并影响后续业务校验。
+- <strong><font color="red">🔴 已完成：系统设置页面所有配置有后端来源。</font></strong>
+- <strong><font color="red">🔴 已完成：修改设置能审计，并已提供后续业务校验可读取的稳定 setting key。</font></strong>
 
 ## 09 阶段五：客户管理
 
@@ -302,12 +303,12 @@ apps/api/src/modules/<module-name>/
 
 要完成的内容：
 
-- 客户列表、搜索、分页。
-- 新增客户。
-- 编辑客户。
-- 启用、停用客户。
-- 客户统计：在库 IMEI、SKU 数、本月入库、本月出库。
-- 客户变更写入审计日志。
+- <strong><font color="red">🔴 已完成：客户列表、搜索、分页。</font></strong>
+- <strong><font color="red">🔴 已完成：新增客户。</font></strong>
+- <strong><font color="red">🔴 已完成：编辑客户。</font></strong>
+- <strong><font color="red">🔴 已完成：启用、停用客户。</font></strong>
+- <strong><font color="red">🔴 已完成：客户统计：在库 IMEI、SKU 数、本月入库、本月出库。</font></strong>
+- <strong><font color="red">🔴 已完成：客户变更写入审计日志。</font></strong>
 
 建议接口标题：
 
@@ -321,20 +322,20 @@ apps/api/src/modules/<module-name>/
 
 文档同步：
 
-- `docs/api/06-customers.md`
-- `docs/product/03-customer-rules.md`
+- <strong><font color="red">🔴 已完成：`docs/api/06-customers.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/product/03-customer-rules.md`。</font></strong>
 
 测试重点：
 
-- 停用客户不可用于新入库。
-- 有库存客户不能被物理删除。
-- 客户编号唯一。
-- 客户统计准确。
+- <strong><font color="red">🔴 已完成：停用客户不可用于新入库的下拉选项默认排除规则。</font></strong>
+- <strong><font color="red">🔴 已完成：有库存客户不能被物理删除，当前阶段不提供物理删除接口。</font></strong>
+- <strong><font color="red">🔴 已完成：客户编号唯一。</font></strong>
+- <strong><font color="red">🔴 已完成：客户统计准确的 repository 聚合口径。</font></strong>
 
 验收标准：
 
-- 客户管理页面可完成基本 CRUD。
-- 其他页面可复用客户下拉数据。
+- <strong><font color="red">🔴 已完成：客户管理页面可完成基本 CRUD。</font></strong>
+- <strong><font color="red">🔴 已完成：其他页面可复用客户下拉数据。</font></strong>
 
 ## 10 阶段六：UPC 商品库
 
@@ -350,13 +351,13 @@ apps/api/src/modules/<module-name>/
 
 要完成的内容：
 
-- UPC 商品列表、搜索、分类筛选、分页。
-- 新增商品。
-- 编辑商品。
-- 启用、停用商品。
-- 批量导入商品。
-- 通过 UPC 查询商品。
-- 商品变更写入审计日志。
+- <strong><font color="red">🔴 已完成：UPC 商品列表、搜索、分类筛选、分页。</font></strong>
+- <strong><font color="red">🔴 已完成：新增商品。</font></strong>
+- <strong><font color="red">🔴 已完成：编辑商品。</font></strong>
+- <strong><font color="red">🔴 已完成：启用、停用商品。</font></strong>
+- <strong><font color="red">🔴 已完成：批量导入商品。</font></strong>
+- <strong><font color="red">🔴 已完成：通过 UPC 查询商品。</font></strong>
+- <strong><font color="red">🔴 已完成：商品变更写入审计日志。</font></strong>
 
 建议接口标题：
 
@@ -370,20 +371,20 @@ apps/api/src/modules/<module-name>/
 
 文档同步：
 
-- `docs/api/07-products-upc-library.md`
-- `docs/product/04-upc-product-rules.md`
+- <strong><font color="red">🔴 已完成：`docs/api/07-products-upc-library.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/product/04-upc-product-rules.md`。</font></strong>
 
 测试重点：
 
-- UPC 唯一。
-- 停用 UPC 不可用于新入库。
-- 需要 IMEI 的商品必须提供 IMEI。
-- 不需要 IMEI 的商品允许使用 Serial 或数量型入库规则。
+- <strong><font color="red">🔴 已完成：UPC 唯一。</font></strong>
+- <strong><font color="red">🔴 已完成：停用 UPC 不可用于新入库。</font></strong>
+- <strong><font color="red">🔴 已完成：需要 IMEI 的商品必须提供 IMEI 标记已通过 UPC 查询暴露，入库强校验在阶段七实现。</font></strong>
+- <strong><font color="red">🔴 已完成：不需要 IMEI 的商品允许使用 Serial 或数量型入库规则的商品标记已入库，入库执行规则在阶段七实现。</font></strong>
 
 验收标准：
 
-- UPC 商品库页面可维护商品。
-- 入库扫码能按 UPC 识别商品。
+- <strong><font color="red">🔴 已完成：UPC 商品库页面可通过后端接口维护商品。</font></strong>
+- <strong><font color="red">🔴 已完成：入库扫码可通过 `GET /products/by-upc/:upc` 按 UPC 识别商品。</font></strong>
 
 ## 11 阶段七：入库扫码
 

@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import { allSettingDefinitions, settingDefinitions } from '../src/modules/settings/settings.keys';
 
 const prisma = new PrismaClient();
 
@@ -130,27 +131,28 @@ async function main() {
     },
   });
 
-  await prisma.systemSetting.upsert({
-    where: { key: 'scan.inbound.requiresLockedCustomer' },
-    update: { value: true },
-    create: {
-      key: 'scan.inbound.requiresLockedCustomer',
-      value: true,
-      valueType: 'BOOLEAN',
-      description: 'Inbound scanning must lock a customer before accepting UPS, UPC, IMEI, or Serial scans.',
-    },
-  });
-
-  await prisma.systemSetting.upsert({
-    where: { key: 'warehouse.defaultId' },
-    update: { value: warehouse.id },
-    create: {
-      key: 'warehouse.defaultId',
-      value: warehouse.id,
-      valueType: 'STRING',
-      description: 'Default development warehouse used by local test data.',
-    },
-  });
+  for (const definition of allSettingDefinitions) {
+    await prisma.systemSetting.upsert({
+      where: { key: definition.key },
+      update: {
+        value:
+          definition.key === settingDefinitions.warehouseDefaultId.key
+            ? warehouse.id
+            : definition.defaultValue,
+        valueType: definition.valueType,
+        description: definition.description,
+      },
+      create: {
+        key: definition.key,
+        value:
+          definition.key === settingDefinitions.warehouseDefaultId.key
+            ? warehouse.id
+            : definition.defaultValue,
+        valueType: definition.valueType,
+        description: definition.description,
+      },
+    });
+  }
 
   await prisma.auditLog.create({
     data: {
@@ -170,7 +172,6 @@ async function main() {
   });
 }
 
-main()
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+main().finally(async () => {
+  await prisma.$disconnect();
+});
