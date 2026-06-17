@@ -2,6 +2,7 @@ export * from './constants/business-rules';
 export * from './enums/exception-type';
 export * from './enums/inventory-status';
 export * from './enums/scan-code-type';
+export * from './enums/user-role';
 export * from './types/api-response';
 export * from './types/scan';
 export * from './validators/imei';

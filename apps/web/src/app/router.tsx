@@ -1,5 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { DashboardLayout } from '../layouts/dashboard-layout';
+import { AppLayout } from '../layouts/app-layout';
 import { BatchCustomerChangePage } from '../pages/batch-customer-change/page';
 import { CustomerInventoryPage } from '../pages/customer-inventory/page';
 import { CustomerManagementPage } from '../pages/customer-management/page';
@@ -16,7 +16,7 @@ export function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route element={<DashboardLayout />}>
+        <Route element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="inbound-scan" element={<InboundScanPage />} />
           <Route path="inbound-records" element={<InboundRecordsPage />} />

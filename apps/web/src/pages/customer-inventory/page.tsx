@@ -1,3 +1,10 @@
+import { PlaceholderPage } from '../placeholder-page';
+
 export function CustomerInventoryPage() {
-  return <section className="placeholder-page">Customer inventory page placeholder</section>;
+  return (
+    <PlaceholderPage
+      title="CustomerInventory"
+      description="按客户查看库存、SKU 汇总和 IMEI 明细的页面骨架。"
+    />
+  );
 }

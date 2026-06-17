@@ -4,10 +4,13 @@ export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_PORT: z.coerce.number().default(3000),
   WEB_ORIGIN: z.string().url().default('http://localhost:5173'),
-  DATABASE_URL: z.string().min(1),
+  DATABASE_URL: z
+    .string()
+    .min(1)
+    .default('postgresql://wms_scan:wms_scan_dev_password@localhost:5432/wms_scan'),
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
-  JWT_ACCESS_SECRET: z.string().min(16),
-  JWT_REFRESH_SECRET: z.string().min(16),
+  JWT_ACCESS_SECRET: z.string().min(16).default('dev-only-access-secret'),
+  JWT_REFRESH_SECRET: z.string().min(16).default('dev-only-refresh-secret'),
 });
 
 export type Env = z.infer<typeof envSchema>;

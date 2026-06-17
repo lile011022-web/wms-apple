@@ -5,7 +5,6 @@ import { databaseConfig } from './config/database.config';
 import { envSchema } from './config/env.schema';
 import { jwtConfig } from './config/jwt.config';
 import { redisConfig } from './config/redis.config';
-import { DatabaseModule } from './database/prisma.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
@@ -30,7 +29,6 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
       envFilePath: ['.env'],
       validate: (config) => envSchema.parse(config),
     }),
-    DatabaseModule,
     HealthModule,
     AuthModule,
     UsersModule,

@@ -1,9 +1,4 @@
-import {
-  CallHandler,
-  ExecutionContext,
-  Injectable,
-  NestInterceptor,
-} from '@nestjs/common';
+import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { map } from 'rxjs';
@@ -21,12 +16,7 @@ export class RequestIdInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       map((data: unknown) => {
-        if (
-          data &&
-          typeof data === 'object' &&
-          'success' in data &&
-          'requestId' in data
-        ) {
+        if (data && typeof data === 'object' && 'success' in data && 'requestId' in data) {
           return data;
         }
 

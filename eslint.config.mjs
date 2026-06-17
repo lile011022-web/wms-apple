@@ -21,6 +21,13 @@ export default [
       parserOptions: {
         sourceType: 'module',
       },
+      globals: {
+        describe: 'readonly',
+        document: 'readonly',
+        expect: 'readonly',
+        it: 'readonly',
+        process: 'readonly',
+      },
     },
     plugins: {
       '@typescript-eslint': tseslint,

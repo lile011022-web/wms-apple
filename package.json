@@ -6,6 +6,8 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "turbo dev",
+    "dev:web": "pnpm --filter @wms-scan/web dev",
+    "dev:api": "pnpm --filter @wms-scan/api dev",
     "build": "turbo build",
     "lint": "turbo lint",
     "test": "turbo test",
