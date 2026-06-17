@@ -12,7 +12,7 @@
     <header class="page-header">
       <div>
         <h1 class="page-title">入库扫码</h1>
-        <p class="page-subtitle">先选择并锁定客户，再进行 UPS / 商品条码扫描</p>
+        <p class="page-subtitle">先选择并锁定客户，再依次扫描 UPS / UPC / IMEI</p>
       </div>
       <div class="btn-group">
         <a href="batch-customer-change.html" class="btn btn-secondary">批量修改客户</a>
@@ -61,14 +61,14 @@
       </div>
 
       <!-- Step 2: Scan Zones -->
-      <div class="grid-2 mb-20">
+      <div class="grid-3 mb-20">
         <div class="card">
           <div class="card-header">
             <span class="card-title">② UPS 单号扫描</span>
             <span class="badge badge-blue">当前: 1Z999AA10123456784</span>
           </div>
           <div class="card-body">
-            <div class="scan-zone active">
+            <div class="scan-zone scan-zone-compact active">
               <div class="scan-zone-icon">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h4v4H4V4zm12 0h4v4h-4V4zM4 16h4v4H4v-4zm12 0h4v4h-4v-4z"/></svg>
               </div>
@@ -84,21 +84,42 @@
 
         <div class="card">
           <div class="card-header">
-            <span class="card-title">③ 商品条码扫描 (UPC / IMEI)</span>
-            <span class="badge badge-green">就绪</span>
+            <span class="card-title">③ UPC 商品条码扫描</span>
+            <span class="badge badge-green">已识别</span>
           </div>
           <div class="card-body">
-            <div class="scan-zone active">
+            <div class="scan-zone scan-zone-compact active">
               <div class="scan-zone-icon">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h12"/></svg>
               </div>
-              <h3>扫描 UPC 或 IMEI</h3>
-              <p>先扫 UPC 识别商品，再扫 IMEI 绑定序列号</p>
-              <input type="text" class="form-input form-input-lg" placeholder="扫描 UPC / IMEI...">
+              <h3>扫描 UPC</h3>
+              <p>用于识别商品型号，扫描后再录入对应 IMEI</p>
+              <input type="text" class="form-input form-input-lg" placeholder="扫描 UPC..." value="194253910234">
             </div>
             <div style="margin-top:12px; display:flex; gap:8px">
               <span class="badge badge-gray">UPC: 194253910234</span>
               <span class="badge badge-blue">→ iPhone 16 Pro 256GB</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">④ IMEI 序列号扫描</span>
+            <span class="badge badge-green">就绪</span>
+          </div>
+          <div class="card-body">
+            <div class="scan-zone scan-zone-compact active">
+              <div class="scan-zone-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M10 7h4M11 17h2"/></svg>
+              </div>
+              <h3>扫描 IMEI</h3>
+              <p>用于绑定序列号，同一 UPC 可连续扫描多个 IMEI</p>
+              <input type="text" class="form-input form-input-lg" placeholder="扫描 IMEI...">
+            </div>
+            <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+              <span class="badge badge-gray">待扫 IMEI</span>
+              <span class="badge badge-blue">当前商品: iPhone 16 Pro 256GB</span>
             </div>
           </div>
         </div>
@@ -107,7 +128,7 @@
       <!-- Preview Table -->
       <div class="card">
         <div class="card-header">
-          <span class="card-title">④ 本次入库预览</span>
+          <span class="card-title">⑤ 本次入库预览</span>
           <div class="btn-group">
             <span class="text-muted" style="font-size:12px">共 <strong class="num">8</strong> 条 · 绑定客户: TechFlow Inc.</span>
             <button class="btn btn-sm btn-ghost" style="color:var(--red-600)">清空全部</button>
