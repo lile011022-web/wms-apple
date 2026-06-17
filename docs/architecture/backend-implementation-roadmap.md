@@ -560,52 +560,52 @@ apps/api/src/modules/<module-name>/
 
 要完成的内容：
 
-- 选择客户。
-- 创建箱号。
-- 查询当前客户可装箱库存。
-- 按 UPS、UPC、IMEI、商品名搜索可装箱明细。
-- 加入当前箱。
-- 从当前箱移除。
-- 清空当前箱。
-- 封箱确认。
-- 封箱后库存状态从 `IN_STOCK` 变为 `PACKED` 或 `OUTBOUND`。
-- 出库客户归属校验。
+- <strong><font color="red">🔴 已完成：选择客户。</font></strong>
+- <strong><font color="red">🔴 已完成：创建箱号。</font></strong>
+- <strong><font color="red">🔴 已完成：查询当前客户可装箱库存。</font></strong>
+- <strong><font color="red">🔴 已完成：按 UPS、UPC、IMEI、商品名搜索可装箱明细。</font></strong>
+- <strong><font color="red">🔴 已完成：加入当前箱。</font></strong>
+- <strong><font color="red">🔴 已完成：从当前箱移除。</font></strong>
+- <strong><font color="red">🔴 已完成：清空当前箱。</font></strong>
+- <strong><font color="red">🔴 已完成：封箱确认。</font></strong>
+- <strong><font color="red">🔴 已完成：封箱后库存状态从 `IN_STOCK` 变为 `PACKED`。</font></strong>
+- <strong><font color="red">🔴 已完成：出库客户归属校验。</font></strong>
 
 建议接口标题：
 
-- `POST /outbound/boxes`
-- `GET /outbound/boxes/:id`
-- `GET /outbound/available-items`
-- `POST /outbound/boxes/:id/items`
-- `DELETE /outbound/boxes/:id/items/:itemId`
-- `DELETE /outbound/boxes/:id/items`
-- `POST /outbound/boxes/:id/seal`
-- `GET /outbound/boxes`
+- <strong><font color="red">🔴 已完成：`POST /outbound/boxes`。</font></strong>
+- <strong><font color="red">🔴 已完成：`GET /outbound/boxes/:id`。</font></strong>
+- <strong><font color="red">🔴 已完成：`GET /outbound/available-items`。</font></strong>
+- <strong><font color="red">🔴 已完成：`POST /outbound/boxes/:id/items`。</font></strong>
+- <strong><font color="red">🔴 已完成：`DELETE /outbound/boxes/:id/items/:itemId`。</font></strong>
+- <strong><font color="red">🔴 已完成：`DELETE /outbound/boxes/:id/items`。</font></strong>
+- <strong><font color="red">🔴 已完成：`POST /outbound/boxes/:id/seal`。</font></strong>
+- <strong><font color="red">🔴 已完成：`GET /outbound/boxes`。</font></strong>
 
 核心业务规则：
 
-- 出库不能重新分配客户。
-- 只能装当前客户名下库存。
-- 非在库状态不能加入箱。
-- 封箱必须在数据库事务中完成。
-- 封箱必须写 audit log。
+- <strong><font color="red">🔴 已完成：出库不能重新分配客户。</font></strong>
+- <strong><font color="red">🔴 已完成：只能装当前客户名下库存。</font></strong>
+- <strong><font color="red">🔴 已完成：非在库状态不能加入箱。</font></strong>
+- <strong><font color="red">🔴 已完成：封箱必须在数据库事务中完成。</font></strong>
+- <strong><font color="red">🔴 已完成：封箱必须写 audit log。</font></strong>
 
 文档同步：
 
-- `docs/api/11-outbound-packing.md`
-- `docs/product/07-outbound-rules.md`
-- `docs/database/06-outbound-transaction.md`
+- <strong><font color="red">🔴 已完成：`docs/api/11-outbound-packing.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/product/07-outbound-rules.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/database/06-outbound-transaction.md`。</font></strong>
 
 测试重点：
 
-- IMEI 不属于当前客户时禁止装箱。
-- 重复加入同一箱要阻断。
-- 已出库或异常库存不能装箱。
-- 封箱事务失败不能改变部分库存状态。
+- <strong><font color="red">🔴 已完成：IMEI 不属于当前客户时禁止装箱。</font></strong>
+- <strong><font color="red">🔴 已完成：重复加入同一箱要阻断。</font></strong>
+- <strong><font color="red">🔴 已完成：已出库或异常库存不能装箱。</font></strong>
+- <strong><font color="red">🔴 已完成：封箱事务失败不能改变部分库存状态。</font></strong>
 
 验收标准：
 
-- 出库装箱页面可创建箱号、加入明细、移除明细、封箱。
+- <strong><font color="red">🔴 已完成：出库装箱页面可创建箱号、加入明细、移除明细、封箱。</font></strong>
 
 ## 15 阶段十一：异常池
 

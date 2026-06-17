@@ -1,0 +1,75 @@
+# Outbound Rules
+
+Outbound packing moves customer-owned inventory from warehouse stock into outbound boxes.
+
+## Customer Ownership
+
+- Outbound packing must select a customer before packing inventory.
+- Outbound packing must not reassign inventory to another customer.
+- Only inventory rows whose `customerId` matches the selected outbound box customer can be added to that box.
+- Customer ownership comes from inbound confirmation and remains unchanged during outbound packing.
+
+## Warehouse Ownership
+
+- Outbound boxes belong to one warehouse.
+- Only inventory rows from the same warehouse as the outbound box can be packed into that box.
+- A box number must be unique inside its warehouse.
+
+## Available Inventory
+
+Only `IN_STOCK` inventory can be selected for outbound packing.
+
+Rows with these statuses must not be selectable or packable:
+
+- `PACKED`
+- `OUTBOUND`
+- `EXCEPTION`
+- `VOIDED`
+
+Outbound search can match UPS tracking number, UPC, IMEI, Serial, SKU, and product name, but the backend still forces the selected customer and `IN_STOCK` status.
+
+## Box Lifecycle
+
+An outbound box starts as `OPEN`.
+
+Allowed operations for an open box:
+
+- Add one inventory row.
+- Remove one inventory row.
+- Clear all rows.
+- Seal the box.
+
+Sealed boxes are immutable in the current backend phase. Later shipping workflows can decide whether sealed boxes move from `PACKED` inventory to final `OUTBOUND` inventory.
+
+## Inventory Status Changes
+
+When an inventory row is added to an open box:
+
+- `inventory_items.status` changes from `IN_STOCK` to `PACKED`.
+- `inventory_items.packedAt` is set.
+
+When an inventory row is removed from an open box:
+
+- `inventory_items.status` changes from `PACKED` back to `IN_STOCK`.
+- `inventory_items.packedAt` is cleared.
+
+When a box is sealed:
+
+- The box status changes from `OPEN` to `SEALED`.
+- `sealedAt` is set.
+- The backend verifies all box inventory rows remain `PACKED`.
+- An `OUTBOUND_BOX_SEAL` audit log is written.
+
+## Audit Requirements
+
+Sealing a box is a critical audited operation.
+
+The audit log must preserve:
+
+- Action: `OUTBOUND_BOX_SEAL`.
+- Resource type: `outbound-box`.
+- Resource ID: outbound box ID.
+- Operator ID.
+- Before snapshot with box ID, box number, prior status, and inventory IDs.
+- After snapshot with sealed status, seal timestamp, and inventory IDs.
+- Metadata with item count, customer ID, and warehouse ID.

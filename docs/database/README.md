@@ -17,3 +17,4 @@ Current documents:
 - `03-inventory-state-machine.md`: allowed inventory status transitions and transaction rules.
 - `04-audit-log-schema.md`: audit log fields, audited operations, and writing rules.
 - `05-inbound-inventory-transaction.md`: phase-seven inbound draft to inventory transaction boundary.
+- `06-outbound-transaction.md`: phase-ten outbound add, remove, clear, and seal transaction boundaries.
