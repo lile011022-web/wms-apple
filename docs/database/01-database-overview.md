@@ -64,15 +64,15 @@ pnpm prisma:validate
 pnpm prisma:generate
 ```
 
-## Next Database Work
+## Core Database Model Status
 
-The next database phase should add the core business entities described in:
+Phase 2 has added the core business entities described in:
 
 ```text
 docs/architecture/backend-implementation-roadmap.md
 ```
 
-Required follow-up documents:
+Related database documents:
 
 - `docs/database/02-entity-relationship.md`
 - `docs/database/03-inventory-state-machine.md`

@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import { PermissionsRepository } from './permissions.repository';
 
 @Injectable()
 export class PermissionsService {
-  // Permission management workflows will be implemented here.
+  constructor(private readonly permissionsRepository: PermissionsRepository) {}
+
+  async list() {
+    return this.permissionsRepository.findMany();
+  }
 }

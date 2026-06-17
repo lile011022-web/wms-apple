@@ -7,12 +7,54 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum InboundBatchStatus {
+  DRAFT
+  CONFIRMED
+  VOIDED
+}
+
+enum InboundItemStatus {
+  PENDING
+  CONFIRMED
+  EXCEPTION
+  VOIDED
+}
+
 enum InventoryStatus {
   IN_STOCK
   PACKED
   OUTBOUND
   EXCEPTION
   VOIDED
+}
+
+enum OutboundBoxStatus {
+  OPEN
+  SEALED
+  VOIDED
+}
+
+enum ExceptionType {
+  UPC_NOT_FOUND
+  IMEI_DUPLICATED
+  UPS_DUPLICATED
+  CUSTOMER_MISMATCH
+  IMEI_NOT_IN_STOCK
 }
 
 enum ExceptionStatus {
@@ -22,10 +64,412 @@ enum ExceptionStatus {
   INVALID
 }
 
+enum ReportExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  INBOUND_CONFIRM
+  OUTBOUND_BOX_SEAL
+  EXCEPTION_HANDLE
+  CUSTOMER_BATCH_CHANGE
+  UPC_PRODUCT_CHANGE
+  CUSTOMER_CHANGE
+  USER_CHANGE
+  ROLE_CHANGE
+  PERMISSION_CHANGE
+  SYSTEM_SETTING_CHANGE
+  REPORT_EXPORT
+}
+
+enum SettingValueType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+}
+
 model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  name         String
+  passwordHash String
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  roles              UserRoleAssignment[]
+  inboundBatches     InboundBatch[]       @relation("InboundBatchOperator")
+  outboundBoxes      OutboundBox[]        @relation("OutboundBoxCreator")
+  customerChangeLogs CustomerChangeLog[]  @relation("CustomerChangeOperator")
+  reportExports      ReportExport[]       @relation("ReportExportRequester")
+  auditLogs          AuditLog[]           @relation("AuditLogOperator")
+
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       UserRoleAssignment[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRoleAssignment {
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_role_assignments")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model Warehouse {
   id        String   @id @default(cuid())
-  email     String   @unique
+  code      String   @unique
   name      String
+  address   String?
+  timezone  String   @default("America/Los_Angeles")
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  inboundBatches InboundBatch[]
+  inventoryItems InventoryItem[]
+  outboundBoxes  OutboundBox[]
+  exceptions     ExceptionRecord[]
+
+  @@map("warehouses")
+}
+
+model Customer {
+  id          String         @id @default(cuid())
+  code        String         @unique
+  name        String
+  contactName String?
+  contactInfo String?
+  status      CustomerStatus @default(ACTIVE)
+  notes       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  inboundBatches        InboundBatch[]
+  inboundItems          InboundItem[]
+  inventoryItems        InventoryItem[]
+  outboundBoxes         OutboundBox[]
+  exceptions            ExceptionRecord[]
+  customerChangeLogsOld CustomerChangeLog[] @relation("CustomerChangeOldCustomer")
+  customerChangeLogsNew CustomerChangeLog[] @relation("CustomerChangeNewCustomer")
+
+  @@map("customers")
+}
+
+model Product {
+  id           String        @id @default(cuid())
+  sku          String        @unique
+  brand        String        @default("Apple")
+  name         String
+  model        String?
+  category     String?
+  color        String?
+  capacity     String?
+  requiresImei Boolean       @default(true)
+  status       ProductStatus @default(ACTIVE)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  upcs           ProductUpc[]
+  inboundItems   InboundItem[]
+  inventoryItems InventoryItem[]
+  exceptions     ExceptionRecord[]
+
+  @@map("products")
+}
+
+model ProductUpc {
+  id        String        @id @default(cuid())
+  upc       String        @unique
+  productId String
+  status    ProductStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([productId])
+  @@map("product_upcs")
+}
+
+model InboundBatch {
+  id          String             @id @default(cuid())
+  batchNo     String             @unique
+  customerId  String
+  warehouseId String
+  operatorId  String
+  status      InboundBatchStatus @default(CONFIRMED)
+  confirmedAt DateTime?
+  notes       String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  warehouse      Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  operator       User            @relation("InboundBatchOperator", fields: [operatorId], references: [id], onDelete: Restrict)
+  inboundItems   InboundItem[]
+  inventoryItems InventoryItem[]
+
+  @@index([customerId, createdAt])
+  @@index([warehouseId, createdAt])
+  @@map("inbound_batches")
+}
+
+model InboundItem {
+  id              String            @id @default(cuid())
+  inboundBatchId  String
+  customerId      String
+  productId       String?
+  inventoryItemId String?           @unique
+  upsTrackingNo   String?
+  upc             String
+  imei            String?
+  serial          String?
+  status          InboundItemStatus @default(CONFIRMED)
+  scannedAt       DateTime          @default(now())
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  inboundBatch  InboundBatch      @relation(fields: [inboundBatchId], references: [id], onDelete: Restrict)
+  customer      Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  product       Product?          @relation(fields: [productId], references: [id], onDelete: Restrict)
+  inventoryItem InventoryItem?    @relation("InboundItemInventoryItem", fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  exceptions    ExceptionRecord[]
+
+  @@index([customerId, scannedAt])
+  @@index([upsTrackingNo])
+  @@index([upc])
+  @@index([imei])
+  @@index([serial])
+  @@map("inbound_items")
+}
+
+model InventoryItem {
+  id             String          @id @default(cuid())
+  customerId     String
+  warehouseId    String
+  productId      String
+  inboundBatchId String
+  imei           String?
+  serial         String?
+  upc            String
+  upsTrackingNo  String?
+  status         InventoryStatus @default(IN_STOCK)
+  receivedAt     DateTime        @default(now())
+  packedAt       DateTime?
+  outboundAt     DateTime?
+  voidedAt       DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  customer         Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  warehouse        Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  product          Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  inboundBatch     InboundBatch      @relation(fields: [inboundBatchId], references: [id], onDelete: Restrict)
+  inboundItem      InboundItem?      @relation("InboundItemInventoryItem")
+  outboundBoxItems OutboundBoxItem[]
+  exceptions       ExceptionRecord[]
+
+  @@unique([imei])
+  @@unique([serial])
+  @@index([customerId, status])
+  @@index([warehouseId, status])
+  @@index([productId, status])
+  @@index([upsTrackingNo])
+  @@map("inventory_items")
+}
+
+model OutboundBox {
+  id          String            @id @default(cuid())
+  boxNo       String
+  customerId  String
+  warehouseId String
+  createdById String
+  status      OutboundBoxStatus @default(OPEN)
+  sealedAt    DateTime?
+  notes       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  customer  Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  warehouse Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  createdBy User              @relation("OutboundBoxCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  items     OutboundBoxItem[]
+
+  @@unique([warehouseId, boxNo])
+  @@index([customerId, status])
+  @@map("outbound_boxes")
+}
+
+model OutboundBoxItem {
+  id              String   @id @default(cuid())
+  outboundBoxId   String
+  inventoryItemId String   @unique
+  packedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  outboundBox   OutboundBox   @relation(fields: [outboundBoxId], references: [id], onDelete: Restrict)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+
+  @@index([outboundBoxId])
+  @@map("outbound_box_items")
+}
+
+model ExceptionRecord {
+  id              String          @id @default(cuid())
+  type            ExceptionType
+  status          ExceptionStatus @default(OPEN)
+  customerId      String?
+  warehouseId     String?
+  productId       String?
+  inboundItemId   String?
+  inventoryItemId String?
+  rawValue        String
+  upsTrackingNo   String?
+  upc             String?
+  imei            String?
+  serial          String?
+  resolutionNote  String?
+  resolvedById    String?
+  resolvedAt      DateTime?
+  beforeSnapshot  Json?
+  afterSnapshot   Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  customer      Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  warehouse     Warehouse?     @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  product       Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  inboundItem   InboundItem?   @relation(fields: [inboundItemId], references: [id], onDelete: SetNull)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+
+  @@index([status, type])
+  @@index([customerId, status])
+  @@index([upc])
+  @@index([imei])
+  @@map("exception_records")
+}
+
+model CustomerChangeLog {
+  id              String   @id @default(cuid())
+  oldCustomerId   String
+  newCustomerId   String
+  operatorId      String
+  reason          String
+  affectedCount   Int
+  affectedItemIds Json
+  beforeSnapshot  Json?
+  afterSnapshot   Json?
+  createdAt       DateTime @default(now())
+
+  oldCustomer Customer @relation("CustomerChangeOldCustomer", fields: [oldCustomerId], references: [id], onDelete: Restrict)
+  newCustomer Customer @relation("CustomerChangeNewCustomer", fields: [newCustomerId], references: [id], onDelete: Restrict)
+  operator    User     @relation("CustomerChangeOperator", fields: [operatorId], references: [id], onDelete: Restrict)
+
+  @@index([oldCustomerId, createdAt])
+  @@index([newCustomerId, createdAt])
+  @@map("customer_change_logs")
+}
+
+model ReportExport {
+  id            String             @id @default(cuid())
+  reportType    String
+  status        ReportExportStatus @default(PENDING)
+  requestedById String
+  filters       Json
+  fileUrl       String?
+  errorMessage  String?
+  expiresAt     DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  requestedBy User @relation("ReportExportRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  @@index([requestedById, createdAt])
+  @@index([status, createdAt])
+  @@map("report_exports")
+}
+
+model AuditLog {
+  id             String      @id @default(cuid())
+  action         AuditAction
+  resourceType   String
+  resourceId     String?
+  operatorId     String?
+  requestId      String?
+  ipAddress      String?
+  userAgent      String?
+  beforeSnapshot Json?
+  afterSnapshot  Json?
+  metadata       Json?
+  createdAt      DateTime    @default(now())
+
+  operator User? @relation("AuditLogOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+
+  @@index([action, createdAt])
+  @@index([resourceType, resourceId])
+  @@index([operatorId, createdAt])
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  value       Json
+  valueType   SettingValueType @default(JSON)
+  description String?
+  updatedById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("system_settings")
 }

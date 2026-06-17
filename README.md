@@ -2,7 +2,7 @@
 
 美国仓库 Apple 产品扫码入库、库存管理、出库装箱与异常处理系统。
 
-本仓库当前处于企业级前后端分离 monorepo 骨架阶段。已有静态 UI 原型已保留在：
+本仓库当前处于企业级前后端分离 monorepo 后端基础开发阶段。已有静态 UI 原型已保留在：
 
 ```text
 docs/ui-prototype/original-html/
@@ -55,9 +55,9 @@ docs/ui-prototype/original-html/
 
 建议按以下顺序推进：
 
-1. 完成 monorepo 基础工程配置。
-2. 初始化 `packages/shared` 的类型、枚举和扫码校验规则。
-3. 初始化 `apps/api` 的 NestJS 基础框架、数据库模型和认证模块。
+1. 已完成 monorepo 基础工程配置。
+2. 已完成 `packages/shared` 的类型、枚举和扫码校验规则。
+3. 已完成 `apps/api` 的 NestJS 基础框架、数据库核心模型、认证、用户、角色和权限模块。
 4. 初始化 `apps/web` 的 React 基础框架、登录页和后台布局。
 5. 先实现 UPC 商品库和客户管理。
 6. 再实现入库扫码、库存查询和出库装箱主流程。

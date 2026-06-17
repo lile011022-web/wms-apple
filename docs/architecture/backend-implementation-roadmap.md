@@ -148,47 +148,47 @@ apps/api/src/modules/<module-name>/
 
 核心模型标题：
 
-- `User`: 用户。
-- `Role`: 角色。
-- `Permission`: 权限点。
-- `Warehouse`: 仓库。
-- `Customer`: 客户。
-- `Product`: UPC 商品。
-- `InboundBatch`: 入库批次或入库确认单。
-- `InboundItem`: 入库明细，绑定 UPS、UPC、IMEI、Serial、客户。
-- `InventoryItem`: 库存单件，以 IMEI 或 Serial 为核心追踪对象。
-- `OutboundBox`: 出库箱。
-- `OutboundBoxItem`: 箱内明细。
-- `ExceptionRecord`: 异常记录。
-- `CustomerChangeLog`: 批量客户修改日志。
-- `ReportExport`: 报表导出历史。
-- `AuditLog`: 审计日志。
-- `SystemSetting`: 系统设置。
+- <strong><font color="red">🔴 已完成：`User`: 用户。</font></strong>
+- <strong><font color="red">🔴 已完成：`Role`: 角色。</font></strong>
+- <strong><font color="red">🔴 已完成：`Permission`: 权限点。</font></strong>
+- <strong><font color="red">🔴 已完成：`Warehouse`: 仓库。</font></strong>
+- <strong><font color="red">🔴 已完成：`Customer`: 客户。</font></strong>
+- <strong><font color="red">🔴 已完成：`Product`: UPC 商品。</font></strong>
+- <strong><font color="red">🔴 已完成：`InboundBatch`: 入库批次或入库确认单。</font></strong>
+- <strong><font color="red">🔴 已完成：`InboundItem`: 入库明细，绑定 UPS、UPC、IMEI、Serial、客户。</font></strong>
+- <strong><font color="red">🔴 已完成：`InventoryItem`: 库存单件，以 IMEI 或 Serial 为核心追踪对象。</font></strong>
+- <strong><font color="red">🔴 已完成：`OutboundBox`: 出库箱。</font></strong>
+- <strong><font color="red">🔴 已完成：`OutboundBoxItem`: 箱内明细。</font></strong>
+- <strong><font color="red">🔴 已完成：`ExceptionRecord`: 异常记录。</font></strong>
+- <strong><font color="red">🔴 已完成：`CustomerChangeLog`: 批量客户修改日志。</font></strong>
+- <strong><font color="red">🔴 已完成：`ReportExport`: 报表导出历史。</font></strong>
+- <strong><font color="red">🔴 已完成：`AuditLog`: 审计日志。</font></strong>
+- <strong><font color="red">🔴 已完成：`SystemSetting`: 系统设置。</font></strong>
 
 关键状态标题：
 
-- `InventoryStatus`: `IN_STOCK`、`PACKED`、`OUTBOUND`、`EXCEPTION`、`VOIDED`。
-- `ExceptionStatus`: `OPEN`、`RESOLVED`、`IGNORED`、`INVALID`。
-- `OutboundBoxStatus`: `OPEN`、`SEALED`、`VOIDED`。
-- `ReportExportStatus`: `PENDING`、`PROCESSING`、`COMPLETED`、`FAILED`。
+- <strong><font color="red">🔴 已完成：`InventoryStatus`: `IN_STOCK`、`PACKED`、`OUTBOUND`、`EXCEPTION`、`VOIDED`。</font></strong>
+- <strong><font color="red">🔴 已完成：`ExceptionStatus`: `OPEN`、`RESOLVED`、`IGNORED`、`INVALID`。</font></strong>
+- <strong><font color="red">🔴 已完成：`OutboundBoxStatus`: `OPEN`、`SEALED`、`VOIDED`。</font></strong>
+- <strong><font color="red">🔴 已完成：`ReportExportStatus`: `PENDING`、`PROCESSING`、`COMPLETED`、`FAILED`。</font></strong>
 
 文档同步：
 
-- `docs/database/02-entity-relationship.md`
-- `docs/database/03-inventory-state-machine.md`
-- `docs/database/04-audit-log-schema.md`
+- <strong><font color="red">🔴 已完成：`docs/database/02-entity-relationship.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/database/03-inventory-state-machine.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/database/04-audit-log-schema.md`。</font></strong>
 
 测试重点：
 
-- Prisma schema 可 generate。
-- migration 可在空库执行。
-- seed 可创建开发账号、默认仓库、默认角色、测试客户和测试 UPC。
+- <strong><font color="red">🔴 已完成：Prisma schema 可 generate。</font></strong>
+- <strong><font color="red">🔴 已完成：已生成初始 migration SQL，待连接空库执行验证。</font></strong>
+- <strong><font color="red">🔴 已完成：seed 可创建开发账号、默认仓库、默认角色、测试客户和测试 UPC。</font></strong>
 
 验收标准：
 
-- 数据库可初始化。
-- 核心表结构支持全部前端页面。
-- 所有关键写操作有审计字段或审计日志关联能力。
+- <strong><font color="red">🔴 已完成：已具备数据库初始化 schema、migration SQL 和 seed，待本地 PostgreSQL 执行验证。</font></strong>
+- <strong><font color="red">🔴 已完成：核心表结构支持全部前端页面。</font></strong>
+- <strong><font color="red">🔴 已完成：所有关键写操作有审计字段或审计日志关联能力。</font></strong>
 
 ## 07 阶段三：认证、用户、角色、权限
 
@@ -206,12 +206,12 @@ apps/api/src/modules/<module-name>/
 
 要完成的内容：
 
-- 登录、登出、刷新令牌。
-- 查询当前用户。
-- 用户列表、新增用户、编辑用户、停用用户。
-- 角色列表、角色授权。
-- 权限守卫和权限装饰器。
-- 登录登出写入审计日志。
+- <strong><font color="red">🔴 已完成：登录、登出、刷新令牌。</font></strong>
+- <strong><font color="red">🔴 已完成：查询当前用户。</font></strong>
+- <strong><font color="red">🔴 已完成：用户列表、新增用户、编辑用户、停用用户。</font></strong>
+- <strong><font color="red">🔴 已完成：角色列表、角色授权。</font></strong>
+- <strong><font color="red">🔴 已完成：权限守卫和权限装饰器。</font></strong>
+- <strong><font color="red">🔴 已完成：登录登出写入审计日志。</font></strong>
 
 建议接口标题：
 
@@ -226,20 +226,20 @@ apps/api/src/modules/<module-name>/
 
 文档同步：
 
-- `docs/api/03-auth.md`
-- `docs/api/04-users-roles-permissions.md`
+- <strong><font color="red">🔴 已完成：`docs/api/03-auth.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/api/04-users-roles-permissions.md`。</font></strong>
 
 测试重点：
 
-- 密码不明文保存。
-- 停用用户不可登录。
-- 无权限用户不能访问关键写接口。
-- 登录和登出生成 audit log。
+- <strong><font color="red">🔴 已完成：密码不明文保存。</font></strong>
+- <strong><font color="red">🔴 已完成：停用用户不可登录。</font></strong>
+- <strong><font color="red">🔴 已完成：无权限用户不能访问关键写接口。</font></strong>
+- <strong><font color="red">🔴 已完成：登录和登出生成 audit log。</font></strong>
 
 验收标准：
 
-- 前端可基于 `/auth/me` 判断登录状态。
-- 系统设置页面可展示并维护用户和角色。
+- <strong><font color="red">🔴 已完成：前端可基于 `/auth/me` 判断登录状态。</font></strong>
+- <strong><font color="red">🔴 已完成：系统设置页面可展示并维护用户和角色。</font></strong>
 
 ## 08 阶段四：仓库与系统设置
 
