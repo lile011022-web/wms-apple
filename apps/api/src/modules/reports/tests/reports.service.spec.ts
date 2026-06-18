@@ -118,12 +118,20 @@ describe('ReportsService', () => {
       reportType: ReportType.INVENTORY_DETAIL,
       estimatedRowCount: 1,
       selectedFields: ['imei', 'serial'],
+      sampleRows: [{ imei: '356789012345678', serial: '' }],
       shouldRunInBackground: false,
       filters: { customerId: 'customer-1' },
     });
     expect(repository.countRows).toHaveBeenCalledWith(ReportType.INVENTORY_DETAIL, {
       customerId: 'customer-1',
     });
+    expect(repository.findRows).toHaveBeenCalledWith(
+      ReportType.INVENTORY_DETAIL,
+      {
+        customerId: 'customer-1',
+      },
+      10,
+    );
   });
 
   it('creates a completed CSV export and writes an audit log', async () => {

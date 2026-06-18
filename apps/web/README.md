@@ -1,23 +1,42 @@
 # apps/web
 
-Future React + Vite + TypeScript frontend application.
+React + Vite + TypeScript frontend for WMS Scan.
 
-Do not migrate the original HTML prototype here yet. The prototype remains in:
+## Responsibilities
 
-```text
-docs/ui-prototype/original-html/
+- Browser UI for warehouse operators and administrators.
+- Local login shell and token storage.
+- Dashboard, inbound scan, inbound records, customer inventory, outbound packing, exception pool, batch customer change, detail download, UPC product library, customer management, and system settings pages.
+- API access through the typed facade in `src/api`.
+
+## Local Commands
+
+Run from the repository root:
+
+```bash
+pnpm --filter @wms-scan/web dev
+pnpm --filter @wms-scan/web build
+pnpm --filter @wms-scan/web typecheck
+pnpm --filter @wms-scan/web lint
+pnpm --filter @wms-scan/web test
 ```
 
-Initial frontend work should start with routing, layout, authentication screens, API client setup, and shared UI foundations.
+Default local URL:
 
-## Maintenance Map
+```text
+http://localhost:5173
+```
 
-- `src/app`: router and app-level providers.
-- `src/api`: API client and query client.
-- `src/layouts`: route layouts.
-- `src/pages`: route-level pages.
-- `src/features`: business feature logic.
-- `src/components`: reusable UI and workflow components.
-- `src/styles`: global styles and design tokens.
+Set `VITE_API_BASE_URL` in `.env` when the API is not running at `http://localhost:3000/api/v1`.
 
-Do not put backend logic or database rules in this app. Shared business contracts belong in `packages/shared`.
+## Structure
+
+- `src/app`: router, React Query providers, and app-level setup.
+- `src/api`: HTTP client, auth helpers, workflow API facades, token store, and API client tests.
+- `src/layouts`: authenticated application shell and navigation.
+- `src/pages`: route-level workflow pages.
+- `src/components`: reusable UI components when shared components are introduced.
+- `src/features`: business feature modules when route logic becomes large enough to split.
+- `src/styles`: global design tokens and layout styles.
+
+Do not put backend rules or database logic in this app. Shared validation and contracts belong in `packages/shared`; product rules belong in `docs/product`.

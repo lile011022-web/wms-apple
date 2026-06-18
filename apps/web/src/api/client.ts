@@ -36,12 +36,29 @@ export async function request<T>(
     params?: Record<string, unknown>;
   },
 ) {
-  const response = await apiClient.request<ApiResponse<T>>({
-    method,
-    url,
-    data: options?.data,
-    params: options?.params,
-  });
+  const response = await apiClient
+    .request<ApiResponse<T>>({
+      method,
+      url,
+      data: options?.data,
+      params: options?.params,
+    })
+    .catch((error: unknown) => {
+      const apiFailure = axios.isAxiosError<ApiResponse<T>>(error)
+        ? error.response?.data
+        : undefined;
+
+      if (apiFailure?.success === false) {
+        throw new ApiClientError(
+          apiFailure.error.message,
+          apiFailure.error.code,
+          apiFailure.requestId,
+          apiFailure.error.details,
+        );
+      }
+
+      throw error;
+    });
 
   if (!response.data.success) {
     throw new ApiClientError(

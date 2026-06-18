@@ -114,6 +114,7 @@ function createService(
     findCustomerById: jest.fn().mockResolvedValue(customer),
     findWarehouseById: jest.fn().mockResolvedValue(warehouse),
     findBoxByNo: jest.fn().mockResolvedValue(null),
+    findLatestBoxByPrefix: jest.fn().mockResolvedValue(null),
     createBox: jest.fn().mockResolvedValue(emptyBox),
     findBoxById: jest.fn().mockResolvedValue(emptyBox),
     findBoxes: jest.fn().mockResolvedValue([1, [emptyBox]]),
@@ -174,6 +175,50 @@ describe('OutboundService', () => {
       warehouse: { id: warehouse.id },
     });
     expect(repository.findBoxByNo).toHaveBeenCalledWith(warehouse.id, 'BOX-001');
+  });
+
+  it('generates deterministic customer-linked box numbers when no box number is provided', async () => {
+    jest.useFakeTimers().setSystemTime(now);
+    try {
+      const generatedBox = {
+        ...emptyBox,
+        boxNo: 'BOX-CUST-001-20260617-006',
+      };
+      const { repository, service } = createService({
+        findLatestBoxByPrefix: jest.fn().mockResolvedValue({
+          ...emptyBox,
+          boxNo: 'BOX-CUST-001-20260617-005',
+        }),
+        createBox: jest.fn().mockResolvedValue(generatedBox),
+      });
+
+      await expect(
+        service.createBox(
+          {
+            customerId: customer.id,
+            warehouseId: warehouse.id,
+          },
+          user,
+        ),
+      ).resolves.toMatchObject({
+        boxNo: 'BOX-CUST-001-20260617-006',
+      });
+      expect(repository.findLatestBoxByPrefix).toHaveBeenCalledWith(
+        warehouse.id,
+        'BOX-CUST-001-20260617-',
+      );
+      expect(repository.findBoxByNo).toHaveBeenCalledWith(
+        warehouse.id,
+        'BOX-CUST-001-20260617-006',
+      );
+      expect(repository.createBox).toHaveBeenCalledWith(
+        expect.objectContaining({
+          boxNo: 'BOX-CUST-001-20260617-006',
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('delegates outbound availability to inventory with a forced customer and in-stock status', async () => {

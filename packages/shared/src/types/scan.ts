@@ -1,4 +1,4 @@
-import { ScanCodeType } from '../enums/scan-code-type';
+import { ScanCodeType } from '../enums/scan-code-type.js';
 
 export type ScanValidationResult =
   | {

@@ -28,7 +28,10 @@ export class CustomersRepository {
 
   findOptions(params: { search?: string; includeInactive?: boolean }) {
     return this.prisma.customer.findMany({
-      where: this.toWhere(params.search, params.includeInactive ? undefined : CustomerStatus.ACTIVE),
+      where: this.toWhere(
+        params.search,
+        params.includeInactive ? undefined : CustomerStatus.ACTIVE,
+      ),
       take: 50,
       orderBy: [{ status: 'asc' }, { code: 'asc' }],
       select: {

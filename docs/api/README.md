@@ -35,3 +35,10 @@ Current documents:
 - `14-reports.md`: report preview, CSV/Excel export creation, export history, re-download, and download behavior.
 - `15-dashboard-audit-logs.md`: dashboard summary, trends, exception distribution, top inbound customers, and audit-log query APIs.
 - `16-frontend-api-integration.md`: frontend API client behavior, integration order, token handling, and system settings page wiring.
+
+Testing commands:
+
+- API unit tests: `pnpm --filter @wms-scan/api test:unit`
+- API core workflow e2e tests: `pnpm --filter @wms-scan/api test:e2e`
+- Web API client tests: `pnpm --filter @wms-scan/web test`
+- Shared validator tests: `pnpm --filter @wms-scan/shared test`

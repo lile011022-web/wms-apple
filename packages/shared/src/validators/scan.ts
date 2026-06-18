@@ -1,9 +1,9 @@
-import { ScanCodeType } from '../enums/scan-code-type';
-import type { ScanValidationResult } from '../types/scan';
-import { isValidImei } from './imei';
-import { isValidSerial } from './serial';
-import { isValidUpc } from './upc';
-import { isValidUpsTracking } from './ups';
+import { ScanCodeType } from '../enums/scan-code-type.js';
+import type { ScanValidationResult } from '../types/scan.js';
+import { isValidImei } from './imei.js';
+import { isValidSerial } from './serial.js';
+import { isValidUpc } from './upc.js';
+import { isValidUpsTracking } from './ups.js';
 
 const SCAN_ORDER = [
   ScanCodeType.UPS,

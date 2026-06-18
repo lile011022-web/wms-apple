@@ -1,10 +1,191 @@
-import { PlaceholderPage } from '../placeholder-page';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Download, RefreshCw, Search } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { customersApi, inboundApi } from '../../api/workflow';
 
 export function InboundRecordsPage() {
-  return (
-    <PlaceholderPage
-      title="InboundRecords"
-      description="入库历史、筛选查询和记录导出入口将在这里呈现。"
-    />
+  const [customerId, setCustomerId] = useState('');
+  const [status, setStatus] = useState('');
+  const [search, setSearch] = useState('');
+  const [upc, setUpc] = useState('');
+  const [imei, setImei] = useState('');
+  const [preview, setPreview] = useState<InboundExportPreview | null>(null);
+
+  const customersQuery = useQuery({
+    queryKey: ['customer-options'],
+    queryFn: () => customersApi.options(),
+  });
+  const customers = (customersQuery.data as CustomerOption[] | undefined) ?? [];
+
+  useEffect(() => {
+    if (!customerId && customers[0]) setCustomerId(customers[0].id);
+  }, [customerId, customers]);
+
+  const params = useMemo(
+    () => ({
+      page: 1,
+      pageSize: 50,
+      customerId: customerId || undefined,
+      status: status || undefined,
+      search: search || undefined,
+      upc: upc || undefined,
+      imei: imei || undefined,
+      sortBy: 'scannedAt',
+      sortOrder: 'desc',
+    }),
+    [customerId, imei, search, status, upc],
   );
+
+  const recordsQuery = useQuery({
+    queryKey: ['inbound-records', params],
+    queryFn: () => inboundApi.records(params),
+    enabled: Boolean(customerId),
+  });
+  const records = recordsQuery.data as InboundRecordsResult | undefined;
+
+  const previewMutation = useMutation({
+    mutationFn: () => inboundApi.exportPreview(params),
+    onSuccess: (data) => setPreview(data as InboundExportPreview),
+  });
+
+  return (
+    <section className="page-frame">
+      <div className="page-heading">
+        <div>
+          <p>Inbound</p>
+          <h1>入库记录</h1>
+        </div>
+        <button type="button" className="btn secondary" onClick={() => recordsQuery.refetch()}>
+          <RefreshCw size={16} />
+          刷新
+        </button>
+      </div>
+
+      <section className="panel filter-grid">
+        <label>
+          <span>客户</span>
+          <select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+            {customers.map((customer) => (
+              <option key={customer.id} value={customer.id}>
+                {customer.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>状态</span>
+          <select value={status} onChange={(event) => setStatus(event.target.value)}>
+            <option value="">全部</option>
+            <option value="PENDING">待确认</option>
+            <option value="CONFIRMED">已确认</option>
+            <option value="EXCEPTION">异常</option>
+          </select>
+        </label>
+        <label>
+          <span>UPC</span>
+          <input value={upc} onChange={(event) => setUpc(event.target.value)} />
+        </label>
+        <label>
+          <span>IMEI</span>
+          <input value={imei} onChange={(event) => setImei(event.target.value)} />
+        </label>
+        <label>
+          <span>搜索</span>
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="UPS / 商品 / 序列号"
+          />
+        </label>
+        <button type="button" className="btn" onClick={() => recordsQuery.refetch()}>
+          <Search size={16} />
+          查询
+        </button>
+        <button
+          type="button"
+          className="btn secondary"
+          disabled={previewMutation.isPending}
+          onClick={() => previewMutation.mutate()}
+        >
+          <Download size={16} />
+          导出预览
+        </button>
+      </section>
+
+      {preview ? (
+        <div className="inline-success">
+          当前筛选预计导出 {preview.estimatedRowCount} 行，后端已返回可复用报表参数。
+        </div>
+      ) : null}
+
+      <section className="panel data-panel">
+        <div className="section-title">
+          <h2>入库明细</h2>
+          <span>共 {records?.total ?? 0} 条</span>
+        </div>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>批次</th>
+              <th>客户</th>
+              <th>UPC</th>
+              <th>IMEI/Serial</th>
+              <th>商品</th>
+              <th>UPS</th>
+              <th>状态</th>
+              <th>扫描时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            {records?.items.map((item) => (
+              <tr key={item.id}>
+                <td className="mono">{item.inboundBatch?.batchNo ?? '-'}</td>
+                <td>{item.customer?.code ?? '-'}</td>
+                <td className="mono">{item.upc}</td>
+                <td className="mono">{item.imei ?? item.serial ?? '-'}</td>
+                <td>{item.product?.name ?? '-'}</td>
+                <td className="mono">{item.upsTrackingNo ?? '-'}</td>
+                <td>
+                  <span className={statusClass(item.status)}>{item.status}</span>
+                </td>
+                <td>{formatDate(item.scannedAt ?? item.createdAt)}</td>
+              </tr>
+            ))}
+            {!records || records.items.length === 0 ? (
+              <tr>
+                <td colSpan={8}>暂无入库记录</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </section>
+    </section>
+  );
+}
+
+type CustomerOption = { id: string; label: string };
+type InboundRecordsResult = { items: InboundRecord[]; total: number };
+type InboundRecord = {
+  id: string;
+  upc: string;
+  imei?: string | null;
+  serial?: string | null;
+  upsTrackingNo?: string | null;
+  status: string;
+  scannedAt?: string | null;
+  createdAt: string;
+  customer?: { code: string; name: string } | null;
+  product?: { name: string } | null;
+  inboundBatch?: { batchNo: string } | null;
+};
+type InboundExportPreview = { estimatedRowCount: number };
+
+function statusClass(status: string) {
+  if (status === 'CONFIRMED') return 'badge badge-success';
+  if (status === 'EXCEPTION') return 'badge badge-danger';
+  return 'badge badge-warning';
+}
+
+function formatDate(value?: string | null) {
+  return value ? new Date(value).toLocaleString() : '-';
 }

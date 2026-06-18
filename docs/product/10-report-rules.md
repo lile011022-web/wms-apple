@@ -9,6 +9,7 @@ Reports provide traceable downloads for operational review, customer reconciliat
 - Requested fields outside the whitelist must be rejected.
 - Filters may include customer, warehouse, product, date range, UPC, IMEI, Serial, UPS tracking number, status, and search text when applicable.
 - Preview must return estimated row count before export creation.
+- Preview should include a small sample of formatted rows so operators can confirm the upcoming download content before creating the file.
 - Small exports can complete synchronously.
 - Large exports must be routed to a background job before production use.
 - Export history is scoped to the requesting user.
@@ -33,6 +34,7 @@ The detail-download page should:
 2. Apply filters.
 3. Select fields from the allowed field list.
 4. Preview estimated row count.
-5. Create a CSV or Excel export.
-6. Show export history and status.
-7. Download completed exports or re-create an export from history.
+5. Review a small sample table of the rows and selected columns that will be exported.
+6. Create a CSV or Excel export.
+7. Show export history and status.
+8. Download completed exports or re-create an export from history.

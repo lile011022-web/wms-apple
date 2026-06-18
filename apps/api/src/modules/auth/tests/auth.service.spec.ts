@@ -47,7 +47,10 @@ function createService(user = activeUser) {
     get: jest.fn().mockReturnValue('test-secret-at-least-sixteen'),
   };
   const jwtService = {
-    signAsync: jest.fn().mockResolvedValueOnce('access-token').mockResolvedValueOnce('refresh-token'),
+    signAsync: jest
+      .fn()
+      .mockResolvedValueOnce('access-token')
+      .mockResolvedValueOnce('refresh-token'),
     verifyAsync: jest.fn(),
   } as unknown as jest.Mocked<JwtService>;
 

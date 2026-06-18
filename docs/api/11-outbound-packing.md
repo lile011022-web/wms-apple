@@ -14,7 +14,6 @@ Request body:
 {
   "customerId": "customer-1",
   "warehouseId": "warehouse-1",
-  "boxNo": "BOX-20260617-001",
   "notes": "Packing lane A"
 }
 ```
@@ -25,8 +24,11 @@ Rules:
 - `warehouseId` is required.
 - Customer must be active.
 - Warehouse must be active.
-- `boxNo` is uppercased and must be unique inside the warehouse.
-- If `boxNo` is omitted, the backend generates one.
+- If `boxNo` is omitted, the backend generates a deterministic customer-linked box number: `BOX-{CUSTOMER_CODE}-{YYYYMMDD}-{SEQUENCE}`.
+- Example generated box number: `BOX-BB0001-20260618-001`.
+- The generated `SEQUENCE` increments from the latest box number with the same customer/date prefix inside the warehouse.
+- Generated box numbers do not use random suffixes.
+- A provided `boxNo` is uppercased and must still be unique inside the warehouse.
 
 ## GET /outbound/boxes
 

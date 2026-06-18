@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
 import { appConfig } from './config/app.config';
 import { databaseConfig } from './config/database.config';
 import { envSchema } from './config/env.schema';
@@ -29,6 +30,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
       envFilePath: ['.env'],
       validate: (config) => envSchema.parse(config),
     }),
+    JwtModule.register({ global: true }),
     HealthModule,
     AuthModule,
     UsersModule,

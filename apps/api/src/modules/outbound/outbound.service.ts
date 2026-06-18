@@ -45,7 +45,8 @@ export class OutboundService {
       throw new ConflictException('Inactive warehouse cannot be used for outbound packing.');
     }
 
-    const boxNo = this.normalizeBoxNo(dto.boxNo) ?? this.generateBoxNo();
+    const boxNo =
+      this.normalizeBoxNo(dto.boxNo) ?? (await this.generateBoxNo(customer.code, warehouse.id));
     const existing = await this.outboundRepository.findBoxByNo(warehouseId, boxNo);
     if (existing) {
       throw new ConflictException('Outbound box number already exists in this warehouse.');
@@ -275,13 +276,19 @@ export class OutboundService {
     return this.trimOptional(value)?.toUpperCase();
   }
 
-  private generateBoxNo() {
-    const timestamp = new Date()
-      .toISOString()
-      .replace(/[-:TZ.]/g, '')
-      .slice(0, 14);
-    const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
-    return `BOX-${timestamp}-${suffix}`;
+  private async generateBoxNo(customerCode: string, warehouseId: string) {
+    const dateKey = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const safeCustomerCode = customerCode
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    const prefix = `BOX-${safeCustomerCode}-${dateKey}-`;
+    const latestBox = await this.outboundRepository.findLatestBoxByPrefix(warehouseId, prefix);
+    const latestSequence = latestBox ? Number(latestBox.boxNo.slice(prefix.length)) : 0;
+    const nextSequence = Number.isFinite(latestSequence) ? latestSequence + 1 : 1;
+
+    return `${prefix}${nextSequence.toString().padStart(3, '0')}`;
   }
 
   private trimOptional(value?: string | null) {

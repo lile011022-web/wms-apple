@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ScanCodeType } from '../enums/scan-code-type';
-import { UserRole } from '../enums/user-role';
-import { isValidImei } from './imei';
-import { parseBarcode, validateScanCode } from './scan';
-import { isValidUpc } from './upc';
-import { isValidUpsTracking } from './ups';
+import { ScanCodeType } from '../enums/scan-code-type.js';
+import { UserRole } from '../enums/user-role.js';
+import { isValidImei } from './imei.js';
+import { parseBarcode, validateScanCode } from './scan.js';
+import { isValidUpc } from './upc.js';
+import { isValidUpsTracking } from './ups.js';
 
 describe('shared scan validators', () => {
   it('validates IMEI values', () => {

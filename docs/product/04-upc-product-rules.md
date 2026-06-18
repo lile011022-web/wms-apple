@@ -31,6 +31,8 @@ Inbound scanning depends on this library to identify product SKU, model, color, 
 - Import rows must obey the same SKU and UPC uniqueness rules as manual creation.
 - Duplicate SKU or UPC values within the import request are rejected.
 - Existing SKU or UPC conflicts are rejected before any product row is created.
+- The UPC product library page provides a CSV import template with `sku`, `name`, `brand`, `model`, `category`, `color`, `capacity`, `requiresImei`, and `upcs` columns.
+- Multiple UPC values in one import row are separated with semicolons.
 
 ## Delete Policy
 

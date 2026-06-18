@@ -23,6 +23,7 @@ export const productsApi = {
   list: (params?: QueryParams) => request<PaginatedResult<unknown>>('get', '/products', { params }),
   byUpc: (upc: string) => request<unknown>('get', `/products/by-upc/${upc}`),
   create: (data: Payload) => request<unknown>('post', '/products', { data }),
+  importProducts: (data: Payload) => request<unknown>('post', '/products/import', { data }),
   update: (id: string, data: Payload) => request<unknown>('patch', `/products/${id}`, { data }),
   updateStatus: (id: string, data: Payload) =>
     request<unknown>('patch', `/products/${id}/status`, { data }),
@@ -38,6 +39,8 @@ export const inboundApi = {
   confirmDraft: (id: string) => request<unknown>('post', `/inbound/drafts/${id}/confirm`),
   records: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/inbound/records', { params }),
+  exportPreview: (data: Payload) =>
+    request<unknown>('post', '/inbound/records/export-preview', { data }),
 };
 
 export const inventoryApi = {
@@ -68,6 +71,8 @@ export const exceptionsApi = {
     request<unknown>('post', `/exceptions/${id}/resolve`, { data }),
   ignore: (id: string, data: Payload) =>
     request<unknown>('post', `/exceptions/${id}/ignore`, { data }),
+  invalidate: (id: string, data: Payload) =>
+    request<unknown>('post', `/exceptions/${id}/invalidate`, { data }),
   batchResolve: (data: Payload) => request<unknown>('post', '/exceptions/batch-resolve', { data }),
   batchIgnore: (data: Payload) => request<unknown>('post', '/exceptions/batch-ignore', { data }),
 };
@@ -86,6 +91,7 @@ export const reportsApi = {
   createExport: (data: Payload) => request<unknown>('post', '/reports/exports', { data }),
   exports: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/reports/exports', { params }),
+  download: (id: string) => request<unknown>('get', `/reports/exports/${id}/download`),
 };
 
 export const dashboardApi = {

@@ -16,3 +16,4 @@ Current documents:
 - `backend-development-rules.md`: backend module boundaries and coding rules.
 - `backend-implementation-roadmap.md`: page-by-page backend implementation roadmap through deployment.
 - `delivery-documentation-protocol.md`: changelog and delivery documentation rules.
+- `git-branching.md`: branch model, promotion flow, and commit expectations.

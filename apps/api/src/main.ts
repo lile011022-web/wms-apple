@@ -14,8 +14,9 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');
   app.use(helmet());
+  const webOrigin = configService.get<string>('app.webOrigin', 'http://localhost:5173');
   app.enableCors({
-    origin: configService.get<string>('app.webOrigin', 'http://localhost:5173'),
+    origin: [webOrigin, 'http://127.0.0.1:5173'],
     credentials: true,
   });
   app.useGlobalPipes(

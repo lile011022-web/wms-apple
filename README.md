@@ -1,80 +1,121 @@
 # WMS Scan
 
-美国仓库 Apple 产品扫码入库、库存管理、出库装箱与异常处理系统。
+美国仓库 Apple 产品扫码入库、库存管理、出库装箱、异常处理、客户库存、批量客户变更、明细导出和审计追踪系统。
 
-本仓库当前处于企业级前后端分离 monorepo 后端基础开发阶段。已有静态 UI 原型已保留在：
+本仓库是企业级前后端分离 monorepo：
 
-```text
-docs/ui-prototype/original-html/
+- `apps/web`: React + Vite + TypeScript 前端。
+- `apps/api`: NestJS + Prisma + PostgreSQL 后端。
+- `packages/shared`: 前后端共享类型、枚举和扫码校验规则。
+- `docs`: 产品、架构、数据库、API、变更记录和运维文档。
+- `infra`: 基础设施说明。
+- `docs/ui-prototype/original-html`: 原始静态高保真原型，作为产品和 UI 参考保留。
+
+## 功能范围
+
+当前主流程已可本地跑通：
+
+- 登录、用户、角色、权限和审计日志。
+- 仓库和系统设置。
+- 客户管理。
+- UPC 商品库，含 CSV 模板下载和批量导入。
+- 入库扫码草稿、UPS/UPC/IMEI 明细追加和确认入库。
+- 入库记录查询。
+- 客户库存、SKU 汇总和 IMEI 明细。
+- 出库装箱、批量装箱、封箱和箱内明细查看。
+- 异常池处理。
+- 批量修改客户。
+- 明细下载和报表导出。
+- Dashboard 指标。
+
+## 本地快速启动
+
+要求：
+
+- Node.js `>=22`
+- pnpm `>=9`
+- Docker Desktop 或本机 PostgreSQL 16 / Redis
+
+```bash
+git clone https://github.com/lile011022-web/wms-apple.git
+cd wms-apple
+
+cp .env.example .env
+# 编辑 .env，至少设置 JWT_ACCESS_SECRET、JWT_REFRESH_SECRET、SEED_ADMIN_PASSWORD
+
+docker compose up -d postgres redis
+pnpm install
+
+pnpm --filter @wms-scan/api prisma:generate
+pnpm --filter @wms-scan/api prisma:migrate
+SEED_ADMIN_PASSWORD=<your-local-admin-password> pnpm --filter @wms-scan/api prisma:seed
+
+pnpm dev
 ```
 
-## 项目定位
+默认访问地址：
 
-WMS Scan 用于美国仓库 Apple 产品的扫码作业管理，重点解决：
+- Web: `http://localhost:5173`
+- API: `http://localhost:3000/api/v1`
+- Swagger: `http://localhost:3000/api/docs`
 
-- 入库前锁定客户，确保 UPS、UPC、IMEI、Serial 归属清晰。
-- 通过 UPC 匹配商品库。
-- 通过 IMEI 追踪单件库存状态。
-- 按客户库存进行出库装箱，禁止出库时重新分配客户。
-- 记录批量客户修改日志和关键操作审计。
+种子管理员账号：
 
-## 目录结构
+- Email: `admin@wms-scan.local`
+- Password: 使用你执行 seed 时设置的 `SEED_ADMIN_PASSWORD`
 
-```text
-apps/
-  web/                  # React + Vite + TypeScript 前端应用
-  api/                  # NestJS + TypeScript 后端 API
-packages/
-  shared/               # 前后端共享类型、枚举、扫码校验规则
-docs/
-  product/              # 产品规则和业务说明
-  architecture/         # 架构设计文档
-  database/             # 数据库设计文档
-  api/                  # API 设计文档
-  ui-prototype/
-    original-html/      # 原始静态 HTML 高保真原型
-  changelog/            # 重要变更记录
-infra/
-  docker/               # Docker 相关配置
-scripts/                # 项目脚本
-.github/
-  workflows/            # CI/CD 工作流
+更详细的本地启动、排错和常用命令见 [docs/operations/local-development.md](docs/operations/local-development.md)。
+
+## 常用命令
+
+```bash
+pnpm dev
+pnpm build
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm format:check
 ```
 
-## 当前静态原型位置
+单独运行：
 
-原始 11 个 HTML 页面已移动到：
-
-```text
-docs/ui-prototype/original-html/
+```bash
+pnpm --filter @wms-scan/api dev
+pnpm --filter @wms-scan/web dev
+pnpm --filter @wms-scan/shared test
 ```
 
-这些页面是业务和视觉参考，不要删除，也不要在第一阶段直接重写。
+## 文档入口
 
-## 后续开发顺序
+- 产品规则: [docs/product](docs/product)
+- 架构规则和开发路线: [docs/architecture](docs/architecture)
+- 数据库设计: [docs/database](docs/database)
+- API 合同: [docs/api](docs/api)
+- 本地开发和运维: [docs/operations](docs/operations)
+- 变更记录: [docs/changelog](docs/changelog)
+- 原始 UI 原型: [docs/ui-prototype/original-html](docs/ui-prototype/original-html)
 
-建议按以下顺序推进：
+## 分支策略
 
-1. 已完成 monorepo 基础工程配置。
-2. 已完成 `packages/shared` 的类型、枚举和扫码校验规则。
-3. 已完成 `apps/api` 的 NestJS 基础框架、数据库核心模型、认证、用户、角色、权限、仓库、系统设置、客户管理、UPC 商品库、入库扫码、入库记录、客户库存、出库装箱、异常池、批量修改客户、报表导出、Dashboard 和审计日志查询模块。
-4. 已完成 `apps/web` 的 API client、认证 token 管理、联调顺序清单、业务 API 封装和系统设置真实读写页面。
-5. 下一步继续补齐自动化测试体系。
-6. 最后按页面逐步替换剩余占位页面为真实后端 API 驱动界面。
+企业级分支约定：
 
-## Git 分支建议
+- `main`: 稳定可拉取使用的主分支。
+- `develop`: 日常集成分支。
+- `codex/*`: Codex 自动化开发分支。
+- `feature/*`: 人工功能分支。
+- `fix/*`: 缺陷修复分支。
+- `release/*`: 发布候选分支。
 
-- `main`：稳定主分支。
-- `develop`：日常集成分支。
-- `codex/*`：Codex 自动化开发分支。
-- `feature/*`：人工开发功能分支。
-- `fix/*`：缺陷修复分支。
+详细规则见 [docs/architecture/git-branching.md](docs/architecture/git-branching.md)。
 
-每个功能建议小步提交，避免一次性改动多个业务模块。
+## 安全约束
 
-## 维护定位规则
+- 不提交 `.env`、`node_modules`、真实客户数据、真实密码、API Key 或生产凭据。
+- `.env.example` 只保留本地开发示例和占位值。
+- 生产部署必须显式设置数据库、Redis、JWT secret、CORS origin 和管理员密码。
+- 原始 HTML 原型不可删除，除非有明确产品决策。
 
-以后修改功能时，优先按以下位置定位：
+## 维护定位
 
 - 前端页面和交互：`apps/web/src/pages`、`apps/web/src/features`
 - 前端通用组件：`apps/web/src/components`
@@ -82,9 +123,8 @@ docs/ui-prototype/original-html/
 - 后端通用能力：`apps/api/src/common`
 - 后端配置：`apps/api/src/config`
 - 数据库访问：`apps/api/src/database`、`apps/api/prisma`
-- 前后端共享枚举、类型、扫码校验：`packages/shared/src`
+- 共享枚举、类型、扫码校验：`packages/shared/src`
 - 产品规则：`docs/product`
 - 架构和开发规则：`docs/architecture`
+- API 合同：`docs/api`
 - 每次交付说明：`docs/changelog/YYYY-MM-DD.md`
-
-同一天多次修改时，更新并覆盖当天 changelog 文件，不要新增多个同日文件。

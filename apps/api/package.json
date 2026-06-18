@@ -9,6 +9,8 @@
     "start": "node dist/main.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
+    "test:unit": "jest --config jest.config.cjs",
+    "test:e2e": "jest --config jest.e2e.config.cjs",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",

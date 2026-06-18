@@ -33,7 +33,7 @@ Permission: `reports.export`
 }
 ```
 
-The response returns estimated row count, selected fields, available field whitelist, normalized filters, and whether the export should run as a background job.
+The response returns estimated row count, selected fields, available field whitelist, normalized filters, up to 10 formatted `sampleRows`, and whether the export should run as a background job. The frontend uses `sampleRows` to show a partial table before creating the export.
 
 ## Create Export
 
@@ -100,3 +100,4 @@ The JSON response includes:
 - `expiresAt`
 
 The frontend should write `content` to a downloaded file using the returned file name and content type.
+In the browser UI, this means the generated file is saved by the browser to the user's configured download location, usually the system Downloads folder unless the browser asks for a location.

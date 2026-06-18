@@ -59,6 +59,17 @@ export class OutboundRepository {
     });
   }
 
+  findLatestBoxByPrefix(warehouseId: string, boxNoPrefix: string) {
+    return this.prisma.outboundBox.findFirst({
+      where: {
+        warehouseId,
+        boxNo: { startsWith: boxNoPrefix },
+      },
+      orderBy: { boxNo: 'desc' },
+      include: outboundBoxInclude,
+    });
+  }
+
   createBox(data: Prisma.OutboundBoxCreateInput) {
     return this.prisma.outboundBox.create({
       data,

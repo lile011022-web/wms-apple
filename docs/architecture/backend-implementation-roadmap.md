@@ -921,24 +921,28 @@ apps/api/src/modules/<module>/tests/
 
 测试分层：
 
-- 单元测试：service 业务规则。
+- <strong><font color="red">🔴 已完成：单元测试继续覆盖 service 业务规则，API 使用 `pnpm --filter @wms-scan/api test:unit` 运行。</font></strong>
+- <strong><font color="red">🔴 已完成：e2e 测试入口已补齐，API 使用 `pnpm --filter @wms-scan/api test:e2e` 运行核心流程规格。</font></strong>
+- <strong><font color="red">🔴 已完成：Web 使用 Vitest 覆盖前端 API client 的 token 注入、统一响应解包和错误对象。</font></strong>
 - repository 测试：复杂查询和事务边界。
 - controller 测试：鉴权、DTO、响应格式。
-- e2e 测试：入库、出库、批量改客户等核心流程。
 
 必须覆盖的业务标题：
 
-- 扫码校验。
-- 入库客户锁定。
-- UPC 匹配。
-- IMEI 唯一性。
-- 库存状态流转。
-- 出库客户归属校验。
-- 封箱事务。
-- 异常处理。
-- 批量客户修改。
-- 权限检查。
-- 审计日志。
+- <strong><font color="red">🔴 已完成：扫码校验已由 `packages/shared/src/validators/scan.test.ts` 覆盖。</font></strong>
+- <strong><font color="red">🔴 已完成：入库客户锁定、UPC 匹配、IMEI 唯一性、异常预览和入库确认事务边界已由 `InboundService` 测试覆盖。</font></strong>
+- <strong><font color="red">🔴 已完成：库存状态流转已由 `InventoryService`、`OutboundService` 和核心 e2e 规格覆盖。</font></strong>
+- <strong><font color="red">🔴 已完成：出库客户归属校验和封箱事务已由 `OutboundService` 测试与核心 e2e 规格覆盖。</font></strong>
+- <strong><font color="red">🔴 已完成：异常处理已由 `ExceptionsService` 测试覆盖。</font></strong>
+- <strong><font color="red">🔴 已完成：批量客户修改预览、stale previewToken、防止已出库流转记录改客户已由 `CustomerChangeService` 测试与核心 e2e 规格覆盖。</font></strong>
+- <strong><font color="red">🔴 已完成：权限检查已由 `PermissionsGuard` 测试和各 controller 权限装饰器覆盖。</font></strong>
+- <strong><font color="red">🔴 已完成：审计日志查询已由 `AuditLogsService` 测试覆盖。</font></strong>
+
+验收标准：
+
+- <strong><font color="red">🔴 已完成：API 已提供 unit/e2e 分层测试脚本，根目录 `pnpm test` 仍可聚合运行。</font></strong>
+- <strong><font color="red">🔴 已完成：前端 API client 已有自动化测试保护，防止 token、envelope 和错误处理回退。</font></strong>
+- <strong><font color="red">🔴 已完成：测试体系覆盖第十六阶段列出的业务标题，剩余 repository/controller 更细粒度测试可在后续改动时按模块补充。</font></strong>
 
 ## 21 阶段十七：部署服务器上线
 

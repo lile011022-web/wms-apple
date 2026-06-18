@@ -142,6 +142,8 @@ Business rules:
 
 Bulk imports product rows.
 
+The UPC product library page downloads a CSV template for operators, parses it in the browser, and submits the parsed rows to this JSON endpoint. Template columns are `sku`, `name`, `brand`, `model`, `category`, `color`, `capacity`, `requiresImei`, and `upcs`. Multiple UPC values in the `upcs` column are separated with semicolons.
+
 Request:
 
 ```json

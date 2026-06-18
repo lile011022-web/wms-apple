@@ -40,7 +40,10 @@ export class ReportsService {
   async preview(dto: PreviewReportDto) {
     const filters = this.normalizeFilters(dto.filters);
     const fields = this.resolveFields(dto.reportType, dto.fields);
-    const estimatedRowCount = await this.reportsRepository.countRows(dto.reportType, filters);
+    const [estimatedRowCount, sampleRows] = await Promise.all([
+      this.reportsRepository.countRows(dto.reportType, filters),
+      this.reportsRepository.findRows(dto.reportType, filters, 10),
+    ]);
 
     return {
       reportType: dto.reportType,
@@ -50,6 +53,7 @@ export class ReportsService {
         key: column.key,
         title: column.title,
       })),
+      sampleRows: this.toPreviewRows(dto.reportType, fields, sampleRows),
       shouldRunInBackground: estimatedRowCount > MAX_SYNC_EXPORT_ROWS,
       filters,
     };
@@ -274,6 +278,14 @@ export class ReportsService {
       }
       return column;
     });
+  }
+
+  private toPreviewRows(reportType: ReportType, fields: string[], rows: unknown[]) {
+    const columns = this.getSelectedColumns(reportType, fields);
+
+    return rows.map((row) =>
+      Object.fromEntries(columns.map((column) => [column.key, this.formatValue(column.read(row))])),
+    );
   }
 
   private getColumns(reportType: ReportType): ReportColumn[] {
