@@ -25,8 +25,12 @@ export default [
         describe: 'readonly',
         document: 'readonly',
         expect: 'readonly',
+        HTMLFormElement: 'readonly',
+        HTMLInputElement: 'readonly',
+        HTMLSelectElement: 'readonly',
         it: 'readonly',
         process: 'readonly',
+        window: 'readonly',
       },
     },
     plugins: {

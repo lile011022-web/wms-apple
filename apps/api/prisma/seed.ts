@@ -6,6 +6,7 @@ const prisma = new PrismaClient();
 
 const permissions = [
   ['dashboard.read', 'View dashboard'],
+  ['audit-logs.read', 'View audit logs'],
   ['customers.manage', 'Manage customers'],
   ['products.manage', 'Manage UPC product library'],
   ['inbound.manage', 'Manage inbound scanning'],

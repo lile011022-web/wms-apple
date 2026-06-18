@@ -816,24 +816,24 @@ apps/api/src/modules/customers/customer-change/
 
 要完成的内容：
 
-- 今日入库数。
-- 今日出库装箱数。
-- 在库总量。
-- 待处理异常数。
-- 近 7 日入库/出库趋势。
-- 异常分布。
-- 今日入库 TOP 客户。
-- 最近操作日志。
-- 审计日志查询接口。
+- <strong><font color="red">🔴 已完成：今日入库数，按已确认入库明细和当天 `scannedAt` 统计。</font></strong>
+- <strong><font color="red">🔴 已完成：今日出库装箱数，按已封箱出库箱和当天 `sealedAt` 统计。</font></strong>
+- <strong><font color="red">🔴 已完成：在库总量，按 `InventoryItem.status = IN_STOCK` 统计。</font></strong>
+- <strong><font color="red">🔴 已完成：待处理异常数，按 `ExceptionRecord.status = OPEN` 统计。</font></strong>
+- <strong><font color="red">🔴 已完成：近 7 日入库/出库趋势，返回今天和前 6 天的每日入库明细数、出库封箱数。</font></strong>
+- <strong><font color="red">🔴 已完成：异常分布，按待处理异常类型分组统计。</font></strong>
+- <strong><font color="red">🔴 已完成：今日入库 TOP 客户，返回当天已确认入库明细数最高的前 5 个客户。</font></strong>
+- <strong><font color="red">🔴 已完成：最近操作日志，返回最新 10 条审计日志。</font></strong>
+- <strong><font color="red">🔴 已完成：审计日志查询接口，支持分页、搜索、操作类型、资源、操作人、请求 ID 和时间范围筛选。</font></strong>
 
 建议接口标题：
 
-- `GET /dashboard/summary`
-- `GET /dashboard/trends`
-- `GET /dashboard/exception-distribution`
-- `GET /dashboard/top-inbound-customers`
-- `GET /audit-logs/recent`
-- `GET /audit-logs`
+- <strong><font color="red">🔴 已完成：`GET /dashboard/summary`。</font></strong>
+- <strong><font color="red">🔴 已完成：`GET /dashboard/trends`。</font></strong>
+- <strong><font color="red">🔴 已完成：`GET /dashboard/exception-distribution`。</font></strong>
+- <strong><font color="red">🔴 已完成：`GET /dashboard/top-inbound-customers`。</font></strong>
+- <strong><font color="red">🔴 已完成：`GET /audit-logs/recent`。</font></strong>
+- <strong><font color="red">🔴 已完成：`GET /audit-logs`。</font></strong>
 
 实现位置建议：
 
@@ -841,41 +841,48 @@ apps/api/src/modules/customers/customer-change/
 apps/api/src/modules/reports/dashboard/
 ```
 
+- <strong><font color="red">🔴 已完成：Dashboard 后端已实现于 `apps/api/src/modules/reports/dashboard/`，包含 controller、service、repository、DTO 和测试。</font></strong>
+- <strong><font color="red">🔴 已完成：审计日志查询已实现于 `apps/api/src/modules/audit-logs/`，包含 controller、DTO、service 查询逻辑和测试。</font></strong>
+- <strong><font color="red">🔴 已完成：`audit-logs.read` 已加入开发种子权限，Dashboard 继续使用 `dashboard.read`。</font></strong>
+
 文档同步：
 
-- `docs/api/15-dashboard-audit-logs.md`
-- `docs/product/11-dashboard-rules.md`
+- <strong><font color="red">🔴 已完成：`docs/api/15-dashboard-audit-logs.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/product/11-dashboard-rules.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/api/README.md` 已登记阶段十四 API 文档。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/changelog/2026-06-18.md` 已记录阶段十四交付内容、修改位置、模块用途和使用逻辑。</font></strong>
 
 测试重点：
 
-- 指标口径与产品文档一致。
-- 审计日志包含 actor、action、target、before、after、requestId、createdAt。
-- 用户只能查看授权范围内日志。
+- <strong><font color="red">🔴 已完成：新增 Dashboard service 单元测试，覆盖统计口径、7 日趋势补零、异常分布和 TOP 客户。</font></strong>
+- <strong><font color="red">🔴 已完成：新增 AuditLogs service 单元测试，覆盖 actor、action、target、before、after、requestId、createdAt 等响应字段。</font></strong>
+- <strong><font color="red">🔴 已完成：审计日志接口已通过 `audit-logs.read` 权限保护，Dashboard 接口已通过 `dashboard.read` 权限保护。</font></strong>
 
 验收标准：
 
-- Dashboard 所有指标来自真实 API。
-- 最近操作日志可追溯到具体业务操作。
+- <strong><font color="red">🔴 已完成：Dashboard 所有指标来自真实 Prisma 查询并通过真实 API controller 暴露。</font></strong>
+- <strong><font color="red">🔴 已完成：最近操作日志从 `AuditLog` 表读取，返回 operator、resource、snapshot、metadata 和 requestId，可追溯到具体业务操作。</font></strong>
+- <strong><font color="red">🔴 已完成：已通过 `tsc --noEmit`、ESLint、API 全量 Jest 测试和 Prisma schema validate。</font></strong>
 
 ## 19 阶段十五：API 联调与前端接入顺序
 
 推荐联调顺序：
 
-1. `GET /health` 和统一错误格式。
-2. 登录、当前用户、权限。
-3. 客户 options。
-4. UPC 查询。
-5. 客户管理完整 CRUD。
-6. UPC 商品库完整 CRUD。
-7. 入库扫码草稿和确认。
-8. 入库记录查询。
-9. 客户库存查询。
-10. 出库装箱。
-11. 异常池。
-12. 批量修改客户。
-13. 明细下载。
-14. Dashboard。
-15. 系统设置全部保存。
+- <strong><font color="red">🔴 已完成：`GET /health` 和统一错误格式已纳入前端 `request<T>()` 基础联调入口。</font></strong>
+- <strong><font color="red">🔴 已完成：登录、当前用户、权限已封装在 `apps/web/src/api/auth.ts`，token 由 `token-store.ts` 管理。</font></strong>
+- <strong><font color="red">🔴 已完成：客户 options 已登记在 `apiIntegrationSteps` 和 `customersApi.options`。</font></strong>
+- <strong><font color="red">🔴 已完成：UPC 查询已按真实后端路径 `GET /products/by-upc/:upc` 登记。</font></strong>
+- <strong><font color="red">🔴 已完成：客户管理 CRUD 已登记在 `customersApi`。</font></strong>
+- <strong><font color="red">🔴 已完成：UPC 商品库 CRUD 已登记在 `productsApi`。</font></strong>
+- <strong><font color="red">🔴 已完成：入库扫码草稿、UPS 扫描、明细追加和确认已登记在 `inboundApi`。</font></strong>
+- <strong><font color="red">🔴 已完成：入库记录查询已登记在 `inboundApi.records`。</font></strong>
+- <strong><font color="red">🔴 已完成：客户库存查询已登记在 `inventoryApi`。</font></strong>
+- <strong><font color="red">🔴 已完成：出库装箱查询、建箱、加项和封箱已登记在 `outboundApi`。</font></strong>
+- <strong><font color="red">🔴 已完成：异常池列表、汇总、处理和批量处理已登记在 `exceptionsApi`。</font></strong>
+- <strong><font color="red">🔴 已完成：批量修改客户已按真实后端路径 `/customer-changes` 登记在 `customerChangesApi`。</font></strong>
+- <strong><font color="red">🔴 已完成：明细下载的预览、导出和历史查询已登记在 `reportsApi`。</font></strong>
+- <strong><font color="red">🔴 已完成：Dashboard 和审计日志已登记在 `dashboardApi` 与 `auditLogsApi`。</font></strong>
+- <strong><font color="red">🔴 已完成：系统设置页面已接入 `GET /warehouses`、`GET /settings`、`PATCH /settings`，支持全部分组保存。</font></strong>
 
 每个页面接入时必须同步：
 
@@ -884,6 +891,25 @@ apps/api/src/modules/reports/dashboard/
 - 必要时更新 `docs/product/<topic>.md`。
 - 必要时更新 `docs/database/<topic>.md`。
 - `docs/changelog/YYYY-MM-DD.md`。
+
+实现位置：
+
+- <strong><font color="red">🔴 已完成：`apps/web/src/api/client.ts` 提供统一 API envelope 解包和错误对象。</font></strong>
+- <strong><font color="red">🔴 已完成：`apps/web/src/api/integration-plan.ts` 提供可复用的前端联调顺序清单。</font></strong>
+- <strong><font color="red">🔴 已完成：`apps/web/src/api/workflow.ts` 提供各业务页面后续接入的轻量 API facade。</font></strong>
+- <strong><font color="red">🔴 已完成：`apps/web/src/pages/system-settings/page.tsx` 已从占位页升级为真实系统设置读写页面。</font></strong>
+
+文档同步：
+
+- <strong><font color="red">🔴 已完成：`docs/api/16-frontend-api-integration.md`。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/api/README.md` 已登记阶段十五联调文档。</font></strong>
+- <strong><font color="red">🔴 已完成：`docs/changelog/2026-06-18.md` 已记录阶段十五交付内容、修改位置、模块用途和使用逻辑。</font></strong>
+
+验收标准：
+
+- <strong><font color="red">🔴 已完成：前端 API client 会自动附带 Bearer token，并对统一响应 envelope 解包。</font></strong>
+- <strong><font color="red">🔴 已完成：系统设置页可读取活跃仓库和分组设置，并通过 `PATCH /settings` 保存全部设置分组。</font></strong>
+- <strong><font color="red">🔴 已完成：已通过 Web TypeScript、ESLint 和构建校验。</font></strong>
 
 ## 20 阶段十六：测试体系
 

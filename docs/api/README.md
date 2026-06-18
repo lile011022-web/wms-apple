@@ -33,3 +33,5 @@ Current documents:
 - `12-exceptions.md`: exception list, summary, detail, resolve, ignore, invalidate, and batch handling behavior.
 - `13-batch-customer-change.md`: candidate lookup, preview token, commit transaction, and customer-change log behavior.
 - `14-reports.md`: report preview, CSV/Excel export creation, export history, re-download, and download behavior.
+- `15-dashboard-audit-logs.md`: dashboard summary, trends, exception distribution, top inbound customers, and audit-log query APIs.
+- `16-frontend-api-integration.md`: frontend API client behavior, integration order, token handling, and system settings page wiring.
