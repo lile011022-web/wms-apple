@@ -4,7 +4,7 @@
 
 Inbound scanning receives Apple products into customer-owned warehouse inventory.
 
-The customer must be locked before scan data becomes operational inventory. UPS, UPC, IMEI, and Serial values captured in the draft belong to that locked customer.
+The customer must be locked before scan data becomes operational inventory. Package tracking numbers, UPC, IMEI, and Serial values captured in the draft belong to that locked customer.
 
 ## Customer Lock
 
@@ -26,11 +26,12 @@ The customer must be locked before scan data becomes operational inventory. UPS,
 - A preview item cannot provide both IMEI and Serial.
 - Duplicate IMEI or Serial values are exception conditions and must not create normal inventory.
 
-## UPS
+## Package Tracking
 
-- UPS values are validated independently and can also be attached to each preview item.
-- Multiple items may share one UPS number within the same package.
-- A UPS value already confirmed in prior inbound records is treated as a duplicate package signal and can create `UPS_DUPLICATED` exceptions.
+- UPS, USPS, and FedEx tracking values are validated independently and can also be attached to each preview item.
+- The current API and database field remains `upsTrackingNo` for compatibility, but the business meaning is package tracking number.
+- Multiple items may share one package tracking number within the same package.
+- A package tracking value already confirmed in prior inbound records is treated as a duplicate package signal and can create `UPS_DUPLICATED` exceptions.
 
 ## Confirmation
 

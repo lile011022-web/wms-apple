@@ -3,3 +3,26 @@ export function isValidUpsTracking(value: string): boolean {
 }
 
 export const isValidUpsTrackingNumber = isValidUpsTracking;
+
+export function isValidUspsTracking(value: string): boolean {
+  const normalized = value.trim().replace(/\s+/g, '');
+  return /^(?:9[0-9]{19,21}|420[0-9]{27,31})$/.test(normalized);
+}
+
+export function isValidFedexTracking(value: string): boolean {
+  const normalized = value.trim().replace(/\s+/g, '');
+  return /^(?:[0-9]{12}|[0-9]{15}|[0-9]{20}|[0-9]{22})$/.test(normalized);
+}
+
+export function normalizePackageTracking(value: string): string {
+  return value.trim().replace(/\s+/g, '').toUpperCase();
+}
+
+export function isValidPackageTracking(value: string): boolean {
+  const normalized = normalizePackageTracking(value);
+  return (
+    isValidUpsTracking(normalized) ||
+    isValidUspsTracking(normalized) ||
+    isValidFedexTracking(normalized)
+  );
+}

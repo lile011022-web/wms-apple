@@ -252,9 +252,10 @@ export function InboundScanPage() {
 
       <section className="panel workflow-form">
         <label>
-          <span>UPS</span>
+          <span>物流单号</span>
           <input
             value={upsTrackingNo}
+            placeholder="UPS / USPS / FedEx"
             onChange={(event) => {
               setUpsTrackingNo(event.target.value);
               updateScanInputCache({ upsTrackingNo: event.target.value });
@@ -326,6 +327,7 @@ type InboundDraft = {
   };
   items: Array<{
     id: string;
+    upsTrackingNo: string | null;
     upc: string;
     imei: string | null;
     status: string;
@@ -349,6 +351,7 @@ function DraftPanel({ draft }: { draft: InboundDraft | null }) {
       <table className="data-table">
         <thead>
           <tr>
+            <th>物流单号</th>
             <th>UPC</th>
             <th>IMEI</th>
             <th>商品</th>
@@ -358,6 +361,7 @@ function DraftPanel({ draft }: { draft: InboundDraft | null }) {
         <tbody>
           {draft?.items.map((item) => (
             <tr key={item.id}>
+              <td className="mono">{item.upsTrackingNo ?? '-'}</td>
               <td>{item.upc}</td>
               <td>{item.imei}</td>
               <td>{item.product?.name ?? '-'}</td>
@@ -366,7 +370,7 @@ function DraftPanel({ draft }: { draft: InboundDraft | null }) {
           ))}
           {!draft || draft.items.length === 0 ? (
             <tr>
-              <td colSpan={4}>暂无明细</td>
+              <td colSpan={5}>暂无明细</td>
             </tr>
           ) : null}
         </tbody>

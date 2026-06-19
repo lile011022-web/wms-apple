@@ -12,7 +12,13 @@ import {
   Prisma,
   ProductStatus,
 } from '@prisma/client';
-import { isValidImei, isValidSerial, isValidUpc, isValidUpsTracking } from '@wms-scan/shared';
+import {
+  isValidImei,
+  isValidPackageTracking,
+  isValidSerial,
+  isValidUpc,
+  normalizePackageTracking,
+} from '@wms-scan/shared';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { SettingsService } from '../settings/settings.service';
 import { AddInboundItemDto } from './dto/add-inbound-item.dto';
@@ -346,9 +352,9 @@ export class InboundService {
   }
 
   private normalizeUps(value: string) {
-    const normalized = value.trim().toUpperCase();
-    if (!isValidUpsTracking(normalized)) {
-      throw new BadRequestException('Invalid UPS tracking number format.');
+    const normalized = normalizePackageTracking(value);
+    if (!isValidPackageTracking(normalized)) {
+      throw new BadRequestException('Invalid package tracking number format.');
     }
     return normalized;
   }

@@ -183,6 +183,46 @@ describe('InboundService', () => {
     );
   });
 
+  it('accepts UPS, USPS, and FedEx package tracking numbers for inbound scans', async () => {
+    const { repository, service } = createService({});
+
+    await expect(
+      service.scanUps('draft-1', { upsTrackingNo: ' 1z999aa10123456784 ' }),
+    ).resolves.toMatchObject({
+      upsTrackingNo: '1Z999AA10123456784',
+      valid: true,
+      duplicate: false,
+    });
+    await expect(
+      service.scanUps('draft-1', { upsTrackingNo: '9400 1118 9922 3857 0000 00' }),
+    ).resolves.toMatchObject({
+      upsTrackingNo: '9400111899223857000000',
+      valid: true,
+    });
+    await expect(
+      service.scanUps('draft-1', { upsTrackingNo: '9611020987654312345672' }),
+    ).resolves.toMatchObject({
+      upsTrackingNo: '9611020987654312345672',
+      valid: true,
+    });
+
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('1Z999AA10123456784');
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('9400111899223857000000');
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('9611020987654312345672');
+  });
+
+  it('rejects unsupported package tracking numbers before saving inbound items', async () => {
+    const { service } = createService({});
+
+    await expect(
+      service.addItem('draft-1', {
+        upsTrackingNo: 'not-a-tracking-number',
+        upc: '194253149189',
+        imei: '356789012345678',
+      }),
+    ).rejects.toThrow('Invalid package tracking number format.');
+  });
+
   it('creates an unmatched UPC exception item for preview', async () => {
     const exceptionItem = {
       ...pendingItem,

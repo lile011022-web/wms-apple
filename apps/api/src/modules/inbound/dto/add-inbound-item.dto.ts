@@ -8,10 +8,14 @@ export class AddInboundItemDto {
   @MaxLength(14)
   upc: string;
 
-  @ApiPropertyOptional({ example: '1Z999AA10123456784' })
+  @ApiPropertyOptional({
+    example: '9400111899223857000000',
+    description:
+      'UPS, USPS, or FedEx package tracking number. The legacy field name is kept for API compatibility.',
+  })
   @IsOptional()
   @IsString()
-  @MaxLength(32)
+  @MaxLength(40)
   upsTrackingNo?: string;
 
   @ApiPropertyOptional({ example: '356789012345678' })

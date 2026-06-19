@@ -4,7 +4,13 @@ import { UserRole } from '../enums/user-role.js';
 import { isValidImei } from './imei.js';
 import { parseBarcode, validateScanCode } from './scan.js';
 import { isValidUpc } from './upc.js';
-import { isValidUpsTracking } from './ups.js';
+import {
+  isValidFedexTracking,
+  isValidPackageTracking,
+  isValidUpsTracking,
+  isValidUspsTracking,
+  normalizePackageTracking,
+} from './ups.js';
 
 describe('shared scan validators', () => {
   it('validates IMEI values', () => {
@@ -20,6 +26,15 @@ describe('shared scan validators', () => {
   it('validates UPS tracking values', () => {
     expect(isValidUpsTracking('1Z999AA10123456784')).toBe(true);
     expect(isValidUpsTracking('9999AA10123456784')).toBe(false);
+  });
+
+  it('validates supported package tracking values for inbound package scans', () => {
+    expect(isValidPackageTracking('1Z999AA10123456784')).toBe(true);
+    expect(isValidUspsTracking('9400111899223857000000')).toBe(true);
+    expect(isValidFedexTracking('9611020987654312345672')).toBe(true);
+    expect(normalizePackageTracking(' 9400 1118 9922 3857 0000 00 ')).toBe(
+      '9400111899223857000000',
+    );
   });
 
   it('parses known barcode formats in a stable order', () => {

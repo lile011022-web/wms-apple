@@ -31,17 +31,17 @@ Rules:
 
 Returns the draft header, locked customer, warehouse, preview summary, and non-voided preview items.
 
-## Scan UPS
+## Scan Package Tracking Number
 
 `POST /api/v1/inbound/drafts/:id/ups`
 
 ```json
 {
-  "upsTrackingNo": "1Z999AA10123456784"
+  "upsTrackingNo": "9400111899223857000000"
 }
 ```
 
-Returns normalized UPS data and duplicate status. This endpoint validates and checks the tracking number before item scans; UPS values are still stored on each preview item.
+Returns normalized package tracking data and duplicate status. This endpoint accepts UPS, USPS, and FedEx tracking numbers, then validates and checks the tracking number before item scans. The request and response keep the legacy `upsTrackingNo` field name for API compatibility.
 
 ## Add Preview Item
 
@@ -49,7 +49,7 @@ Returns normalized UPS data and duplicate status. This endpoint validates and ch
 
 ```json
 {
-  "upsTrackingNo": "1Z999AA10123456784",
+  "upsTrackingNo": "9611020987654312345672",
   "upc": "194253149189",
   "imei": "356789012345678"
 }
@@ -78,7 +78,7 @@ Removal is logical. Preview rows move to `VOIDED` so history remains traceable d
 
 Confirmation runs inside one database transaction:
 
-- Rechecks duplicate IMEI, Serial, and UPS values.
+- Rechecks duplicate IMEI, Serial, and package tracking values.
 - Creates `inventory_items` for confirmable preview rows.
 - Links each confirmed inbound row to its inventory item.
 - Marks duplicate rows as `EXCEPTION`.
@@ -100,7 +100,7 @@ Query parameters:
 - `dateFrom`
 - `dateTo`
 
-Search covers UPS, UPC, IMEI, Serial, customer code/name, product SKU, and product name.
+Search covers package tracking number, UPC, IMEI, Serial, customer code/name, product SKU, and product name.
 
 ## Get Record
 
