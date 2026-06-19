@@ -85,6 +85,22 @@ pnpm --filter @wms-scan/web dev
 pnpm --filter @wms-scan/shared test
 ```
 
+## 当前测试服务器
+
+- SSH: `ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@24.199.87.181`
+- Server path: `/opt/wms-scan`
+- Web: `http://24.199.87.181/`
+- Health: `http://24.199.87.181/api/v1/health`
+
+本地修改、验证、提交后，可将当前 checkout 同步到服务器，再在服务器执行：
+
+```bash
+PROJECT_DIR=/opt/wms-scan infra/scripts/backup-postgres.sh
+PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
+```
+
+同步服务器时必须保留 `.env.production`、`backups/` 和 Docker volumes，不要覆盖真实生产配置或数据库备份。
+
 ## 文档入口
 
 - 产品规则: [docs/product](docs/product)

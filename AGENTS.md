@@ -8,6 +8,33 @@ Before each development task, read:
 2. `AGENTS.md`
 3. `docs/product/01-project-brief.md`
 
+## Production Server Access
+
+For this project, Codex can deploy finished local changes to the existing VPS after local validation.
+
+- SSH target: `root@24.199.87.181`
+- SSH key: `~/.ssh/wms_scan_do`
+- Server project directory: `/opt/wms-scan`
+- Public web URL: `http://24.199.87.181/`
+- Public health check: `http://24.199.87.181/api/v1/health`
+
+Use this SSH form:
+
+```bash
+ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@24.199.87.181
+```
+
+Deployment workflow after local changes are complete:
+
+1. Validate locally with the relevant tests or type checks.
+2. Commit and push the finished change to GitHub `main` when appropriate.
+3. Sync the local checkout to `/opt/wms-scan` with `rsync`, preserving server-only files.
+4. Run a production database backup before replacing containers.
+5. Run the production deploy script on the server.
+6. Verify container status and `http://24.199.87.181/api/v1/health`.
+
+Never copy or overwrite server-only secrets. Exclude at least `.env`, `.env.production`, `node_modules`, `.git`, `dist`, `build`, `coverage`, and `backups` during server sync.
+
 ## Scope Control
 
 - Do not implement all features at once.

@@ -26,6 +26,18 @@ sudo apt upgrade -y
 sudo apt install -y ca-certificates curl git ufw
 ```
 
+Current internal-test VPS:
+
+```bash
+ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@24.199.87.181
+```
+
+Current project directory:
+
+```text
+/opt/wms-scan
+```
+
 Create an application directory:
 
 ```bash
@@ -138,6 +150,14 @@ PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
 ```
 
 The script runs `git pull`, builds images, starts containers, prints container status, and prints the web and health-check URLs.
+
+The current VPS directory was uploaded as a working tree without `.git`, so Codex should sync the local checkout to `/opt/wms-scan` first, preserving `.env.production`, `backups/`, and Docker volumes. After syncing, run:
+
+```bash
+PROJECT_DIR=/opt/wms-scan infra/scripts/backup-postgres.sh
+PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
+curl http://24.199.87.181/api/v1/health
+```
 
 ## Rollback
 
