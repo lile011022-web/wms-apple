@@ -426,6 +426,13 @@ describe('InboundService', () => {
         {
           id: 'item-1',
           selectableForCustomerChange: true,
+          batch: {
+            operator: {
+              id: 'user-1',
+              email: 'admin@wms-scan.local',
+              name: 'Admin',
+            },
+          },
         },
       ],
     });

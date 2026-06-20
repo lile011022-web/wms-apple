@@ -46,7 +46,7 @@ Exact filter fields are normalized before querying:
 
 Each row returns:
 
-- Batch header and operator summary.
+- Batch header and operator summary. The frontend shows this operator next to `scannedAt` so operators can audit who handled each customer's inbound action.
 - Customer summary.
 - Product summary when UPC matched.
 - Linked `inventoryItemId`.

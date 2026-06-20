@@ -175,12 +175,13 @@ export function InboundRecordsPage() {
               <th>UPS</th>
               <th>状态</th>
               <th>扫描时间</th>
+              <th>操作人员</th>
             </tr>
           </thead>
           <tbody>
             {records?.items.map((item) => (
               <tr key={item.id}>
-                <td className="mono">{item.inboundBatch?.batchNo ?? '-'}</td>
+                <td className="mono">{item.batch?.batchNo ?? item.inboundBatch?.batchNo ?? '-'}</td>
                 <td>{item.customer?.code ?? '-'}</td>
                 <td className="mono">{item.upc}</td>
                 <td className="mono">{item.imei ?? item.serial ?? '-'}</td>
@@ -190,11 +191,12 @@ export function InboundRecordsPage() {
                   <span className={statusClass(item.status)}>{item.status}</span>
                 </td>
                 <td>{formatDate(item.scannedAt ?? item.createdAt)}</td>
+                <td>{formatOperator(item.batch?.operator ?? item.inboundBatch?.operator)}</td>
               </tr>
             ))}
             {!records || records.items.length === 0 ? (
               <tr>
-                <td colSpan={8}>暂无入库记录</td>
+                <td colSpan={9}>暂无入库记录</td>
               </tr>
             ) : null}
           </tbody>
@@ -205,7 +207,12 @@ export function InboundRecordsPage() {
 }
 
 type CustomerOption = { id: string; label: string };
-type InboundRecordsResult = { items: InboundRecord[]; total: number; page: number; pageSize: number };
+type InboundRecordsResult = {
+  items: InboundRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
 type InboundRecord = {
   id: string;
   upc: string;
@@ -217,8 +224,10 @@ type InboundRecord = {
   createdAt: string;
   customer?: { code: string; name: string } | null;
   product?: { name: string } | null;
-  inboundBatch?: { batchNo: string } | null;
+  batch?: { batchNo: string; operator?: OperatorSummary | null } | null;
+  inboundBatch?: { batchNo: string; operator?: OperatorSummary | null } | null;
 };
+type OperatorSummary = { id: string; email: string; name: string };
 type InboundExportPreview = { estimatedRowCount: number };
 
 function statusClass(status: string) {
@@ -229,4 +238,9 @@ function statusClass(status: string) {
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString() : '-';
+}
+
+function formatOperator(operator?: OperatorSummary | null) {
+  if (!operator) return '-';
+  return operator.name ? `${operator.name} (${operator.email})` : operator.email;
 }
