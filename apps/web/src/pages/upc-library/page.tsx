@@ -33,6 +33,8 @@ const importTemplateRows = [
 export function UpcLibraryPage() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [sku, setSku] = useState('');
   const [name, setName] = useState('');
   const [upc, setUpc] = useState('');
@@ -43,10 +45,15 @@ export function UpcLibraryPage() {
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const productsQuery = useQuery({
-    queryKey: ['products'],
-    queryFn: () => productsApi.list({ page: 1, pageSize: 50 }),
+    queryKey: ['products', page, pageSize],
+    queryFn: () => productsApi.list({ page, pageSize }),
   });
   const result = productsQuery.data as ProductResult | undefined;
+  const total = result?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const rangeStart = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(currentPage * pageSize, total);
   const createMutation = useMutation({
     mutationFn: () =>
       productsApi.create({
@@ -66,6 +73,7 @@ export function UpcLibraryPage() {
       setUpc('');
       setMessage('商品已新增');
       setErrorMessage('');
+      setPage(1);
       queryClient.invalidateQueries({ queryKey: ['products'] });
     },
     onError: (error) => setErrorMessage(toUserErrorMessage(error, '新增商品失败')),
@@ -92,6 +100,7 @@ export function UpcLibraryPage() {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+      setPage(1);
       queryClient.invalidateQueries({ queryKey: ['products'] });
     },
     onError: (error) => setErrorMessage(toUserErrorMessage(error, '批量导入失败')),
@@ -213,7 +222,47 @@ export function UpcLibraryPage() {
       <section className="panel data-panel">
         <div className="section-title">
           <h2>商品列表</h2>
-          <span>共 {result?.total ?? 0} 条</span>
+          <span>
+            第 {rangeStart}-{rangeEnd} 条 / 共 {total} 条
+          </span>
+        </div>
+        <div className="pagination-bar">
+          <div>
+            <span>每页</span>
+            <select
+              value={pageSize}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value));
+                setPage(1);
+              }}
+            >
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span>条</span>
+          </div>
+          <div>
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={currentPage <= 1 || productsQuery.isFetching}
+              onClick={() => setPage((value) => Math.max(1, value - 1))}
+            >
+              上一页
+            </button>
+            <strong>
+              {currentPage} / {totalPages}
+            </strong>
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={currentPage >= totalPages || productsQuery.isFetching}
+              onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+            >
+              下一页
+            </button>
+          </div>
         </div>
         <table className="data-table">
           <thead>
@@ -254,6 +303,8 @@ type Product = {
 };
 type ProductResult = {
   items: Product[];
+  page: number;
+  pageSize: number;
   total: number;
 };
 type ImportProductRow = {

@@ -172,6 +172,28 @@ docker compose -f docker-compose.prod.yml --env-file .env.production up -d
 
 For database-sensitive releases, create a backup before updating. Schema migrations should have an explicit rollback note before they are run on the VPS.
 
+## Direct Database Access
+
+PostgreSQL is intentionally available only on the Docker internal network. Do not publish port `5432` to the public internet. To inspect or update data directly, use SSH and run `psql` inside the PostgreSQL container:
+
+```bash
+ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@24.199.87.181
+cd /opt/wms-scan
+docker compose -p wms-scan -f docker-compose.prod.yml --env-file .env.production exec postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+For one-off SQL:
+
+```bash
+docker compose -p wms-scan -f docker-compose.prod.yml --env-file .env.production exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select count(*) from products;"'
+```
+
+Create a backup before manual writes:
+
+```bash
+PROJECT_DIR=/opt/wms-scan infra/scripts/backup-postgres.sh
+```
+
 ## Database Backup
 
 Run a compressed PostgreSQL backup:

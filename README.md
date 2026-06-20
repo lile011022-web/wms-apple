@@ -101,6 +101,28 @@ PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
 
 同步服务器时必须保留 `.env.production`、`backups/` 和 Docker volumes，不要覆盖真实生产配置或数据库备份。
 
+### 当前测试服务器数据库
+
+PostgreSQL 只在 Docker 内网开放，不暴露公网端口。需要直接改数据时，先 SSH 到服务器，再进入 PostgreSQL 容器：
+
+```bash
+ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@24.199.87.181
+cd /opt/wms-scan
+docker compose -p wms-scan -f docker-compose.prod.yml --env-file .env.production exec postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+执行一次性 SQL 可用：
+
+```bash
+docker compose -p wms-scan -f docker-compose.prod.yml --env-file .env.production exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select count(*) from products;"'
+```
+
+改数据前先备份：
+
+```bash
+PROJECT_DIR=/opt/wms-scan infra/scripts/backup-postgres.sh
+```
+
 ## 文档入口
 
 - 产品规则: [docs/product](docs/product)
