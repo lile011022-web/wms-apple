@@ -332,6 +332,25 @@ describe('InboundService', () => {
     );
   });
 
+  it('rejects duplicate IMEI values within the same draft before confirmation', async () => {
+    const duplicateItem = {
+      ...pendingItem,
+      id: 'item-2',
+      upsTrackingNo: '9400111899223857000000',
+      createdAt: new Date('2026-06-17T00:01:00Z'),
+    };
+    const { repository, service } = createService({
+      findDraftById: jest
+        .fn()
+        .mockResolvedValue({ ...draft, inboundItems: [pendingItem, duplicateItem] }),
+    });
+
+    await expect(service.confirmDraft('draft-1', operator)).rejects.toThrow(
+      '本次入库单内 IMEI 重复: 356789012345678。请删除重复明细或修正后再确认入库。',
+    );
+    expect(repository.confirmDraft).not.toHaveBeenCalled();
+  });
+
   it('passes combined inbound record filters to the repository', async () => {
     const { repository, service } = createService({});
 

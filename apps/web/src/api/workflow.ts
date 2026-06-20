@@ -36,6 +36,8 @@ export const inboundApi = {
     request<unknown>('post', `/inbound/drafts/${id}/ups`, { data }),
   addItem: (id: string, data: Payload) =>
     request<unknown>('post', `/inbound/drafts/${id}/items`, { data }),
+  removeItem: (id: string, itemId: string) =>
+    request<unknown>('delete', `/inbound/drafts/${id}/items/${itemId}`),
   confirmDraft: (id: string) => request<unknown>('post', `/inbound/drafts/${id}/confirm`),
   records: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/inbound/records', { params }),

@@ -48,6 +48,7 @@ export const apiIntegrationSteps: IntegrationStep[] = [
     endpoints: [
       'POST /inbound/drafts',
       'POST /inbound/drafts/:id/items',
+      'DELETE /inbound/drafts/:id/items/:itemId',
       'POST /inbound/drafts/:id/confirm',
     ],
     owner: 'inbound',

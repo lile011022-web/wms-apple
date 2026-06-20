@@ -78,6 +78,7 @@ Removal is logical. Preview rows move to `VOIDED` so history remains traceable d
 
 Confirmation runs inside one database transaction:
 
+- Rejects same-draft duplicate IMEI or Serial values before inventory writes.
 - Rechecks duplicate IMEI, Serial, and package tracking values.
 - Creates `inventory_items` for confirmable preview rows.
 - Links each confirmed inbound row to its inventory item.
@@ -85,7 +86,9 @@ Confirmation runs inside one database transaction:
 - Marks the batch `CONFIRMED`.
 - Writes an `INBOUND_CONFIRM` audit log.
 
-Drafts with no confirmable rows are rejected.
+Drafts with no confirmable rows are rejected. Drafts with repeated IMEI or Serial values inside
+the same active preview are rejected with a business error so the operator can delete or fix the
+duplicate row before confirming.
 
 ## List Records
 

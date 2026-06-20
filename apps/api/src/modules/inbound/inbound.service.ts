@@ -218,12 +218,13 @@ export class InboundService {
 
   async confirmDraft(draftId: string, operator: AuthenticatedUser) {
     const draft = await this.findOpenDraft(draftId);
-    const confirmableCount = draft.inboundItems.filter(
+    const confirmableItems = draft.inboundItems.filter(
       (item) => item.status === InboundItemStatus.PENDING && item.productId,
-    ).length;
-    if (confirmableCount === 0) {
+    );
+    if (confirmableItems.length === 0) {
       throw new BadRequestException('Inbound draft has no confirmable items.');
     }
+    this.assertNoDuplicateDraftIdentity(confirmableItems);
 
     const settings = await this.settingsService.getSettings();
     const confirmed = await this.inboundRepository.confirmDraft({
@@ -324,6 +325,38 @@ export class InboundService {
       return this.inboundRepository.findInventoryBySerial(serial);
     }
     return null;
+  }
+
+  private assertNoDuplicateDraftIdentity(
+    items: Array<Pick<InboundDraftRecord['inboundItems'][number], 'imei' | 'serial'>>,
+  ) {
+    const duplicateImeis = this.findDuplicateValues(items.map((item) => item.imei));
+    if (duplicateImeis.length > 0) {
+      throw new BadRequestException(
+        `本次入库单内 IMEI 重复: ${duplicateImeis.join(', ')}。请删除重复明细或修正后再确认入库。`,
+      );
+    }
+
+    const duplicateSerials = this.findDuplicateValues(items.map((item) => item.serial));
+    if (duplicateSerials.length > 0) {
+      throw new BadRequestException(
+        `本次入库单内 Serial 重复: ${duplicateSerials.join(', ')}。请删除重复明细或修正后再确认入库。`,
+      );
+    }
+  }
+
+  private findDuplicateValues(values: Array<string | null>) {
+    const counts = new Map<string, number>();
+    for (const value of values) {
+      if (!value) {
+        continue;
+      }
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+
+    return [...counts.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([value]) => value);
   }
 
   private normalizeRecordQuery(query: ListInboundRecordsQueryDto) {

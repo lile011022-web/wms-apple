@@ -433,7 +433,8 @@ textarea {
 }
 
 .btn.danger,
-.icon-button.danger {
+.icon-button.danger,
+.table-action.danger {
   background: var(--red-600);
 }
 

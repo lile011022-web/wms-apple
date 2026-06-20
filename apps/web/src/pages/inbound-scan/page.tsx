@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { PackageCheck, Plus, ScanLine } from 'lucide-react';
+import { PackageCheck, Plus, ScanLine, Trash2 } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { listWarehouses } from '../../api/settings';
 import { customersApi, inboundApi } from '../../api/workflow';
@@ -193,6 +193,26 @@ export function InboundScanPage() {
       setErrorMessage(toUserErrorMessage(error, '确认入库失败'));
     },
   });
+  const removeItemMutation = useMutation({
+    mutationFn: async (itemId: string) => {
+      if (!draft) throw new Error('请先创建入库草稿');
+      await inboundApi.removeItem(draft.id, itemId);
+      return inboundApi.getDraft(draft.id);
+    },
+    onMutate: () => {
+      setMessage('');
+      setErrorMessage('');
+    },
+    onSuccess: (data) => {
+      const updated = data as InboundDraft;
+      setDraft(updated);
+      persistLockedContext({ customerId, warehouseId, draftId: updated.id });
+      setMessage('已删除入库明细');
+    },
+    onError: (error) => {
+      setErrorMessage(toUserErrorMessage(error, '删除入库明细失败'));
+    },
+  });
 
   const handleCreateDraft = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -304,7 +324,11 @@ export function InboundScanPage() {
 
       {message ? <div className="inline-success">{message}</div> : null}
       {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
-      <DraftPanel draft={draft} />
+      <DraftPanel
+        draft={draft}
+        removingItemId={removeItemMutation.isPending ? removeItemMutation.variables : undefined}
+        onRemoveItem={(itemId) => removeItemMutation.mutate(itemId)}
+      />
     </section>
   );
 }
@@ -330,12 +354,23 @@ type InboundDraft = {
     upsTrackingNo: string | null;
     upc: string;
     imei: string | null;
+    serial?: string | null;
     status: string;
     product?: { name: string } | null;
   }>;
 };
 
-function DraftPanel({ draft }: { draft: InboundDraft | null }) {
+function DraftPanel({
+  draft,
+  removingItemId,
+  onRemoveItem,
+}: {
+  draft: InboundDraft | null;
+  removingItemId?: string;
+  onRemoveItem: (itemId: string) => void;
+}) {
+  const canRemoveItems = draft?.status === 'DRAFT';
+
   return (
     <section className="panel data-panel">
       <div className="section-title">
@@ -356,21 +391,43 @@ function DraftPanel({ draft }: { draft: InboundDraft | null }) {
             <th>IMEI</th>
             <th>商品</th>
             <th>状态</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          {draft?.items.map((item) => (
-            <tr key={item.id}>
-              <td className="mono">{item.upsTrackingNo ?? '-'}</td>
-              <td>{item.upc}</td>
-              <td>{item.imei}</td>
-              <td>{item.product?.name ?? '-'}</td>
-              <td>{item.status}</td>
-            </tr>
-          ))}
+          {draft?.items.map((item) => {
+            const isRemoving = removingItemId === item.id;
+            const canRemoveItem = canRemoveItems && item.status !== 'CONFIRMED';
+
+            return (
+              <tr key={item.id}>
+                <td className="mono">{item.upsTrackingNo ?? '-'}</td>
+                <td>{item.upc}</td>
+                <td>{item.imei ?? item.serial ?? '-'}</td>
+                <td>{item.product?.name ?? '-'}</td>
+                <td>{item.status}</td>
+                <td>
+                  {canRemoveItem ? (
+                    <button
+                      type="button"
+                      className="table-action danger"
+                      title="删除明细"
+                      disabled={!!removingItemId}
+                      onClick={() => onRemoveItem(item.id)}
+                    >
+                      <Trash2 size={14} />
+                      {isRemoving ? '删除中' : '删除'}
+                    </button>
+                  ) : (
+                    '-'
+                  )}
+                </td>
+              </tr>
+            );
+          })}
           {!draft || draft.items.length === 0 ? (
             <tr>
-              <td colSpan={5}>暂无明细</td>
+              <td colSpan={6}>暂无明细</td>
             </tr>
           ) : null}
         </tbody>
