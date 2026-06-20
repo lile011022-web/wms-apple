@@ -3,6 +3,7 @@ import { Box, PackagePlus, Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { listWarehouses } from '../../api/settings';
 import { customersApi, outboundApi } from '../../api/workflow';
+import { PaginationControls } from '../../components/pagination-controls';
 
 export function OutboundPackingPage() {
   const queryClient = useQueryClient();
@@ -12,6 +13,14 @@ export function OutboundPackingPage() {
   const [selectedHistoryBox, setSelectedHistoryBox] = useState<OutboundBox | null>(null);
   const [searchText, setSearchText] = useState('');
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [availablePage, setAvailablePage] = useState(1);
+  const [availablePageSize, setAvailablePageSize] = useState(50);
+  const [boxesPage, setBoxesPage] = useState(1);
+  const [boxesPageSize, setBoxesPageSize] = useState(20);
+  const [boxItemsPage, setBoxItemsPage] = useState(1);
+  const [boxItemsPageSize, setBoxItemsPageSize] = useState(20);
+  const [selectedBoxItemsPage, setSelectedBoxItemsPage] = useState(1);
+  const [selectedBoxItemsPageSize, setSelectedBoxItemsPageSize] = useState(20);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const customersQuery = useQuery({
@@ -31,12 +40,20 @@ export function OutboundPackingPage() {
   }, [customerId, customers, warehouseId, warehouses]);
 
   const availableQuery = useQuery({
-    queryKey: ['outbound-available-items', customerId, warehouseId, searchText],
+    queryKey: [
+      'outbound-available-items',
+      customerId,
+      warehouseId,
+      searchText,
+      availablePage,
+      availablePageSize,
+    ],
     queryFn: () =>
       outboundApi.availableItems({
         customerId,
         warehouseId,
-        pageSize: 100,
+        page: availablePage,
+        pageSize: availablePageSize,
         ...(searchText ? toAvailableSearchParams(searchText) : {}),
       }),
     enabled: Boolean(customerId),
@@ -50,12 +67,13 @@ export function OutboundPackingPage() {
   const isBoxOpen = box?.status === 'OPEN';
 
   const boxesQuery = useQuery({
-    queryKey: ['outbound-boxes', customerId, warehouseId],
+    queryKey: ['outbound-boxes', customerId, warehouseId, boxesPage, boxesPageSize],
     queryFn: () =>
       outboundApi.boxes({
         customerId,
         warehouseId,
-        pageSize: 20,
+        page: boxesPage,
+        pageSize: boxesPageSize,
         sortBy: 'createdAt',
         sortOrder: 'desc',
       }),
@@ -66,6 +84,21 @@ export function OutboundPackingPage() {
   useEffect(() => {
     setSelectedItemIds((current) => current.filter((id) => availableIds.includes(id)));
   }, [availableIds.join('|')]);
+
+  useEffect(() => {
+    setBoxItemsPage(1);
+  }, [box?.id, box?.items.length]);
+
+  useEffect(() => {
+    setSelectedBoxItemsPage(1);
+  }, [selectedHistoryBox?.id, selectedHistoryBox?.items.length]);
+
+  const paginatedBoxItems = paginateItems(box?.items ?? [], boxItemsPage, boxItemsPageSize);
+  const paginatedSelectedBoxItems = paginateItems(
+    selectedHistoryBox?.items ?? [],
+    selectedBoxItemsPage,
+    selectedBoxItemsPageSize,
+  );
 
   const createBoxMutation = useMutation({
     mutationFn: () =>
@@ -134,6 +167,8 @@ export function OutboundPackingPage() {
       setSelectedHistoryBox(sealedBox);
       setMessage('已封箱');
       setErrorMessage('');
+      queryClient.invalidateQueries({ queryKey: ['inventory-customer-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-products'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
       boxesQuery.refetch();
@@ -174,6 +209,8 @@ export function OutboundPackingPage() {
               setCustomerId(event.target.value);
               setSelectedItemIds([]);
               setSelectedHistoryBox(null);
+              setAvailablePage(1);
+              setBoxesPage(1);
             }}
           >
             {customers.map((customer) => (
@@ -191,6 +228,8 @@ export function OutboundPackingPage() {
               setWarehouseId(event.target.value);
               setSelectedItemIds([]);
               setSelectedHistoryBox(null);
+              setAvailablePage(1);
+              setBoxesPage(1);
             }}
           >
             {warehouses.map((warehouse) => (
@@ -223,7 +262,10 @@ export function OutboundPackingPage() {
           <span>查找货物</span>
           <input
             value={searchText}
-            onChange={(event) => setSearchText(event.target.value.trim())}
+            onChange={(event) => {
+              setSearchText(event.target.value.trim());
+              setAvailablePage(1);
+            }}
             placeholder="UPS / IMEI / UPC"
           />
         </label>
@@ -270,6 +312,17 @@ export function OutboundPackingPage() {
             {box ? `${box.boxNo} / ${box.status}` : '尚未建箱'} · 可选 {available?.total ?? 0} 件
           </span>
         </div>
+        <PaginationControls
+          page={availablePage}
+          pageSize={availablePageSize}
+          total={available?.total ?? 0}
+          isFetching={availableQuery.isFetching}
+          onPageChange={setAvailablePage}
+          onPageSizeChange={(nextPageSize) => {
+            setAvailablePageSize(nextPageSize);
+            setAvailablePage(1);
+          }}
+        />
         <table className="data-table">
           <thead>
             <tr>
@@ -333,6 +386,17 @@ export function OutboundPackingPage() {
           <h2>箱内明细</h2>
           <span>{box?.itemCount ?? 0} 件</span>
         </div>
+        <PaginationControls
+          page={boxItemsPage}
+          pageSize={boxItemsPageSize}
+          total={box?.items.length ?? 0}
+          onPageChange={setBoxItemsPage}
+          onPageSizeChange={(nextPageSize) => {
+            setBoxItemsPageSize(nextPageSize);
+            setBoxItemsPage(1);
+          }}
+          pageSizeOptions={[10, 20, 50, 100]}
+        />
         <table className="data-table">
           <thead>
             <tr>
@@ -343,7 +407,7 @@ export function OutboundPackingPage() {
             </tr>
           </thead>
           <tbody>
-            {box?.items.map((item) => (
+            {paginatedBoxItems.map((item) => (
               <tr key={item.id}>
                 <td className="mono">{item.inventoryItem.upsTrackingNo ?? '-'}</td>
                 <td>{item.inventoryItem.imei ?? item.inventoryItem.serial}</td>
@@ -365,6 +429,17 @@ export function OutboundPackingPage() {
           <h2>最近箱子</h2>
           <span>{boxes?.total ?? 0} 个箱子</span>
         </div>
+        <PaginationControls
+          page={boxesPage}
+          pageSize={boxesPageSize}
+          total={boxes?.total ?? 0}
+          isFetching={boxesQuery.isFetching}
+          onPageChange={setBoxesPage}
+          onPageSizeChange={(nextPageSize) => {
+            setBoxesPageSize(nextPageSize);
+            setBoxesPage(1);
+          }}
+        />
         <table className="data-table">
           <thead>
             <tr>
@@ -420,6 +495,17 @@ export function OutboundPackingPage() {
           <span>创建时间 {formatDateTime(selectedHistoryBox?.createdAt)}</span>
           <span>封箱时间 {formatDateTime(selectedHistoryBox?.sealedAt)}</span>
         </div>
+        <PaginationControls
+          page={selectedBoxItemsPage}
+          pageSize={selectedBoxItemsPageSize}
+          total={selectedHistoryBox?.items.length ?? 0}
+          onPageChange={setSelectedBoxItemsPage}
+          onPageSizeChange={(nextPageSize) => {
+            setSelectedBoxItemsPageSize(nextPageSize);
+            setSelectedBoxItemsPage(1);
+          }}
+          pageSizeOptions={[10, 20, 50, 100]}
+        />
         <table className="data-table">
           <thead>
             <tr>
@@ -431,7 +517,7 @@ export function OutboundPackingPage() {
             </tr>
           </thead>
           <tbody>
-            {selectedHistoryBox?.items.map((item) => (
+            {paginatedSelectedBoxItems.map((item) => (
               <tr key={item.id}>
                 <td className="mono">{item.inventoryItem.upsTrackingNo ?? '-'}</td>
                 <td>{item.inventoryItem.imei ?? item.inventoryItem.serial}</td>
@@ -453,8 +539,8 @@ export function OutboundPackingPage() {
 }
 
 type CustomerOption = { id: string; label: string };
-type AvailableResult = { items: AvailableItem[]; total: number };
-type BoxListResult = { items: OutboundBox[]; total: number };
+type AvailableResult = { items: AvailableItem[]; total: number; page: number; pageSize: number };
+type BoxListResult = { items: OutboundBox[]; total: number; page: number; pageSize: number };
 type AvailableItem = {
   id: string;
   upc: string;
@@ -513,4 +599,11 @@ function formatDateTime(value?: string | null) {
   }
 
   return new Date(value).toLocaleString();
+}
+
+function paginateItems<T>(items: T[], page: number, pageSize: number) {
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  return items.slice(start, start + pageSize);
 }

@@ -23,6 +23,7 @@ import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { SettingsService } from '../settings/settings.service';
 import { AddInboundItemDto } from './dto/add-inbound-item.dto';
 import { CreateInboundDraftDto } from './dto/create-inbound-draft.dto';
+import { ImportInboundItemsDto } from './dto/import-inbound-items.dto';
 import { ListInboundRecordsQueryDto } from './dto/list-inbound-records-query.dto';
 import { ScanInboundUpsDto } from './dto/scan-inbound-ups.dto';
 import { InboundDraftRecord, InboundItemRecord, InboundRepository } from './inbound.repository';
@@ -190,6 +191,44 @@ export class InboundService {
     });
 
     return this.toItemResponse(item);
+  }
+
+  async importItems(draftId: string, dto: ImportInboundItemsDto) {
+    await this.findOpenDraft(draftId);
+    let importedCount = 0;
+    const failedRows: Array<{
+      lineNo: number;
+      upc: string;
+      upsTrackingNo?: string;
+      imei?: string;
+      serial?: string;
+      message: string;
+    }> = [];
+
+    for (const [index, row] of dto.items.entries()) {
+      const lineNo = index + 1;
+      try {
+        await this.addItem(draftId, row);
+        importedCount += 1;
+      } catch (error) {
+        failedRows.push({
+          lineNo,
+          upc: row.upc,
+          upsTrackingNo: row.upsTrackingNo,
+          imei: row.imei,
+          serial: row.serial,
+          message: error instanceof Error ? error.message : 'Import row failed.',
+        });
+      }
+    }
+
+    const draft = await this.findOpenDraft(draftId);
+    return {
+      importedCount,
+      failedCount: failedRows.length,
+      failedRows,
+      draft: this.toDraftResponse(draft),
+    };
   }
 
   async removeItem(draftId: string, itemId: string) {

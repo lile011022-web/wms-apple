@@ -18,8 +18,28 @@ describe('frontend API client', () => {
 
   beforeEach(() => {
     originalAdapter = apiClient.defaults.adapter;
+    const eventListeners = new Map<string, Array<(event: { type: string }) => void>>();
+    class TestEvent {
+      constructor(public readonly type: string) {}
+    }
     vi.stubGlobal('window', {
       localStorage: createLocalStorageMock(),
+      Event: TestEvent,
+      addEventListener: vi.fn((type: string, listener: (event: { type: string }) => void) => {
+        eventListeners.set(type, [...(eventListeners.get(type) ?? []), listener]);
+      }),
+      removeEventListener: vi.fn((type: string, listener: (event: { type: string }) => void) => {
+        eventListeners.set(
+          type,
+          (eventListeners.get(type) ?? []).filter((item) => item !== listener),
+        );
+      }),
+      dispatchEvent: vi.fn((event: { type: string }) => {
+        for (const listener of eventListeners.get(event.type) ?? []) {
+          listener(event);
+        }
+        return true;
+      }),
     });
     authTokenStore.clear();
   });
@@ -111,5 +131,129 @@ describe('frontend API client', () => {
       message: 'Inbound draft has no confirmable items.',
       requestId: 'req-3',
     } satisfies Partial<ApiClientError>);
+  });
+
+  it('refreshes an expired access token and retries the original request', async () => {
+    authTokenStore.setTokens({
+      accessToken: 'expired-access-token',
+      refreshToken: 'valid-refresh-token',
+    });
+    const adapter = vi
+      .fn()
+      .mockImplementationOnce(async (config) => {
+        throw {
+          isAxiosError: true,
+          response: {
+            data: {
+              success: false,
+              requestId: 'req-expired',
+              error: {
+                code: 'AUTHENTICATION_REQUIRED',
+                message: 'Authentication token is invalid or expired.',
+              },
+            },
+            status: 401,
+            statusText: 'Unauthorized',
+            headers: {},
+            config,
+          },
+          config,
+        };
+      })
+      .mockImplementationOnce(async (config) => ({
+        data: {
+          success: true,
+          requestId: 'req-refresh',
+          data: {
+            tokens: {
+              accessToken: 'fresh-access-token',
+              refreshToken: 'fresh-refresh-token',
+            },
+          },
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      }))
+      .mockImplementationOnce(async (config) => ({
+        data: {
+          success: true,
+          requestId: 'req-retry',
+          data: { importedCount: 53 },
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      }));
+    apiClient.defaults.adapter = adapter;
+
+    await expect(
+      request<{ importedCount: number }>('post', '/inbound/drafts/draft-1/items/import'),
+    ).resolves.toEqual({ importedCount: 53 });
+
+    expect(adapter).toHaveBeenCalledTimes(3);
+    expect(window.localStorage.getItem('wms_scan_access_token')).toBe('fresh-access-token');
+    expect(window.localStorage.getItem('wms_scan_refresh_token')).toBe('fresh-refresh-token');
+  });
+
+  it('clears tokens and returns a Chinese login prompt when refresh fails', async () => {
+    authTokenStore.setTokens({
+      accessToken: 'expired-access-token',
+      refreshToken: 'expired-refresh-token',
+    });
+    const authExpiredListener = vi.fn();
+    window.addEventListener('wms-scan-auth-expired', authExpiredListener);
+    apiClient.defaults.adapter = vi
+      .fn()
+      .mockImplementationOnce(async (config) => {
+        throw {
+          isAxiosError: true,
+          response: {
+            data: {
+              success: false,
+              requestId: 'req-expired',
+              error: {
+                code: 'AUTHENTICATION_REQUIRED',
+                message: 'Authentication token is invalid or expired.',
+              },
+            },
+            status: 401,
+            statusText: 'Unauthorized',
+            headers: {},
+            config,
+          },
+          config,
+        };
+      })
+      .mockImplementationOnce(async (config) => {
+        throw {
+          isAxiosError: true,
+          response: {
+            data: {
+              success: false,
+              requestId: 'req-refresh-expired',
+              error: {
+                code: 'AUTHENTICATION_REQUIRED',
+                message: 'Refresh token is invalid or expired.',
+              },
+            },
+            status: 401,
+            statusText: 'Unauthorized',
+            headers: {},
+            config,
+          },
+          config,
+        };
+      });
+
+    await expect(request('post', '/inbound/drafts/draft-1/items/import')).rejects.toMatchObject({
+      code: 'AUTHENTICATION_REQUIRED',
+      message: '登录已过期，请重新登录。',
+    });
+    expect(window.localStorage.getItem('wms_scan_access_token')).toBeNull();
+    expect(window.localStorage.getItem('wms_scan_refresh_token')).toBeNull();
+    expect(authExpiredListener).toHaveBeenCalled();
   });
 });

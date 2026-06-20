@@ -63,6 +63,32 @@ Business rules:
 - Disabled users receive `AUTHENTICATION_FAILED`.
 - Successful login updates `lastLoginAt` and writes an `AuditLog` with action `LOGIN`.
 
+## POST /auth/register
+
+Creates a new active employee account from the login page and immediately returns a login session.
+
+Request:
+
+```json
+{
+  "email": "operator@wms-scan.local",
+  "name": "Inbound Operator",
+  "password": "local-development-password"
+}
+```
+
+Response `data` matches the login response shape.
+
+Business rules:
+
+- Email lookup is case-insensitive by normalizing input to lowercase.
+- Passwords are hashed with bcrypt before storage.
+- Duplicate emails return `CONFLICT`.
+- Public registration assigns the `OPERATOR` role only.
+- `OPERATOR` receives operational permissions for dashboard, audit-log lookup, customers, UPC products, inbound, inventory, outbound, exceptions, and reports.
+- `OPERATOR` does not receive `settings.manage`, `users.manage`, or `roles.manage`.
+- Registration writes an `AuditLog` with action `USER_CHANGE` and metadata source `public-registration`.
+
 ## POST /auth/refresh
 
 Issues a new token pair from a valid refresh token.

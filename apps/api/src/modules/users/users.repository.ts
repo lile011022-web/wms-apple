@@ -55,6 +55,52 @@ export class UsersRepository {
     return this.prisma.role.findMany({ where: { code: { in: codes } } });
   }
 
+  async ensureRoleWithPermissions(input: {
+    code: string;
+    name: string;
+    description: string;
+    permissions: readonly { code: string; name: string }[];
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const role = await tx.role.upsert({
+        where: { code: input.code },
+        update: {
+          name: input.name,
+          description: input.description,
+        },
+        create: {
+          code: input.code,
+          name: input.name,
+          description: input.description,
+        },
+      });
+
+      for (const definition of input.permissions) {
+        const permission = await tx.permission.upsert({
+          where: { code: definition.code },
+          update: { name: definition.name },
+          create: definition,
+        });
+
+        await tx.rolePermission.upsert({
+          where: {
+            roleId_permissionId: {
+              roleId: role.id,
+              permissionId: permission.id,
+            },
+          },
+          update: {},
+          create: {
+            roleId: role.id,
+            permissionId: permission.id,
+          },
+        });
+      }
+
+      return role;
+    });
+  }
+
   create(data: Prisma.UserCreateInput, roleIds: string[]) {
     return this.prisma.user.create({
       data: {

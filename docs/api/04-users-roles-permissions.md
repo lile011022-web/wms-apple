@@ -12,6 +12,9 @@ Authorization: Bearer <accessToken>
 
 Current phase-three controllers require `settings.manage`.
 
+The login page also exposes public employee registration through `POST /auth/register`.
+That path creates an active `OPERATOR` account and does not require `settings.manage`.
+
 ## GET /users
 
 Lists users with pagination, search, status filtering, roles, and permission codes.
@@ -173,3 +176,8 @@ The development seed currently creates:
 - `settings.manage`
 - `users.manage`
 - `roles.manage`
+
+## Seeded Roles
+
+- `ADMIN`: full system access, including settings, users, and roles.
+- `OPERATOR`: warehouse employee access for shared operational data. It includes dashboard, audit-log lookup, customers, UPC products, inbound, inventory, outbound, exceptions, and reports. It excludes settings, users, and role administration.

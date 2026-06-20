@@ -36,6 +36,8 @@ export const inboundApi = {
     request<unknown>('post', `/inbound/drafts/${id}/ups`, { data }),
   addItem: (id: string, data: Payload) =>
     request<unknown>('post', `/inbound/drafts/${id}/items`, { data }),
+  importItems: (id: string, data: Payload) =>
+    request<unknown>('post', `/inbound/drafts/${id}/items/import`, { data }),
   removeItem: (id: string, itemId: string) =>
     request<unknown>('delete', `/inbound/drafts/${id}/items/${itemId}`),
   confirmDraft: (id: string) => request<unknown>('post', `/inbound/drafts/${id}/confirm`),
@@ -48,6 +50,8 @@ export const inboundApi = {
 export const inventoryApi = {
   customerSummary: (params?: QueryParams) =>
     request<unknown>('get', '/inventory/customer-summary', { params }),
+  products: (params?: QueryParams) =>
+    request<PaginatedResult<unknown>>('get', '/inventory/products', { params }),
   items: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/inventory/items', { params }),
   availableForOutbound: (params?: QueryParams) =>

@@ -408,7 +408,9 @@ apps/api/src/modules/<module-name>/
 - <strong><font color="red">🔴 已完成：扫描 UPS。</font></strong>
 - <strong><font color="red">🔴 已完成：扫描 UPC 并匹配商品。</font></strong>
 - <strong><font color="red">🔴 已完成：扫描 IMEI 或 Serial。</font></strong>
+- <strong><font color="red">🔴 已完成：CSV 文件批量导入当前入库草稿明细。</font></strong>
 - <strong><font color="red">🔴 已完成：本次入库预览。</font></strong>
+- <strong><font color="red">🔴 已完成：当前入库草稿明细前端分页。</font></strong>
 - <strong><font color="red">🔴 已完成：移除预览明细。</font></strong>
 - <strong><font color="red">🔴 已完成：清空本次草稿。</font></strong>
 - <strong><font color="red">🔴 已完成：确认入库。</font></strong>
@@ -421,6 +423,7 @@ apps/api/src/modules/<module-name>/
 - `GET /inbound/drafts/:id`
 - `POST /inbound/drafts/:id/ups`
 - `POST /inbound/drafts/:id/items`
+- `POST /inbound/drafts/:id/items/import`
 - `DELETE /inbound/drafts/:id/items/:itemId`
 - `DELETE /inbound/drafts/:id/items`
 - `POST /inbound/drafts/:id/confirm`
@@ -471,6 +474,7 @@ apps/api/src/modules/<module-name>/
 
 - <strong><font color="red">🔴 已完成：按时间、客户、UPS、UPC、IMEI、状态筛选，并补充批次、仓库、Serial、库存状态筛选。</font></strong>
 - <strong><font color="red">🔴 已完成：分页和排序。</font></strong>
+- <strong><font color="red">🔴 已完成：入库记录页面展示可见分页控件和每页数量选择。</font></strong>
 - <strong><font color="red">🔴 已完成：查看详情。</font></strong>
 - <strong><font color="red">🔴 已完成：支持选择记录进入批量改客户，列表行返回 `selectableForCustomerChange`。</font></strong>
 - <strong><font color="red">🔴 已完成：支持导出条件复用到报表模块，新增 `export-preview` 返回 reusable report payload。</font></strong>
@@ -514,6 +518,7 @@ apps/api/src/modules/<module-name>/
 - <strong><font color="red">🔴 已完成：按客户查询库存汇总。</font></strong>
 - <strong><font color="red">🔴 已完成：按商品汇总 SKU、在库数量、已出库数量、异常数量。</font></strong>
 - <strong><font color="red">🔴 已完成：展开 IMEI 明细。</font></strong>
+- <strong><font color="red">🔴 已完成：客户库存页面展示总览、SKU 汇总明细、IMEI 明细，并关联入库单号、物流单号和出单号/箱号。</font></strong>
 - <strong><font color="red">🔴 已完成：搜索 UPC、商品名、IMEI、Serial、UPS。</font></strong>
 - <strong><font color="red">🔴 已完成：提供库存导出预览 payload；实际文件生成保留给 reports 模块。</font></strong>
 - <strong><font color="red">🔴 已完成：提供出库装箱可用库存查询。</font></strong>
@@ -537,6 +542,7 @@ apps/api/src/modules/<module-name>/
 - <strong><font color="red">🔴 已完成：只统计当前客户库存。</font></strong>
 - <strong><font color="red">🔴 已完成：异常库存不允许直接出库，可出库列表强制 `IN_STOCK`。</font></strong>
 - <strong><font color="red">🔴 已完成：IMEI 明细分页准确。</font></strong>
+- <strong><font color="red">🔴 已完成：客户库存页面展示可见分页控件和每页数量选择。</font></strong>
 
 验收标准：
 
@@ -564,6 +570,7 @@ apps/api/src/modules/<module-name>/
 - <strong><font color="red">🔴 已完成：创建箱号。</font></strong>
 - <strong><font color="red">🔴 已完成：查询当前客户可装箱库存。</font></strong>
 - <strong><font color="red">🔴 已完成：按 UPS、UPC、IMEI、商品名搜索可装箱明细。</font></strong>
+- <strong><font color="red">🔴 已完成：可装箱库存、最近箱子和箱内明细展示分页。</font></strong>
 - <strong><font color="red">🔴 已完成：加入当前箱。</font></strong>
 - <strong><font color="red">🔴 已完成：从当前箱移除。</font></strong>
 - <strong><font color="red">🔴 已完成：清空当前箱。</font></strong>

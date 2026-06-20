@@ -1,14 +1,32 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction, Prisma } from '@prisma/client';
+import { AuditAction, Prisma, UserStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { RegisterDto } from '../auth/dto/register.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersRepository } from './users.repository';
 
 type UserRecord = NonNullable<Awaited<ReturnType<UsersRepository['findById']>>>;
+
+const operatorRole = {
+  code: 'OPERATOR',
+  name: 'Warehouse Operator',
+  description: 'Operational staff access without user, role, or system-setting administration.',
+  permissions: [
+    { code: 'dashboard.read', name: 'View dashboard' },
+    { code: 'audit-logs.read', name: 'View audit logs' },
+    { code: 'customers.manage', name: 'Manage customers' },
+    { code: 'products.manage', name: 'Manage UPC product library' },
+    { code: 'inbound.manage', name: 'Manage inbound scanning' },
+    { code: 'inventory.read', name: 'View customer inventory' },
+    { code: 'outbound.manage', name: 'Manage outbound packing' },
+    { code: 'exceptions.manage', name: 'Handle exception pool' },
+    { code: 'reports.export', name: 'Export reports' },
+  ] as const,
+} as const;
 
 @Injectable()
 export class UsersService {
@@ -60,6 +78,39 @@ export class UsersService {
       resourceType: 'user',
       resourceId: user.id,
       afterSnapshot: this.toAuditSnapshot(user),
+    });
+
+    return this.toPublicUser(user);
+  }
+
+  async registerOperator(
+    dto: RegisterDto,
+    context: { requestId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    const email = dto.email.toLowerCase();
+    const existingUser = await this.usersRepository.findByEmail(email);
+    if (existingUser) {
+      throw new ConflictException('User email already exists.');
+    }
+
+    const role = await this.usersRepository.ensureRoleWithPermissions(operatorRole);
+    const user = await this.usersRepository.create(
+      {
+        email,
+        name: dto.name,
+        passwordHash: await bcrypt.hash(dto.password, 12),
+        status: UserStatus.ACTIVE,
+      },
+      [role.id],
+    );
+
+    await this.auditLogsService.record({
+      ...context,
+      action: AuditAction.USER_CHANGE,
+      resourceType: 'user',
+      resourceId: user.id,
+      afterSnapshot: this.toAuditSnapshot(user),
+      metadata: { source: 'public-registration', defaultRoleCode: operatorRole.code },
     });
 
     return this.toPublicUser(user);

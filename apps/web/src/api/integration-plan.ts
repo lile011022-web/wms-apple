@@ -20,7 +20,13 @@ export const apiIntegrationSteps: IntegrationStep[] = [
   {
     order: 2,
     title: 'Login, current user, permissions',
-    endpoints: ['POST /auth/login', 'POST /auth/refresh', 'POST /auth/logout', 'GET /auth/me'],
+    endpoints: [
+      'POST /auth/login',
+      'POST /auth/register',
+      'POST /auth/refresh',
+      'POST /auth/logout',
+      'GET /auth/me',
+    ],
     owner: 'auth',
   },
   {
@@ -48,6 +54,7 @@ export const apiIntegrationSteps: IntegrationStep[] = [
     endpoints: [
       'POST /inbound/drafts',
       'POST /inbound/drafts/:id/items',
+      'POST /inbound/drafts/:id/items/import',
       'DELETE /inbound/drafts/:id/items/:itemId',
       'POST /inbound/drafts/:id/confirm',
     ],

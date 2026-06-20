@@ -8,6 +8,12 @@ export async function login(payload: { email: string; password: string }) {
   return session;
 }
 
+export async function register(payload: { email: string; name: string; password: string }) {
+  const session = await request<AuthSession>('post', '/auth/register', { data: payload });
+  authTokenStore.setTokens(session.tokens);
+  return session;
+}
+
 export async function refreshSession() {
   const refreshToken = authTokenStore.getRefreshToken();
   if (!refreshToken) {

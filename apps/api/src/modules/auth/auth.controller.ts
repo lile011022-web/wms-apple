@@ -7,6 +7,7 @@ import type { RequestContext } from '../../common/types/request-context';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { RegisterDto } from './dto/register.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -16,6 +17,11 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto, @Req() request: RequestContext) {
     return this.authService.login(dto, this.toAuditContext(request));
+  }
+
+  @Post('register')
+  register(@Body() dto: RegisterDto, @Req() request: RequestContext) {
+    return this.authService.register(dto, this.toAuditContext(request));
   }
 
   @Post('refresh')

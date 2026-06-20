@@ -1,6 +1,6 @@
 # Inventory API
 
-Inventory endpoints power the customer inventory page, outbound packing inventory selection, detail download filters, and dashboard inventory totals.
+Inventory endpoints power the customer inventory page, outbound packing inventory selection, detail download filters, and dashboard inventory totals. The customer inventory page now combines `customer-summary`, `products`, and `items` so operators can review totals, SKU-level counts, and item-level tracking numbers in one workflow.
 
 All endpoints use the `/api/v1` prefix and require bearer authentication with `inventory.read`.
 
@@ -117,6 +117,12 @@ Allowed sort fields:
 - `status`
 
 Rows include customer, warehouse, product, inbound batch, inbound item, latest outbound box, exception summary, and timestamps.
+
+Customer inventory item tables should display the returned tracking context:
+
+- `inboundBatch.batchNo`: inbound batch number.
+- `upsTrackingNo`: package tracking/order number captured during inbound scan or CSV import.
+- `latestOutboundBox.boxNo`: outbound box/order number when the inventory row has been packed or shipped.
 
 ## GET /inventory/items/:id
 

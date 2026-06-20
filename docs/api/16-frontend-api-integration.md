@@ -29,6 +29,11 @@ Authorization: Bearer <accessToken>
 
 The `request<T>()` helper unwraps successful API envelopes and throws `ApiClientError` for failed envelopes. This keeps React pages focused on business state instead of response-envelope plumbing.
 
+When a protected request returns `AUTHENTICATION_REQUIRED` or `AUTHENTICATION_FAILED`, the frontend
+tries `POST /auth/refresh` with the stored refresh token and retries the original request once. If
+refresh also fails, local tokens are cleared, the app returns to the login state, and the operator
+sees the Chinese prompt `登录已过期，请重新登录。`.
+
 ## Integration Order
 
 The frontend sequence is represented by `apiIntegrationSteps`:

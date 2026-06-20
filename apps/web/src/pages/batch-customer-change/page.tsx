@@ -79,6 +79,8 @@ export function BatchCustomerChangePage() {
       setSelectedIds([]);
       await queryClient.invalidateQueries({ queryKey: ['customer-change-candidates'] });
       await queryClient.invalidateQueries({ queryKey: ['customer-change-logs'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-customer-summary'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-products'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
       await queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
     },

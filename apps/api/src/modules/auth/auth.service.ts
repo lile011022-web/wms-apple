@@ -7,9 +7,11 @@ import { BusinessError } from '../../common/errors/business-error';
 import { ErrorCode } from '../../common/errors/error-codes';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { AuditContext, AuditLogsService } from '../audit-logs/audit-logs.service';
+import { UsersService } from '../users/users.service';
 import { AuthRepository } from './auth.repository';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { RegisterDto } from './dto/register.dto';
 
 type UserRecord = NonNullable<Awaited<ReturnType<AuthRepository['findById']>>>;
 
@@ -25,6 +27,7 @@ export class AuthService {
     private readonly auditLogsService: AuditLogsService,
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
+    private readonly usersService: UsersService,
   ) {}
 
   async login(dto: LoginDto, context: AuditContext) {
@@ -88,6 +91,28 @@ export class AuthService {
     } catch {
       throw new UnauthorizedException('Refresh token is invalid or expired.');
     }
+  }
+
+  async register(dto: RegisterDto, context: AuditContext) {
+    const user = await this.usersService.registerOperator(dto, context);
+    const authUser: AuthenticatedUser = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      roles: user.roles.map((role) => role.code),
+      permissions: user.permissions,
+    };
+
+    return {
+      user: {
+        ...authUser,
+        status: user.status,
+        lastLoginAt: user.lastLoginAt,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+      tokens: await this.issueTokens(authUser),
+    };
   }
 
   async logout(user: AuthenticatedUser, context: AuditContext) {

@@ -7,6 +7,7 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { AddInboundItemDto } from './dto/add-inbound-item.dto';
 import { CreateInboundDraftDto } from './dto/create-inbound-draft.dto';
+import { ImportInboundItemsDto } from './dto/import-inbound-items.dto';
 import { ListInboundRecordsQueryDto } from './dto/list-inbound-records-query.dto';
 import { ScanInboundUpsDto } from './dto/scan-inbound-ups.dto';
 import { InboundService } from './inbound.service';
@@ -37,6 +38,11 @@ export class InboundController {
   @Post('drafts/:id/items')
   addItem(@Param('id') id: string, @Body() dto: AddInboundItemDto) {
     return this.inboundService.addItem(id, dto);
+  }
+
+  @Post('drafts/:id/items/import')
+  importItems(@Param('id') id: string, @Body() dto: ImportInboundItemsDto) {
+    return this.inboundService.importItems(id, dto);
   }
 
   @Delete('drafts/:id/items/:itemId')

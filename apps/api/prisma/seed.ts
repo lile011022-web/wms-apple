@@ -19,6 +19,18 @@ const permissions = [
   ['roles.manage', 'Manage roles and role permissions'],
 ] as const;
 
+const operatorPermissionCodes = [
+  'dashboard.read',
+  'audit-logs.read',
+  'customers.manage',
+  'products.manage',
+  'inbound.manage',
+  'inventory.read',
+  'outbound.manage',
+  'exceptions.manage',
+  'reports.export',
+] as const;
+
 async function main() {
   const seedPassword = process.env.SEED_ADMIN_PASSWORD;
 
@@ -36,13 +48,23 @@ async function main() {
     },
   });
 
-  const role = await prisma.role.upsert({
+  const adminRole = await prisma.role.upsert({
     where: { code: 'ADMIN' },
     update: { name: 'Administrator' },
     create: {
       code: 'ADMIN',
       name: 'Administrator',
       description: 'Full system access for development and operations setup.',
+    },
+  });
+
+  const operatorRole = await prisma.role.upsert({
+    where: { code: 'OPERATOR' },
+    update: { name: 'Warehouse Operator' },
+    create: {
+      code: 'OPERATOR',
+      name: 'Warehouse Operator',
+      description: 'Operational staff access without user, role, or system-setting administration.',
     },
   });
 
@@ -56,16 +78,32 @@ async function main() {
     await prisma.rolePermission.upsert({
       where: {
         roleId_permissionId: {
-          roleId: role.id,
+          roleId: adminRole.id,
           permissionId: permission.id,
         },
       },
       update: {},
       create: {
-        roleId: role.id,
+        roleId: adminRole.id,
         permissionId: permission.id,
       },
     });
+
+    if (operatorPermissionCodes.includes(code)) {
+      await prisma.rolePermission.upsert({
+        where: {
+          roleId_permissionId: {
+            roleId: operatorRole.id,
+            permissionId: permission.id,
+          },
+        },
+        update: {},
+        create: {
+          roleId: operatorRole.id,
+          permissionId: permission.id,
+        },
+      });
+    }
   }
 
   const passwordHash = await bcrypt.hash(seedPassword, 12);
@@ -88,13 +126,13 @@ async function main() {
     where: {
       userId_roleId: {
         userId: admin.id,
-        roleId: role.id,
+        roleId: adminRole.id,
       },
     },
     update: {},
     create: {
       userId: admin.id,
-      roleId: role.id,
+      roleId: adminRole.id,
     },
   });
 

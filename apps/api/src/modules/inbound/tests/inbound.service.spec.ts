@@ -277,6 +277,53 @@ describe('InboundService', () => {
     );
   });
 
+  it('imports inbound items into an open draft and reports failed rows', async () => {
+    const { repository, service } = createService({
+      findProductByUpc: jest
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'upc-1',
+          upc: '194253149189',
+          productId: 'product-1',
+          status: ProductStatus.ACTIVE,
+          createdAt: new Date('2026-06-17T00:00:00Z'),
+          updatedAt: new Date('2026-06-17T00:00:00Z'),
+          product,
+        })
+        .mockResolvedValueOnce(null),
+      findDraftById: jest
+        .fn()
+        .mockResolvedValueOnce(draft)
+        .mockResolvedValueOnce(draft)
+        .mockResolvedValueOnce(draft)
+        .mockResolvedValueOnce({ ...draft, inboundItems: [pendingItem] }),
+    });
+
+    await expect(
+      service.importItems('draft-1', {
+        items: [
+          {
+            upsTrackingNo: '1Z999AA10123456784',
+            upc: '194253149189',
+            imei: '356789012345678',
+          },
+          {
+            upsTrackingNo: 'not-a-tracking-number',
+            upc: '194253149189',
+            imei: '356789012345679',
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      importedCount: 1,
+      failedCount: 1,
+      failedRows: [{ lineNo: 2, message: 'Invalid package tracking number format.' }],
+      draft: { id: 'draft-1' },
+    });
+
+    expect(repository.createItem).toHaveBeenCalledTimes(1);
+  });
+
   it('creates a duplicate IMEI exception item before confirmation', async () => {
     const duplicateInventory = { id: 'inventory-1' };
     const exceptionItem = {

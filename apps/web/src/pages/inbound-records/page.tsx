@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Download, RefreshCw, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { customersApi, inboundApi } from '../../api/workflow';
+import { PaginationControls } from '../../components/pagination-controls';
 
 export function InboundRecordsPage() {
   const [customerId, setCustomerId] = useState('');
@@ -9,6 +10,8 @@ export function InboundRecordsPage() {
   const [search, setSearch] = useState('');
   const [upc, setUpc] = useState('');
   const [imei, setImei] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [preview, setPreview] = useState<InboundExportPreview | null>(null);
 
   const customersQuery = useQuery({
@@ -23,8 +26,8 @@ export function InboundRecordsPage() {
 
   const params = useMemo(
     () => ({
-      page: 1,
-      pageSize: 50,
+      page,
+      pageSize,
       customerId: customerId || undefined,
       status: status || undefined,
       search: search || undefined,
@@ -33,7 +36,7 @@ export function InboundRecordsPage() {
       sortBy: 'scannedAt',
       sortOrder: 'desc',
     }),
-    [customerId, imei, search, status, upc],
+    [customerId, imei, page, pageSize, search, status, upc],
   );
 
   const recordsQuery = useQuery({
@@ -64,7 +67,13 @@ export function InboundRecordsPage() {
       <section className="panel filter-grid">
         <label>
           <span>客户</span>
-          <select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+          <select
+            value={customerId}
+            onChange={(event) => {
+              setCustomerId(event.target.value);
+              setPage(1);
+            }}
+          >
             {customers.map((customer) => (
               <option key={customer.id} value={customer.id}>
                 {customer.label}
@@ -74,7 +83,13 @@ export function InboundRecordsPage() {
         </label>
         <label>
           <span>状态</span>
-          <select value={status} onChange={(event) => setStatus(event.target.value)}>
+          <select
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value);
+              setPage(1);
+            }}
+          >
             <option value="">全部</option>
             <option value="PENDING">待确认</option>
             <option value="CONFIRMED">已确认</option>
@@ -83,17 +98,32 @@ export function InboundRecordsPage() {
         </label>
         <label>
           <span>UPC</span>
-          <input value={upc} onChange={(event) => setUpc(event.target.value)} />
+          <input
+            value={upc}
+            onChange={(event) => {
+              setUpc(event.target.value);
+              setPage(1);
+            }}
+          />
         </label>
         <label>
           <span>IMEI</span>
-          <input value={imei} onChange={(event) => setImei(event.target.value)} />
+          <input
+            value={imei}
+            onChange={(event) => {
+              setImei(event.target.value);
+              setPage(1);
+            }}
+          />
         </label>
         <label>
           <span>搜索</span>
           <input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
             placeholder="UPS / 商品 / 序列号"
           />
         </label>
@@ -123,6 +153,17 @@ export function InboundRecordsPage() {
           <h2>入库明细</h2>
           <span>共 {records?.total ?? 0} 条</span>
         </div>
+        <PaginationControls
+          page={page}
+          pageSize={pageSize}
+          total={records?.total ?? 0}
+          isFetching={recordsQuery.isFetching}
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(1);
+          }}
+        />
         <table className="data-table">
           <thead>
             <tr>
@@ -164,7 +205,7 @@ export function InboundRecordsPage() {
 }
 
 type CustomerOption = { id: string; label: string };
-type InboundRecordsResult = { items: InboundRecord[]; total: number };
+type InboundRecordsResult = { items: InboundRecord[]; total: number; page: number; pageSize: number };
 type InboundRecord = {
   id: string;
   upc: string;

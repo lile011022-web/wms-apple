@@ -37,6 +37,11 @@ The customer must be locked before scan data becomes operational inventory. Pack
 
 Confirmation is the point where preview data becomes inventory.
 
+Before confirmation, the inbound scan page should show an always-current review summary for the
+active draft. The summary must help the operator verify the number of scanned product units, unique
+UPC values, product styles, package tracking numbers, pending rows, exception rows, and the count
+per UPC/product.
+
 The system must:
 
 - Recheck duplicates inside the transaction.
@@ -50,3 +55,29 @@ The system must:
 Inbound preview deletion is logical during the draft lifecycle. Removed rows are marked `VOIDED`.
 
 Confirmed inbound records and inventory rows must not be physically deleted by normal inbound workflows.
+
+## Scan Entry Automation
+
+When a customer is locked and the package tracking number, UPC, and IMEI fields are all filled, the
+web page can automatically add the row to the current draft after the input stabilizes. The manual
+add action should remain available as a fallback. The final confirmation must still require an
+operator click so the review summary can be checked first.
+
+## Batch File Import
+
+Inbound operators can import a CSV file into the current locked draft when receiving many rows from a
+prepared manifest. File import creates draft preview rows only; it must not confirm inventory by
+itself.
+
+The standard import template uses three columns:
+
+- `单号`: UPS, USPS, or FedEx tracking number.
+- `upc`: product UPC.
+- `imei`: item IMEI.
+
+`serial` remains an optional API field for products that do not require IMEI, but it is not part of
+the standard inbound CSV template.
+
+Each imported row must follow the same UPC matching, IMEI/Serial, duplicate, and exception rules as
+manual scanning. Rows that fail validation should be reported with row-level reasons while other
+valid rows remain in the draft for review.

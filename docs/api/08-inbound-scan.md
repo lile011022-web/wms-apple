@@ -30,6 +30,9 @@ Rules:
 `GET /api/v1/inbound/drafts/:id`
 
 Returns the draft header, locked customer, warehouse, preview summary, and non-voided preview items.
+The web client uses this response to compute the confirmation review panel in real time, including
+unique UPC count, product count, package tracking count, total product units, exception count, and
+per-UPC product counts. No separate summary endpoint is required for this draft-level review.
 
 ## Scan Package Tracking Number
 
@@ -62,6 +65,54 @@ Rules:
 - Products with `requiresImei = true` require a valid IMEI.
 - Products with `requiresImei = false` require either Serial or IMEI in this phase.
 - Duplicate IMEI or Serial creates an exception preview item when duplicate detection is enabled.
+
+## Import Preview Items
+
+`POST /api/v1/inbound/drafts/:id/items/import`
+
+The inbound scan page downloads a CSV template, parses it in the browser, and submits parsed rows to
+this JSON endpoint. Standard CSV template columns are `单号`, `upc`, and `imei`. The web parser also
+accepts `upsTrackingNo` or `trackingNo` as package-tracking aliases. The API payload still accepts
+optional `serial` for non-IMEI product workflows, but `serial` is not required in the standard
+inbound template.
+
+Request:
+
+```json
+{
+  "items": [
+    {
+      "upsTrackingNo": "1Z999AA10123456784",
+      "upc": "194253149189",
+      "imei": "356789012345678"
+    }
+  ]
+}
+```
+
+Rules:
+
+- Up to 1000 rows can be submitted in one import.
+- Each row is added with the same validation and exception behavior as `POST /drafts/:id/items`.
+- Standard CSV imports use three required columns: package tracking number (`单号`), UPC, and IMEI.
+- Valid rows are appended to the current draft immediately.
+- Failed rows are reported with row number and error message; other valid rows can still be imported.
+- Importing rows does not confirm inventory. Operators must still review the draft summary and click
+  confirm inbound.
+
+Response `data`:
+
+```json
+{
+  "importedCount": 1,
+  "failedCount": 0,
+  "failedRows": [],
+  "draft": {
+    "id": "draft_id",
+    "summary": { "totalItems": 1, "pendingItems": 1, "exceptionItems": 0, "confirmedItems": 0 }
+  }
+}
+```
 
 ## Remove Or Clear Preview Items
 

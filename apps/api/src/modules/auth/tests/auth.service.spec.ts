@@ -6,6 +6,7 @@ import bcrypt from 'bcrypt';
 import { BusinessError } from '../../../common/errors/business-error';
 import { ErrorCode } from '../../../common/errors/error-codes';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
+import { UsersService } from '../../users/users.service';
 import { AuthRepository } from '../auth.repository';
 import { AuthService } from '../auth.service';
 
@@ -53,12 +54,22 @@ function createService(user = activeUser) {
       .mockResolvedValueOnce('refresh-token'),
     verifyAsync: jest.fn(),
   } as unknown as jest.Mocked<JwtService>;
+  const usersService = {
+    registerOperator: jest.fn(),
+  } as unknown as jest.Mocked<UsersService>;
 
   return {
-    service: new AuthService(authRepository, auditLogsService, configService as never, jwtService),
+    service: new AuthService(
+      authRepository,
+      auditLogsService,
+      configService as never,
+      jwtService,
+      usersService,
+    ),
     authRepository,
     auditLogsService,
     jwtService,
+    usersService,
   };
 }
 
@@ -130,6 +141,46 @@ describe('AuthService', () => {
 
     await expect(service.refresh({ refreshToken: 'refresh-token-value-for-test' })).rejects.toThrow(
       UnauthorizedException,
+    );
+  });
+
+  it('registers operator users and returns a login session', async () => {
+    const { service, usersService } = createService();
+    usersService.registerOperator.mockResolvedValue({
+      id: 'user-2',
+      email: 'operator@wms-scan.local',
+      name: 'Operator',
+      status: UserStatus.ACTIVE,
+      roles: [{ id: 'role-operator', code: 'OPERATOR', name: 'Warehouse Operator' }],
+      permissions: ['inbound.manage', 'inventory.read'],
+      lastLoginAt: null,
+      createdAt: new Date('2026-06-20T00:00:00Z'),
+      updatedAt: new Date('2026-06-20T00:00:00Z'),
+    });
+
+    await expect(
+      service.register(
+        {
+          email: 'operator@wms-scan.local',
+          name: 'Operator',
+          password: 'local-password',
+        },
+        { requestId: 'req-register' },
+      ),
+    ).resolves.toMatchObject({
+      user: {
+        email: 'operator@wms-scan.local',
+        roles: ['OPERATOR'],
+        permissions: ['inbound.manage', 'inventory.read'],
+      },
+      tokens: {
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      },
+    });
+    expect(usersService.registerOperator).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'operator@wms-scan.local' }),
+      { requestId: 'req-register' },
     );
   });
 

@@ -23,7 +23,9 @@ Product-level inventory summaries are derived from `inventory_items` grouped by 
 
 The customer inventory page should show:
 
+- Customer-level totals for total inventory, SKU count, in-stock, available outbound, packed, outbound, exception, and voided quantities.
 - SKU and product identity from the product catalog.
+- Total quantity.
 - In-stock quantity.
 - Packed quantity.
 - Outbound quantity.
@@ -36,6 +38,9 @@ IMEI is the primary tracking identifier for Apple products that require IMEI. Se
 
 Detail rows should preserve:
 
+- Inbound batch number.
+- Package tracking/order number captured during inbound scanning.
+- Latest outbound box/order number when the item has already been packed or outbound.
 - UPC.
 - UPS tracking number.
 - IMEI or Serial.

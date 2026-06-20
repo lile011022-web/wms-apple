@@ -13,11 +13,12 @@ import {
   Settings,
   Shuffle,
   Tags,
+  UserPlus,
   Users,
 } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { getCurrentUser, login, logout } from '../api/auth';
+import { getCurrentUser, login, logout, register } from '../api/auth';
 
 const navigationItems = [
   {
@@ -50,28 +51,60 @@ const navigationItems = [
 
 export function AppLayout() {
   const queryClient = useQueryClient();
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('admin@wms-scan.local');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [authNotice, setAuthNotice] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isRefreshingData, setIsRefreshingData] = useState(false);
   const currentUserQuery = useQuery({
     queryKey: ['current-user'],
     queryFn: getCurrentUser,
     retry: false,
   });
 
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      queryClient.clear();
+      setAuthError('登录已过期，请重新登录。');
+    };
+
+    window.addEventListener('wms-scan-auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('wms-scan-auth-expired', handleAuthExpired);
+  }, [queryClient]);
+
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAuthError('');
+    setAuthNotice('');
     setIsLoggingIn(true);
     try {
-      const session = await login({ email, password });
+      const session =
+        authMode === 'register'
+          ? await register({ email, name, password })
+          : await login({ email, password });
       queryClient.setQueryData(['current-user'], session.user);
       await queryClient.invalidateQueries();
+      if (authMode === 'register') {
+        setAuthNotice('账号已创建，并已自动登录。');
+      }
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : '登录失败');
+      setAuthError(
+        error instanceof Error ? error.message : authMode === 'register' ? '注册失败' : '登录失败',
+      );
     } finally {
       setIsLoggingIn(false);
+    }
+  };
+
+  const handleRefreshData = async () => {
+    setIsRefreshingData(true);
+    try {
+      await queryClient.invalidateQueries({ refetchType: 'active' });
+    } finally {
+      setIsRefreshingData(false);
     }
   };
 
@@ -128,10 +161,11 @@ export function AppLayout() {
             <button
               type="button"
               className="icon-button"
-              onClick={() => currentUserQuery.refetch()}
+              onClick={handleRefreshData}
+              disabled={isRefreshingData}
             >
               <RefreshCw size={16} />
-              刷新
+              {isRefreshingData ? '刷新中' : '刷新数据'}
             </button>
             {currentUserQuery.data ? (
               <button type="button" className="icon-button danger" onClick={handleLogout}>
@@ -145,10 +179,43 @@ export function AppLayout() {
         {!currentUserQuery.data ? (
           <section className="login-panel panel">
             <div className="page-heading compact">
-              <p>Local Test Login</p>
-              <h1>登录 WMS Scan</h1>
+              <p>{authMode === 'register' ? 'Employee Register' : 'Employee Login'}</p>
+              <h1>{authMode === 'register' ? '注册员工账号' : '登录 WMS Scan'}</h1>
+            </div>
+            <div className="auth-mode-tabs" role="tablist" aria-label="登录或注册">
+              <button
+                type="button"
+                className={authMode === 'login' ? 'active' : ''}
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthError('');
+                  setAuthNotice('');
+                }}
+              >
+                <LogIn size={16} />
+                登录
+              </button>
+              <button
+                type="button"
+                className={authMode === 'register' ? 'active' : ''}
+                onClick={() => {
+                  setAuthMode('register');
+                  setAuthError('');
+                  setAuthNotice('');
+                  setEmail('');
+                }}
+              >
+                <UserPlus size={16} />
+                注册账号
+              </button>
             </div>
             <form className="login-form" onSubmit={handleLogin}>
+              {authMode === 'register' ? (
+                <label>
+                  <span>姓名</span>
+                  <input value={name} onChange={(event) => setName(event.target.value)} />
+                </label>
+              ) : null}
               <label>
                 <span>邮箱</span>
                 <input value={email} onChange={(event) => setEmail(event.target.value)} />
@@ -162,9 +229,10 @@ export function AppLayout() {
                 />
               </label>
               <button type="submit" disabled={isLoggingIn}>
-                <LogIn size={16} />
-                {isLoggingIn ? '登录中' : '登录'}
+                {authMode === 'register' ? <UserPlus size={16} /> : <LogIn size={16} />}
+                {isLoggingIn ? '提交中' : authMode === 'register' ? '创建账号并登录' : '登录'}
               </button>
+              {authNotice ? <p className="form-success">{authNotice}</p> : null}
               {authError ? <p className="form-error">{authError}</p> : null}
             </form>
           </section>
