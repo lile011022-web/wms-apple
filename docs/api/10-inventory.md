@@ -1,6 +1,6 @@
 # Inventory API
 
-Inventory endpoints power the customer inventory page, outbound packing inventory selection, detail download filters, and dashboard inventory totals. The customer inventory page now combines `customer-summary`, `products`, and `items` so operators can review totals, SKU-level counts, and item-level tracking numbers in one workflow.
+Inventory endpoints power the customer inventory page, outbound packing inventory selection, detail download filters, and dashboard inventory totals. The customer inventory page now combines `customer-summary`, `products`, and `items` so operators can review totals, SKU-level counts, and item-level tracking numbers in one workflow. It can also call the outbound box APIs to create an open box, add selected available inventory rows, and seal the box without leaving the customer inventory page.
 
 All endpoints use the `/api/v1` prefix and require bearer authentication with `inventory.read`.
 
@@ -123,6 +123,8 @@ Customer inventory item tables should display the returned tracking context:
 - `inboundBatch.batchNo`: inbound batch number.
 - `upsTrackingNo`: package tracking/order number captured during inbound scan or CSV import.
 - `latestOutboundBox.boxNo`: outbound box/order number when the inventory row has been packed or shipped.
+
+Customer inventory batch packing must use only rows where `availableForOutbound = true`. The frontend creates or selects an open outbound box through `/outbound/boxes`, adds each selected row through `POST /outbound/boxes/:id/items`, and seals through `POST /outbound/boxes/:id/seal`. Customer, warehouse, duplicate-packing, status, and audit rules remain owned by the outbound module.
 
 ## GET /inventory/items/:id
 

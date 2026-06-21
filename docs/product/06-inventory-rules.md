@@ -58,6 +58,16 @@ Only `IN_STOCK` rows are available for outbound packing.
 
 Rows with `EXCEPTION`, `PACKED`, `OUTBOUND`, or `VOIDED` status must not appear as selectable inventory in outbound packing.
 
+## Batch Packing From Customer Inventory
+
+Customer inventory may offer batch packing as a shortcut, but it must not create separate inventory-state rules.
+
+- Operators select a customer and warehouse before packing from the customer inventory page.
+- Only detail rows marked available for outbound can be selected.
+- The page may create a new open outbound box or select an existing open box for the same customer and warehouse.
+- Batch packing adds selected rows through the outbound box item API, so item ownership, warehouse ownership, duplicate packing, and status validation stay centralized.
+- Sealing from customer inventory uses the normal outbound seal action. After sealing, the rows remain visible as packed inventory and can be exported through sealed outbound detail reports.
+
 ## Export Behavior
 
 Inventory export filters must match inventory list filters so the detail download page and reports module do not drift from on-screen inventory results.

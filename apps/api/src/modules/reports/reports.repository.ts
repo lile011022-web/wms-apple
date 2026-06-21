@@ -288,6 +288,8 @@ export class ReportsRepository {
             { outboundBox: { boxNo: { contains: search, mode: 'insensitive' } } },
             { outboundBox: { customer: { code: { contains: search, mode: 'insensitive' } } } },
             { outboundBox: { customer: { name: { contains: search, mode: 'insensitive' } } } },
+            { inventoryItem: { upc: { contains: search } } },
+            { inventoryItem: { upsTrackingNo: { contains: search, mode: 'insensitive' } } },
             { inventoryItem: { imei: { contains: search } } },
             { inventoryItem: { serial: { contains: search, mode: 'insensitive' } } },
             { inventoryItem: { product: { sku: { contains: search, mode: 'insensitive' } } } },

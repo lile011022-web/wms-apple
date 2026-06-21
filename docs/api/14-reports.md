@@ -9,7 +9,7 @@ Permission: `reports.export`
 ## Report Types
 
 - `INBOUND_DETAIL`: inbound item detail.
-- `OUTBOUND_DETAIL`: outbound packed item detail.
+- `OUTBOUND_DETAIL`: outbound packing detail. Set `filters.outboundStatus = "SEALED"` to download only sealed box detail.
 - `INVENTORY_DETAIL`: current inventory item detail.
 - `EXCEPTION_DETAIL`: exception record detail.
 - `CUSTOMER_CHANGE_LOG`: customer correction logs.
@@ -41,12 +41,13 @@ The response returns estimated row count, selected fields, available field white
 
 ```json
 {
-  "reportType": "INVENTORY_DETAIL",
+  "reportType": "OUTBOUND_DETAIL",
   "format": "CSV",
   "filters": {
-    "customerId": "customer-1"
+    "customerId": "customer-1",
+    "outboundStatus": "SEALED"
   },
-  "fields": ["imei", "serial", "status"]
+  "fields": ["boxNo", "boxName", "customerName", "sku", "productName", "upc", "upsTrackingNo", "imei", "serial", "sealedAt"]
 }
 ```
 
@@ -56,6 +57,8 @@ Supported formats:
 - `EXCEL`
 
 The current implementation completes small exports synchronously. Reports over the configured synchronous row limit are rejected for background-job handling. A successful export writes an `AuditLog` with action `REPORT_EXPORT`.
+
+For sealed packing detail downloads, use `reportType = OUTBOUND_DETAIL` with `filters.outboundStatus = SEALED`. Search supports box number, customer, UPC, tracking number, IMEI, Serial, SKU, and product name.
 
 To re-download with the same report type, filters, fields, and format, call the same endpoint with:
 

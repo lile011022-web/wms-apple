@@ -20,7 +20,7 @@ Reports provide traceable downloads for operational review, customer reconciliat
 ## Supported Report Types
 
 - `INBOUND_DETAIL`: item-level inbound rows with customer, warehouse, product, scan, and linked inventory status.
-- `OUTBOUND_DETAIL`: packed item rows with box, customer, warehouse, product, and packing time.
+- `OUTBOUND_DETAIL`: packed item rows with box, customer, warehouse, product, tracking number, packing time, and sealed time. When operators need sealed box downloads, the report must filter `outboundStatus = SEALED`.
 - `INVENTORY_DETAIL`: current item inventory rows with ownership, warehouse, product, IMEI, Serial, status, and latest box.
 - `EXCEPTION_DETAIL`: exception rows with type, status, raw value, ownership, product, and resolution fields.
 - `CUSTOMER_CHANGE_LOG`: batch customer-change logs with old customer, new customer, operator, reason, and affected count.
@@ -38,3 +38,5 @@ The detail-download page should:
 6. Create a CSV or Excel export.
 7. Show export history and status.
 8. Download completed exports or re-create an export from history.
+
+For 装箱明细, the default page workflow should offer `仅已封箱` so customer-facing downloads do not include open boxes still being edited.

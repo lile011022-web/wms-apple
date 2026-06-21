@@ -5,7 +5,7 @@ import { customersApi, reportsApi } from '../../api/workflow';
 
 const reportTypes = [
   { value: 'INBOUND_DETAIL', label: '入库明细' },
-  { value: 'OUTBOUND_DETAIL', label: '出库明细' },
+  { value: 'OUTBOUND_DETAIL', label: '装箱明细' },
   { value: 'INVENTORY_DETAIL', label: '库存明细' },
   { value: 'EXCEPTION_DETAIL', label: '异常明细' },
   { value: 'CUSTOMER_CHANGE_LOG', label: '客户修改日志' },
@@ -18,6 +18,7 @@ export function DetailDownloadPage() {
   const [format, setFormat] = useState('CSV');
   const [customerId, setCustomerId] = useState('');
   const [search, setSearch] = useState('');
+  const [sealedOnly, setSealedOnly] = useState(true);
   const [preview, setPreview] = useState<ReportPreview | null>(null);
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [message, setMessage] = useState('');
@@ -33,8 +34,9 @@ export function DetailDownloadPage() {
     () => ({
       customerId: customerId || undefined,
       search: search || undefined,
+      outboundStatus: reportType === 'OUTBOUND_DETAIL' && sealedOnly ? 'SEALED' : undefined,
     }),
-    [customerId, search],
+    [customerId, reportType, sealedOnly, search],
   );
 
   const exportsQuery = useQuery({
@@ -154,6 +156,18 @@ export function DetailDownloadPage() {
             placeholder="UPC / IMEI / 箱号 / 操作说明"
           />
         </label>
+        {reportType === 'OUTBOUND_DETAIL' ? (
+          <label>
+            <span>封箱状态</span>
+            <select
+              value={sealedOnly ? 'SEALED' : ''}
+              onChange={(event) => setSealedOnly(event.target.value === 'SEALED')}
+            >
+              <option value="SEALED">仅已封箱</option>
+              <option value="">全部装箱明细</option>
+            </select>
+          </label>
+        ) : null}
         <button type="button" className="btn" onClick={() => previewMutation.mutate()}>
           <Eye size={16} />
           预览
