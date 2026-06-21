@@ -114,10 +114,13 @@ function createService(
     findCustomerById: jest.fn().mockResolvedValue(customer),
     findWarehouseById: jest.fn().mockResolvedValue(warehouse),
     findBoxByNo: jest.fn().mockResolvedValue(null),
+    findBoxByName: jest.fn().mockResolvedValue(null),
     findLatestBoxByPrefix: jest.fn().mockResolvedValue(null),
     createBox: jest.fn().mockResolvedValue(emptyBox),
+    createBoxWithAudit: jest.fn().mockResolvedValue(emptyBox),
     findBoxById: jest.fn().mockResolvedValue(emptyBox),
     findBoxes: jest.fn().mockResolvedValue([1, [emptyBox]]),
+    updateBoxWithAudit: jest.fn().mockResolvedValue(emptyBox),
     findInventoryItemById: jest.fn().mockResolvedValue(inventoryItem),
     addItemToBox: jest.fn().mockResolvedValue({ ...emptyBox, items: [boxItem] }),
     removeItemFromBox: jest.fn().mockResolvedValue({
@@ -131,6 +134,8 @@ function createService(
       sealedAt: now,
       items: [boxItem],
     }),
+    reopenBox: jest.fn().mockResolvedValue({ ...emptyBox, items: [boxItem] }),
+    voidBox: jest.fn().mockResolvedValue({ ...emptyBox, status: OutboundBoxStatus.VOIDED }),
     ...repositoryOverrides,
   } as unknown as jest.Mocked<OutboundRepository>;
   const inventoryService = {
@@ -177,6 +182,28 @@ describe('OutboundService', () => {
     expect(repository.findBoxByNo).toHaveBeenCalledWith(warehouse.id, 'BOX-001');
   });
 
+  it('blocks duplicate box names inside the same warehouse', async () => {
+    const { repository, service } = createService({
+      findBoxByName: jest.fn().mockResolvedValue({ ...emptyBox, boxName: 'Apex Trading - 第一箱' }),
+    });
+
+    await expect(
+      service.createBox(
+        {
+          customerId: customer.id,
+          warehouseId: warehouse.id,
+          boxName: 'Apex Trading - 第一箱',
+        },
+        user,
+      ),
+    ).rejects.toThrow(ConflictException);
+    expect(repository.findBoxByName).toHaveBeenCalledWith(
+      warehouse.id,
+      'Apex Trading - 第一箱',
+      undefined,
+    );
+  });
+
   it('generates deterministic customer-linked box numbers when no box number is provided', async () => {
     jest.useFakeTimers().setSystemTime(now);
     try {
@@ -189,7 +216,7 @@ describe('OutboundService', () => {
           ...emptyBox,
           boxNo: 'BOX-CUST-001-20260617-005',
         }),
-        createBox: jest.fn().mockResolvedValue(generatedBox),
+        createBoxWithAudit: jest.fn().mockResolvedValue(generatedBox),
       });
 
       await expect(
@@ -211,10 +238,11 @@ describe('OutboundService', () => {
         warehouse.id,
         'BOX-CUST-001-20260617-006',
       );
-      expect(repository.createBox).toHaveBeenCalledWith(
+      expect(repository.createBoxWithAudit).toHaveBeenCalledWith(
         expect.objectContaining({
           boxNo: 'BOX-CUST-001-20260617-006',
         }),
+        user.id,
       );
     } finally {
       jest.useRealTimers();
@@ -250,7 +278,7 @@ describe('OutboundService', () => {
     });
 
     await expect(
-      service.addItem(emptyBox.id, { inventoryItemId: inventoryItem.id }),
+      service.addItem(emptyBox.id, { inventoryItemId: inventoryItem.id }, user),
     ).rejects.toThrow(ConflictException);
   });
 
@@ -263,7 +291,7 @@ describe('OutboundService', () => {
     });
 
     await expect(
-      service.addItem(emptyBox.id, { inventoryItemId: inventoryItem.id }),
+      service.addItem(emptyBox.id, { inventoryItemId: inventoryItem.id }, user),
     ).rejects.toThrow(ConflictException);
 
     const packedService = createService({
@@ -274,7 +302,7 @@ describe('OutboundService', () => {
     }).service;
 
     await expect(
-      packedService.addItem(emptyBox.id, { inventoryItemId: inventoryItem.id }),
+      packedService.addItem(emptyBox.id, { inventoryItemId: inventoryItem.id }, user),
     ).rejects.toThrow(ConflictException);
   });
 
@@ -287,18 +315,22 @@ describe('OutboundService', () => {
     });
 
     await expect(
-      service.addItem(emptyBox.id, { inventoryItemId: inventoryItem.id }),
+      service.addItem(emptyBox.id, { inventoryItemId: inventoryItem.id }, user),
     ).resolves.toMatchObject({
       id: emptyBox.id,
       itemCount: 1,
       items: [{ inventoryItemId: inventoryItem.id }],
     });
-    await expect(service.removeItem(emptyBox.id, inventoryItem.id)).resolves.toMatchObject({
+    await expect(service.removeItem(emptyBox.id, inventoryItem.id, user)).resolves.toMatchObject({
       removedItemId: inventoryItem.id,
       box: { id: emptyBox.id, itemCount: 0 },
     });
-    expect(repository.addItemToBox).toHaveBeenCalledWith(emptyBox.id, inventoryItem.id);
-    expect(repository.removeItemFromBox).toHaveBeenCalledWith(emptyBox.id, inventoryItem.id);
+    expect(repository.addItemToBox).toHaveBeenCalledWith(emptyBox.id, inventoryItem.id, user.id);
+    expect(repository.removeItemFromBox).toHaveBeenCalledWith(
+      emptyBox.id,
+      inventoryItem.id,
+      user.id,
+    );
   });
 
   it('requires at least one item before sealing and then records the seal transaction', async () => {
@@ -318,5 +350,34 @@ describe('OutboundService', () => {
       boxId: emptyBox.id,
       operatorId: user.id,
     });
+  });
+
+  it('deletes an open box by voiding it and returning the refreshed box', async () => {
+    const { repository, service } = createService();
+
+    await expect(service.deleteBox(emptyBox.id, user)).resolves.toMatchObject({
+      deletedBoxId: emptyBox.id,
+      box: {
+        id: emptyBox.id,
+        status: OutboundBoxStatus.VOIDED,
+      },
+    });
+    expect(repository.voidBox).toHaveBeenCalledWith({
+      boxId: emptyBox.id,
+      operatorId: user.id,
+    });
+  });
+
+  it('blocks deleting sealed boxes until they are reopened', async () => {
+    const { repository, service } = createService({
+      findBoxById: jest.fn().mockResolvedValue({
+        ...emptyBox,
+        status: OutboundBoxStatus.SEALED,
+        sealedAt: now,
+      }),
+    });
+
+    await expect(service.deleteBox(emptyBox.id, user)).rejects.toThrow(ConflictException);
+    expect(repository.voidBox).not.toHaveBeenCalled();
   });
 });

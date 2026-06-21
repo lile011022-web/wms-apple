@@ -64,9 +64,16 @@ export const outboundApi = {
   availableItems: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/outbound/available-items', { params }),
   createBox: (data: Payload) => request<unknown>('post', '/outbound/boxes', { data }),
+  updateBox: (boxId: string, data: Payload) =>
+    request<unknown>('patch', `/outbound/boxes/${boxId}`, { data }),
   addItem: (boxId: string, data: Payload) =>
     request<unknown>('post', `/outbound/boxes/${boxId}/items`, { data }),
+  removeItem: (boxId: string, itemId: string) =>
+    request<unknown>('delete', `/outbound/boxes/${boxId}/items/${itemId}`),
+  clearItems: (boxId: string) => request<unknown>('delete', `/outbound/boxes/${boxId}/items`),
   seal: (boxId: string) => request<unknown>('post', `/outbound/boxes/${boxId}/seal`),
+  reopen: (boxId: string) => request<unknown>('post', `/outbound/boxes/${boxId}/reopen`),
+  deleteBox: (boxId: string) => request<unknown>('delete', `/outbound/boxes/${boxId}`),
 };
 
 export const exceptionsApi = {

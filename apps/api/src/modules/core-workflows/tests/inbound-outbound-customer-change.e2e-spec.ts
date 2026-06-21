@@ -272,7 +272,9 @@ describe('Core inbound, outbound, and customer-change workflow', () => {
       findCustomerById: jest.fn().mockResolvedValue(currentCustomer),
       findWarehouseById: jest.fn().mockResolvedValue(warehouse),
       findBoxByNo: jest.fn().mockResolvedValue(null),
+      findBoxByName: jest.fn().mockResolvedValue(null),
       createBox: jest.fn().mockResolvedValue(openBox),
+      createBoxWithAudit: jest.fn().mockResolvedValue(openBox),
       findBoxById: jest
         .fn()
         .mockResolvedValueOnce(openBox)
@@ -295,7 +297,7 @@ describe('Core inbound, outbound, and customer-change workflow', () => {
       operator,
     );
     await expect(
-      outboundService.addItem(box.id, { inventoryItemId: inventoryItem.id }),
+      outboundService.addItem(box.id, { inventoryItemId: inventoryItem.id }, operator),
     ).resolves.toMatchObject({
       customer: { id: currentCustomer.id },
       itemCount: 1,

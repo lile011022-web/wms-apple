@@ -75,7 +75,14 @@ enum AuditAction {
   LOGIN
   LOGOUT
   INBOUND_CONFIRM
+  OUTBOUND_BOX_CREATE
+  OUTBOUND_BOX_UPDATE
+  OUTBOUND_BOX_ITEM_ADD
+  OUTBOUND_BOX_ITEM_REMOVE
+  OUTBOUND_BOX_ITEM_CLEAR
   OUTBOUND_BOX_SEAL
+  OUTBOUND_BOX_REOPEN
+  OUTBOUND_BOX_DELETE
   EXCEPTION_HANDLE
   CUSTOMER_BATCH_CHANGE
   UPC_PRODUCT_CHANGE
@@ -331,6 +338,10 @@ model InventoryItem {
 model OutboundBox {
   id          String            @id @default(cuid())
   boxNo       String
+  boxName     String?
+  sizePreset  String?
+  customSize  String?
+  weightLb    Float?
   customerId  String
   warehouseId String
   createdById String

@@ -570,23 +570,29 @@ apps/api/src/modules/<module-name>/
 - <strong><font color="red">🔴 已完成：创建箱号。</font></strong>
 - <strong><font color="red">🔴 已完成：查询当前客户可装箱库存。</font></strong>
 - <strong><font color="red">🔴 已完成：按 UPS、UPC、IMEI、商品名搜索可装箱明细。</font></strong>
+- <strong><font color="red">🔴 已完成：出库装箱搜索通过统一物流字段支持 UPS、USPS、FedEx、UPC、IMEI、Serial、SKU 和商品名。</font></strong>
 - <strong><font color="red">🔴 已完成：可装箱库存、最近箱子和箱内明细展示分页。</font></strong>
+- <strong><font color="red">🔴 已完成：建箱前可填写箱子名称、固定尺寸、自定义尺寸、重量 lb 和备注。</font></strong>
+- <strong><font color="red">🔴 已完成：开放箱可编辑箱子名称、尺寸、重量和备注。</font></strong>
 - <strong><font color="red">🔴 已完成：加入当前箱。</font></strong>
 - <strong><font color="red">🔴 已完成：从当前箱移除。</font></strong>
 - <strong><font color="red">🔴 已完成：清空当前箱。</font></strong>
 - <strong><font color="red">🔴 已完成：封箱确认。</font></strong>
+- <strong><font color="red">🔴 已完成：封箱后支持返工，重新打开箱子后可继续加货、删货和再次封箱。</font></strong>
 - <strong><font color="red">🔴 已完成：封箱后库存状态从 `IN_STOCK` 变为 `PACKED`。</font></strong>
 - <strong><font color="red">🔴 已完成：出库客户归属校验。</font></strong>
 
 建议接口标题：
 
 - <strong><font color="red">🔴 已完成：`POST /outbound/boxes`。</font></strong>
+- <strong><font color="red">🔴 已完成：`PATCH /outbound/boxes/:id`。</font></strong>
 - <strong><font color="red">🔴 已完成：`GET /outbound/boxes/:id`。</font></strong>
 - <strong><font color="red">🔴 已完成：`GET /outbound/available-items`。</font></strong>
 - <strong><font color="red">🔴 已完成：`POST /outbound/boxes/:id/items`。</font></strong>
 - <strong><font color="red">🔴 已完成：`DELETE /outbound/boxes/:id/items/:itemId`。</font></strong>
 - <strong><font color="red">🔴 已完成：`DELETE /outbound/boxes/:id/items`。</font></strong>
 - <strong><font color="red">🔴 已完成：`POST /outbound/boxes/:id/seal`。</font></strong>
+- <strong><font color="red">🔴 已完成：`POST /outbound/boxes/:id/reopen`。</font></strong>
 - <strong><font color="red">🔴 已完成：`GET /outbound/boxes`。</font></strong>
 
 核心业务规则：
@@ -596,6 +602,7 @@ apps/api/src/modules/<module-name>/
 - <strong><font color="red">🔴 已完成：非在库状态不能加入箱。</font></strong>
 - <strong><font color="red">🔴 已完成：封箱必须在数据库事务中完成。</font></strong>
 - <strong><font color="red">🔴 已完成：封箱必须写 audit log。</font></strong>
+- <strong><font color="red">🔴 已完成：建箱、编辑箱子、加货、删货、清空、封箱和返工都写 audit log，记录操作人。</font></strong>
 
 文档同步：
 
@@ -612,7 +619,7 @@ apps/api/src/modules/<module-name>/
 
 验收标准：
 
-- <strong><font color="red">🔴 已完成：出库装箱页面可创建箱号、加入明细、移除明细、封箱。</font></strong>
+- <strong><font color="red">🔴 已完成：出库装箱页面可创建箱号、编辑箱子设置、加入明细、移除明细、清空箱子、封箱和返工。</font></strong>
 
 ## 15 阶段十一：异常池
 

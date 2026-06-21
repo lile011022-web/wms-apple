@@ -14,6 +14,10 @@ Request body:
 {
   "customerId": "customer-1",
   "warehouseId": "warehouse-1",
+  "boxName": "Customer A first box",
+  "sizePreset": "12*12*12",
+  "customSize": null,
+  "weightLb": 45,
   "notes": "Packing lane A"
 }
 ```
@@ -29,6 +33,32 @@ Rules:
 - The generated `SEQUENCE` increments from the latest box number with the same customer/date prefix inside the warehouse.
 - Generated box numbers do not use random suffixes.
 - A provided `boxNo` is uppercased and must still be unique inside the warehouse.
+- `sizePreset` supports `12*12*12`, `14*14*14`, and `CUSTOM`.
+- `customSize` is required when `sizePreset` is `CUSTOM`.
+- `weightLb` defaults to `45` and is stored in pounds.
+- Box creation writes an `OUTBOUND_BOX_CREATE` audit log.
+
+## PATCH /outbound/boxes/:id
+
+Updates editable box settings before packing or while the box is open for rework.
+
+Request body:
+
+```json
+{
+  "boxName": "Customer A rework box",
+  "sizePreset": "CUSTOM",
+  "customSize": "16*14*12",
+  "weightLb": 42.5,
+  "notes": "Customer requested repack"
+}
+```
+
+Rules:
+
+- The box must be `OPEN`.
+- Only submitted fields are changed.
+- Updating box settings writes an `OUTBOUND_BOX_UPDATE` audit log.
 
 ## GET /outbound/boxes
 
@@ -91,6 +121,7 @@ Rules:
 - The inventory item status must be `IN_STOCK`.
 - The inventory item must not already be packed in any outbound box.
 - On success, the inventory item status becomes `PACKED`.
+- Adding an item writes an `OUTBOUND_BOX_ITEM_ADD` audit log.
 
 ## DELETE /outbound/boxes/:id/items/:itemId
 
@@ -103,6 +134,7 @@ Rules:
 - The box must be `OPEN`.
 - The item must belong to the box.
 - On success, the inventory item status returns to `IN_STOCK` and `packedAt` is cleared.
+- Removing an item writes an `OUTBOUND_BOX_ITEM_REMOVE` audit log.
 
 ## DELETE /outbound/boxes/:id/items
 
@@ -113,6 +145,7 @@ Rules:
 - The box must be `OPEN`.
 - All packed inventory rows in the box return to `IN_STOCK`.
 - The response includes `clearedCount` and the current empty box.
+- Clearing the box writes an `OUTBOUND_BOX_ITEM_CLEAR` audit log.
 
 ## POST /outbound/boxes/:id/seal
 
@@ -125,6 +158,18 @@ Rules:
 - Sealing runs inside a database transaction.
 - The backend marks the box `SEALED`, sets `sealedAt`, ensures all box inventory rows are `PACKED`, and writes an `OUTBOUND_BOX_SEAL` audit log.
 
+## POST /outbound/boxes/:id/reopen
+
+Reopens a sealed box for warehouse rework.
+
+Rules:
+
+- The box must be `SEALED`.
+- The box status returns to `OPEN`.
+- `sealedAt` is cleared.
+- Box items remain linked to the same box and inventory remains `PACKED` until an operator removes an item.
+- Reopening writes an `OUTBOUND_BOX_REOPEN` audit log.
+
 ## Response Shape
 
 Outbound box responses use this shape:
@@ -133,6 +178,10 @@ Outbound box responses use this shape:
 {
   "id": "box-1",
   "boxNo": "BOX-20260617-001",
+  "boxName": "Customer A first box",
+  "sizePreset": "12*12*12",
+  "customSize": null,
+  "weightLb": 45,
   "status": "OPEN",
   "customer": {
     "id": "customer-1",

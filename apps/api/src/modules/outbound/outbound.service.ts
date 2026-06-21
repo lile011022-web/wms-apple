@@ -11,6 +11,7 @@ import { AddOutboundBoxItemDto } from './dto/add-outbound-box-item.dto';
 import { CreateOutboundBoxDto } from './dto/create-outbound-box.dto';
 import { ListOutboundAvailableItemsQueryDto } from './dto/list-outbound-available-items-query.dto';
 import { ListOutboundBoxesQueryDto } from './dto/list-outbound-boxes-query.dto';
+import { UpdateOutboundBoxDto } from './dto/update-outbound-box.dto';
 import {
   OutboundBoxRecord,
   OutboundInventoryItemRecord,
@@ -51,14 +52,22 @@ export class OutboundService {
     if (existing) {
       throw new ConflictException('Outbound box number already exists in this warehouse.');
     }
+    await this.assertUniqueBoxName(warehouseId, dto.boxName);
 
-    const box = await this.outboundRepository.createBox({
-      boxNo,
-      customer: { connect: { id: customer.id } },
-      warehouse: { connect: { id: warehouse.id } },
-      createdBy: { connect: { id: operator.id } },
-      notes: this.trimOptional(dto.notes),
-    });
+    const box = await this.outboundRepository.createBoxWithAudit(
+      {
+        boxNo,
+        boxName: this.trimOptional(dto.boxName),
+        sizePreset: this.normalizeSizePreset(dto.sizePreset, '12*12*12'),
+        customSize: this.normalizeCustomSize(dto.sizePreset, dto.customSize),
+        weightLb: dto.weightLb ?? 45,
+        customer: { connect: { id: customer.id } },
+        warehouse: { connect: { id: warehouse.id } },
+        createdBy: { connect: { id: operator.id } },
+        notes: this.trimOptional(dto.notes),
+      },
+      operator.id,
+    );
 
     return this.toBoxResponse(box);
   }
@@ -86,6 +95,36 @@ export class OutboundService {
     return this.toBoxResponse(box);
   }
 
+  async updateBox(id: string, dto: UpdateOutboundBoxDto, operator: AuthenticatedUser) {
+    const box = await this.findOpenBox(id);
+    const data: Prisma.OutboundBoxUpdateInput = {};
+
+    if (dto.boxName !== undefined) {
+      data.boxName = this.trimOptional(dto.boxName) ?? null;
+      await this.assertUniqueBoxName(box.warehouseId, dto.boxName, box.id);
+    }
+    if (dto.sizePreset !== undefined) {
+      data.sizePreset = this.normalizeSizePreset(dto.sizePreset);
+      data.customSize = this.normalizeCustomSize(dto.sizePreset, dto.customSize) ?? null;
+    } else if (dto.customSize !== undefined) {
+      data.customSize = this.trimOptional(dto.customSize) ?? null;
+    }
+    if (dto.weightLb !== undefined) {
+      data.weightLb = dto.weightLb;
+    }
+    if (dto.notes !== undefined) {
+      data.notes = this.trimOptional(dto.notes) ?? null;
+    }
+
+    const updated = await this.outboundRepository.updateBoxWithAudit({
+      boxId: box.id,
+      operatorId: operator.id,
+      data,
+    });
+
+    return this.toBoxResponse(updated);
+  }
+
   async listAvailableItems(query: ListOutboundAvailableItemsQueryDto) {
     const customerId = await this.requireCustomerId(query.customerId);
     return this.inventoryService.listAvailableForOutbound({
@@ -96,17 +135,21 @@ export class OutboundService {
     });
   }
 
-  async addItem(boxId: string, dto: AddOutboundBoxItemDto) {
+  async addItem(boxId: string, dto: AddOutboundBoxItemDto, operator: AuthenticatedUser) {
     const box = await this.findOpenBox(boxId);
     const inventoryItem = await this.findExistingInventoryItem(dto.inventoryItemId);
 
     this.assertInventoryCanJoinBox(box, inventoryItem);
 
-    const updated = await this.outboundRepository.addItemToBox(box.id, inventoryItem.id);
+    const updated = await this.outboundRepository.addItemToBox(
+      box.id,
+      inventoryItem.id,
+      operator.id,
+    );
     return this.toBoxResponse(updated);
   }
 
-  async removeItem(boxId: string, itemId: string) {
+  async removeItem(boxId: string, itemId: string, operator: AuthenticatedUser) {
     const box = await this.findOpenBox(boxId);
     const boxItem = box.items.find((item) => item.inventoryItemId === itemId || item.id === itemId);
 
@@ -114,17 +157,21 @@ export class OutboundService {
       throw new NotFoundException('Outbound box item not found.');
     }
 
-    const result = await this.outboundRepository.removeItemFromBox(box.id, boxItem.inventoryItemId);
+    const result = await this.outboundRepository.removeItemFromBox(
+      box.id,
+      boxItem.inventoryItemId,
+      operator.id,
+    );
     return {
       removedItemId: result.deleted.inventoryItemId,
       box: this.toBoxResponse(result.box),
     };
   }
 
-  async clearItems(boxId: string) {
+  async clearItems(boxId: string, operator: AuthenticatedUser) {
     const box = await this.findOpenBox(boxId);
     const itemIds = box.items.map((item) => item.inventoryItemId);
-    const result = await this.outboundRepository.clearBoxItems(box.id, itemIds);
+    const result = await this.outboundRepository.clearBoxItems(box.id, itemIds, operator.id);
 
     return {
       clearedCount: result.clearedCount,
@@ -143,6 +190,38 @@ export class OutboundService {
       operatorId: operator.id,
     });
     return this.toBoxResponse(sealed);
+  }
+
+  async reopenBox(boxId: string, operator: AuthenticatedUser) {
+    const box = await this.findExistingBox(boxId);
+    if (box.status !== OutboundBoxStatus.SEALED) {
+      throw new ConflictException('Only sealed outbound boxes can be reopened for rework.');
+    }
+
+    const reopened = await this.outboundRepository.reopenBox({
+      boxId: box.id,
+      operatorId: operator.id,
+    });
+    return this.toBoxResponse(reopened);
+  }
+
+  async deleteBox(boxId: string, operator: AuthenticatedUser) {
+    const box = await this.findExistingBox(boxId);
+    if (box.status === OutboundBoxStatus.SEALED) {
+      throw new ConflictException('Sealed outbound boxes must be reopened before deletion.');
+    }
+    if (box.status === OutboundBoxStatus.VOIDED) {
+      throw new ConflictException('Outbound box has already been deleted.');
+    }
+
+    const voided = await this.outboundRepository.voidBox({
+      boxId: box.id,
+      operatorId: operator.id,
+    });
+    return {
+      deletedBoxId: voided.id,
+      box: this.toBoxResponse(voided),
+    };
   }
 
   private async findExistingBox(id: string) {
@@ -209,7 +288,7 @@ export class OutboundService {
     return {
       customerId: this.trimOptional(query.customerId),
       warehouseId: this.trimOptional(query.warehouseId),
-      status: query.status,
+      status: query.status ?? { not: OutboundBoxStatus.VOIDED },
       OR: search
         ? [
             { boxNo: { contains: search, mode: 'insensitive' } },
@@ -224,6 +303,10 @@ export class OutboundService {
     return {
       id: box.id,
       boxNo: box.boxNo,
+      boxName: box.boxName,
+      sizePreset: box.sizePreset,
+      customSize: box.customSize,
+      weightLb: box.weightLb,
       status: box.status,
       customer: {
         id: box.customer.id,
@@ -274,6 +357,42 @@ export class OutboundService {
 
   private normalizeBoxNo(value?: string) {
     return this.trimOptional(value)?.toUpperCase();
+  }
+
+  private async assertUniqueBoxName(
+    warehouseId: string,
+    boxName?: string | null,
+    excludeBoxId?: string,
+  ) {
+    const normalizedBoxName = this.trimOptional(boxName);
+    if (!normalizedBoxName) {
+      return;
+    }
+    const existing = await this.outboundRepository.findBoxByName(
+      warehouseId,
+      normalizedBoxName,
+      excludeBoxId,
+    );
+    if (existing) {
+      throw new ConflictException('Outbound box name already exists in this warehouse.');
+    }
+  }
+
+  private normalizeSizePreset(value?: string | null, fallback?: string) {
+    const normalized = this.trimOptional(value)?.toUpperCase();
+    if (!normalized) {
+      return fallback;
+    }
+    return normalized;
+  }
+
+  private normalizeCustomSize(sizePreset?: string | null, customSize?: string | null) {
+    const normalizedSizePreset = this.normalizeSizePreset(sizePreset);
+    const normalizedCustomSize = this.trimOptional(customSize);
+    if (normalizedSizePreset === 'CUSTOM' && !normalizedCustomSize) {
+      throw new BadRequestException('customSize is required when sizePreset is CUSTOM.');
+    }
+    return normalizedSizePreset === 'CUSTOM' ? normalizedCustomSize : undefined;
   }
 
   private async generateBoxNo(customerCode: string, warehouseId: string) {

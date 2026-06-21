@@ -50,18 +50,25 @@ Rows with these statuses must not be selectable or packable:
 
 Outbound search can match UPS tracking number, UPC, IMEI, Serial, SKU, and product name, but the backend still forces the selected customer and `IN_STOCK` status.
 
+The package tracking storage field keeps the legacy API name `upsTrackingNo`, but operators can search UPS, USPS, and FedEx numbers through the outbound search box.
+
 ## Box Lifecycle
 
 An outbound box starts as `OPEN`.
 
 Allowed operations for an open box:
 
+- Edit box name, size, weight, and notes.
 - Add one inventory row.
 - Remove one inventory row.
 - Clear all rows.
 - Seal the box.
 
-Sealed boxes are immutable in the current backend phase. Later shipping workflows can decide whether sealed boxes move from `PACKED` inventory to final `OUTBOUND` inventory.
+Allowed operations for a sealed box:
+
+- Reopen the sealed box for rework.
+
+Reopening a sealed box changes it back to `OPEN`, clears `sealedAt`, and keeps current box items in the box until an operator explicitly removes them. Later shipping workflows can decide whether sealed boxes move from `PACKED` inventory to final `OUTBOUND` inventory.
 
 ## Inventory Status Changes
 
@@ -82,16 +89,23 @@ When a box is sealed:
 - The backend verifies all box inventory rows remain `PACKED`.
 - An `OUTBOUND_BOX_SEAL` audit log is written.
 
+When a sealed box is reopened for rework:
+
+- The box status changes from `SEALED` back to `OPEN`.
+- `sealedAt` is cleared.
+- Existing box items remain `PACKED` until removed.
+- Operators can add or remove items, then seal the box again.
+- An `OUTBOUND_BOX_REOPEN` audit log is written.
+
 ## Audit Requirements
 
-Sealing a box is a critical audited operation.
+All box operations that change the box or its contents are audited.
 
 The audit log must preserve:
 
-- Action: `OUTBOUND_BOX_SEAL`.
+- Action: `OUTBOUND_BOX_CREATE`, `OUTBOUND_BOX_UPDATE`, `OUTBOUND_BOX_ITEM_ADD`, `OUTBOUND_BOX_ITEM_REMOVE`, `OUTBOUND_BOX_ITEM_CLEAR`, `OUTBOUND_BOX_SEAL`, or `OUTBOUND_BOX_REOPEN`.
 - Resource type: `outbound-box`.
 - Resource ID: outbound box ID.
 - Operator ID.
-- Before snapshot with box ID, box number, prior status, and inventory IDs.
-- After snapshot with sealed status, seal timestamp, and inventory IDs.
-- Metadata with item count, customer ID, and warehouse ID.
+- Before and after snapshots where applicable, including box ID, box number, box name, size, weight, status, seal timestamp, notes, and inventory IDs.
+- Metadata with item count or changed item IDs, customer ID, and warehouse ID.
