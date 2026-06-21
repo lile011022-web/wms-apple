@@ -432,7 +432,7 @@ export class InboundService {
   }
 
   private normalizeImei(value: string) {
-    const normalized = value.trim();
+    const normalized = value.trim().toUpperCase();
     if (!isValidImei(normalized)) {
       throw new BadRequestException('Invalid IMEI format.');
     }

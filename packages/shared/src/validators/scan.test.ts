@@ -15,7 +15,9 @@ import {
 describe('shared scan validators', () => {
   it('validates IMEI values', () => {
     expect(isValidImei('490154203237518')).toBe(true);
+    expect(isValidImei('SH9LRL91YFC')).toBe(true);
     expect(isValidImei('49015420323751')).toBe(false);
+    expect(isValidImei('SH9-LRL91-YFC')).toBe(false);
   });
 
   it('validates UPC values', () => {
@@ -49,6 +51,11 @@ describe('shared scan validators', () => {
     expect(parseBarcode('490154203237518')).toMatchObject({
       valid: true,
       type: ScanCodeType.IMEI,
+    });
+    expect(parseBarcode('SH9LRL91YFC')).toMatchObject({
+      valid: true,
+      type: ScanCodeType.IMEI,
+      value: 'SH9LRL91YFC',
     });
   });
 

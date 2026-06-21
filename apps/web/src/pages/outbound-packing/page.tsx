@@ -59,6 +59,7 @@ type PackingBox = {
   weight: number;
   weightUnit: WeightUnit;
   note?: string;
+  itemCount: number;
   items: PackingItem[];
   createdAt: string;
   updatedAt: string;
@@ -110,6 +111,9 @@ export function OutboundPackingPage() {
   const [note, setNote] = useState('');
   const [availablePage, setAvailablePage] = useState(1);
   const [availablePageSize, setAvailablePageSize] = useState(10);
+  const [selectedAvailableItemIds, setSelectedAvailableItemIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [boxItemsPage, setBoxItemsPage] = useState(1);
   const [boxItemsPageSize, setBoxItemsPageSize] = useState(10);
   const [selectedBoxItemIds, setSelectedBoxItemIds] = useState<Set<string>>(() => new Set());
@@ -149,15 +153,17 @@ export function OutboundPackingPage() {
 
   const selectedCustomer = customers.find((customer) => customer.id === customerId);
   const activeInventorySearch = inventorySearch.trim() || trackingSearch.trim();
+  const availableQueryKey = [
+    'outbound-available-items',
+    customerId,
+    warehouseId,
+    activeInventorySearch,
+    availablePage,
+    availablePageSize,
+  ] as const;
+  const boxesQueryKey = ['outbound-boxes', customerId, warehouseId, boxesPage, boxesPageSize] as const;
   const availableQuery = useQuery({
-    queryKey: [
-      'outbound-available-items',
-      customerId,
-      warehouseId,
-      activeInventorySearch,
-      availablePage,
-      availablePageSize,
-    ],
+    queryKey: availableQueryKey,
     queryFn: () =>
       outboundApi.availableItems({
         customerId,
@@ -182,7 +188,7 @@ export function OutboundPackingPage() {
   const availableTotal = Math.max(0, (available?.total ?? 0) - locallyHiddenAvailableCount);
 
   const boxesQuery = useQuery({
-    queryKey: ['outbound-boxes', customerId, warehouseId, boxesPage, boxesPageSize],
+    queryKey: boxesQueryKey,
     queryFn: () =>
       outboundApi.boxes({
         customerId,
@@ -227,11 +233,32 @@ export function OutboundPackingPage() {
     boxItemsPageSize,
   );
   const canMutateCurrentBox = currentBox?.status === 'draft' || currentBox?.status === 'rework';
+  const updateBoxEverywhere = (box: OutboundBox) => {
+    const nextBox = toPackingBox(box, reworkBoxIds);
+    setCurrentBox((current) => (current?.id === nextBox.id ? nextBox : current));
+    setDetailBox((current) => (current?.id === nextBox.id ? nextBox : current));
+    queryClient.setQueryData<BoxListResult | undefined>(boxesQueryKey, (current) =>
+      upsertBoxListResult(current, box),
+    );
+    return nextBox;
+  };
+  const loadFullBox = async (box: PackingBox) => {
+    if (box.items.length === box.itemCount) {
+      return box;
+    }
+    const data = (await outboundApi.getBox(box.id)) as OutboundBox;
+    return updateBoxEverywhere(data);
+  };
 
   useEffect(() => {
     setAvailablePage(1);
     setLocallyPackedInventoryIds(new Set());
+    setSelectedAvailableItemIds(new Set());
   }, [activeInventorySearch, customerId]);
+
+  useEffect(() => {
+    setSelectedAvailableItemIds(new Set());
+  }, [availablePage, availablePageSize, customerId, warehouseId]);
 
   useEffect(() => {
     setBoxItemsPage(1);
@@ -280,7 +307,9 @@ export function OutboundPackingPage() {
       setDetailBox(nextBox);
       setMessage('已新建箱子');
       setErrorMessage('');
-      boxesQuery.refetch();
+      queryClient.setQueryData<BoxListResult | undefined>(boxesQueryKey, (current) =>
+        upsertBoxListResult(current, data as OutboundBox),
+      );
     },
     onError: (error) => setErrorMessage(toUserErrorMessage(error, '新建箱子失败')),
   });
@@ -299,11 +328,9 @@ export function OutboundPackingPage() {
       });
     },
     onSuccess: (data) => {
-      const updatedBox = toPackingBox(data as OutboundBox, reworkBoxIds);
-      setCurrentBox(updatedBox);
+      updateBoxEverywhere(data as OutboundBox);
       setMessage('已暂存箱子设置');
       setErrorMessage('');
-      boxesQuery.refetch();
     },
     onError: (error) => setErrorMessage(toUserErrorMessage(error, '暂存失败')),
   });
@@ -313,18 +340,109 @@ export function OutboundPackingPage() {
       if (!currentBox) throw new Error('请先选择或新建箱子');
       return outboundApi.addItem(currentBox.id, { inventoryItemId });
     },
-    onSuccess: (data, inventoryItemId) => {
-      const updatedBox = toPackingBox(data as OutboundBox, reworkBoxIds);
-      const latestItem = updatedBox.items.at(-1);
+    onMutate: async (inventoryItemId) => {
+      const previousBox = currentBox;
+      const previousPackedIds = new Set(locallyPackedInventoryIds);
+      const item = availableItems.find((availableItem) => availableItem.id === inventoryItemId);
+      if (!previousBox || !item || previousBox.items.some((boxItem) => boxItem.id === item.id)) {
+        return { previousBox, previousPackedIds };
+      }
+      const optimisticItem = {
+        ...item,
+        status: 'packed' as const,
+        addedAt: new Date().toISOString(),
+      };
       setLocallyPackedInventoryIds((current) => new Set(current).add(inventoryItemId));
-      setCurrentBox(updatedBox);
+      setCurrentBox({
+        ...previousBox,
+        itemCount: previousBox.itemCount + 1,
+        items: [...previousBox.items, optimisticItem],
+        updatedAt: new Date().toISOString(),
+      });
+      setHighlightedItemId(optimisticItem.id);
+      setMessage('正在加入当前箱子');
+      setErrorMessage('');
+      return { previousBox, previousPackedIds };
+    },
+    onSuccess: (data, inventoryItemId) => {
+      const updatedBox = updateBoxEverywhere(data as OutboundBox);
+      const latestItem = updatedBox.items.find((item) => item.id === inventoryItemId);
+      setLocallyPackedInventoryIds((current) => new Set(current).add(inventoryItemId));
       setHighlightedItemId(latestItem?.id ?? null);
       setMessage('已加入当前箱子');
       setErrorMessage('');
-      availableQuery.refetch();
-      boxesQuery.refetch();
     },
-    onError: (error) => setErrorMessage(toUserErrorMessage(error, '加入箱子失败')),
+    onError: (error, _inventoryItemId, context) => {
+      if (context?.previousBox) {
+        setCurrentBox(context.previousBox);
+      }
+      if (context?.previousPackedIds) {
+        setLocallyPackedInventoryIds(context.previousPackedIds);
+      }
+      setErrorMessage(toUserErrorMessage(error, '加入箱子失败'));
+    },
+  });
+
+  const batchAddItemsMutation = useMutation({
+    mutationFn: async (inventoryItemIds: string[]) => {
+      if (!currentBox) throw new Error('请先选择或新建箱子');
+      if (inventoryItemIds.length === 0) throw new Error('请先选择可装箱货物');
+
+      let latestBox: OutboundBox | null = null;
+      for (const inventoryItemId of inventoryItemIds) {
+        latestBox = (await outboundApi.addItem(currentBox.id, { inventoryItemId })) as OutboundBox;
+      }
+      return latestBox;
+    },
+    onMutate: async (inventoryItemIds) => {
+      const previousBox = currentBox;
+      const previousPackedIds = new Set(locallyPackedInventoryIds);
+      const ids = new Set(inventoryItemIds);
+      const optimisticItems = availableItems
+        .filter((item) => ids.has(item.id))
+        .map((item) => ({
+          ...item,
+          status: 'packed' as const,
+          addedAt: new Date().toISOString(),
+        }));
+      setLocallyPackedInventoryIds((current) => {
+        const next = new Set(current);
+        for (const inventoryItemId of inventoryItemIds) {
+          next.add(inventoryItemId);
+        }
+        return next;
+      });
+      if (previousBox && optimisticItems.length > 0) {
+        const existingIds = new Set(previousBox.items.map((item) => item.id));
+        const newItems = optimisticItems.filter((item) => !existingIds.has(item.id));
+        setCurrentBox({
+          ...previousBox,
+          itemCount: previousBox.itemCount + newItems.length,
+          items: [...previousBox.items, ...newItems],
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      setMessage(`正在批量加入 ${inventoryItemIds.length} 件货物`);
+      setErrorMessage('');
+      return { previousBox, previousPackedIds };
+    },
+    onSuccess: (data, inventoryItemIds) => {
+      if (data) {
+        updateBoxEverywhere(data);
+      }
+      setSelectedAvailableItemIds(new Set());
+      setMessage(`已批量加入 ${inventoryItemIds.length} 件货物`);
+      setErrorMessage('');
+    },
+    onError: (error, _inventoryItemIds, context) => {
+      if (context?.previousBox) {
+        setCurrentBox(context.previousBox);
+      }
+      if (context?.previousPackedIds) {
+        setLocallyPackedInventoryIds(context.previousPackedIds);
+      }
+      setErrorMessage(toUserErrorMessage(error, '批量加入箱子失败'));
+    },
   });
 
   const removeItemMutation = useMutation({
@@ -333,27 +451,41 @@ export function OutboundPackingPage() {
       setRemovedItemIds((current) => new Set(current).add(item.id));
       return outboundApi.removeItem(currentBox.id, item.boxItemId ?? item.id);
     },
-    onSuccess: (data) => {
-      const result = data as { box: OutboundBox };
-      const updatedBox = toPackingBox(result.box, reworkBoxIds);
-      const remainingIds = new Set(updatedBox.items.map((item) => item.id));
+    onMutate: async (item) => {
+      const previousBox = currentBox;
+      const previousPackedIds = new Set(locallyPackedInventoryIds);
+      setRemovedItemIds((current) => new Set(current).add(item.id));
+      if (previousBox) {
+        setCurrentBox({
+          ...previousBox,
+          itemCount: Math.max(0, previousBox.itemCount - 1),
+          items: previousBox.items.filter((boxItem) => boxItem.id !== item.id),
+          updatedAt: new Date().toISOString(),
+        });
+      }
       setLocallyPackedInventoryIds((current) => {
         const next = new Set(current);
-        for (const id of Array.from(next)) {
-          if (!remainingIds.has(id)) {
-            next.delete(id);
-          }
-        }
+        next.delete(item.id);
         return next;
       });
-      setCurrentBox(updatedBox);
+      setMessage('正在删除箱内货物');
+      setErrorMessage('');
+      return { previousBox, previousPackedIds };
+    },
+    onSuccess: (data) => {
+      const result = data as { box: OutboundBox };
+      updateBoxEverywhere(result.box);
       setMessage('已删除箱内货物');
       setErrorMessage('');
       setRemovedItemIds(new Set());
-      availableQuery.refetch();
-      boxesQuery.refetch();
     },
-    onError: (error) => {
+    onError: (error, _item, context) => {
+      if (context?.previousBox) {
+        setCurrentBox(context.previousBox);
+      }
+      if (context?.previousPackedIds) {
+        setLocallyPackedInventoryIds(context.previousPackedIds);
+      }
       setRemovedItemIds(new Set());
       setErrorMessage(toUserErrorMessage(error, '删除货物失败'));
     },
@@ -374,27 +506,46 @@ export function OutboundPackingPage() {
       }
       return latestBox;
     },
+    onMutate: async (items) => {
+      const previousBox = currentBox;
+      const previousPackedIds = new Set(locallyPackedInventoryIds);
+      const ids = new Set(items.map((item) => item.id));
+      setRemovedItemIds(ids);
+      if (previousBox) {
+        setCurrentBox({
+          ...previousBox,
+          itemCount: Math.max(0, previousBox.itemCount - ids.size),
+          items: previousBox.items.filter((item) => !ids.has(item.id)),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      setLocallyPackedInventoryIds((current) => {
+        const next = new Set(current);
+        for (const id of ids) {
+          next.delete(id);
+        }
+        return next;
+      });
+      setMessage(`正在批量删除 ${items.length} 件货物`);
+      setErrorMessage('');
+      return { previousBox, previousPackedIds };
+    },
     onSuccess: (data, items) => {
       if (data) {
-        const updatedBox = toPackingBox(data, reworkBoxIds);
-        const removedIds = new Set(items.map((item) => item.id));
-        setLocallyPackedInventoryIds((current) => {
-          const next = new Set(current);
-          for (const id of removedIds) {
-            next.delete(id);
-          }
-          return next;
-        });
-        setCurrentBox(updatedBox);
+        updateBoxEverywhere(data);
       }
       setSelectedBoxItemIds(new Set());
       setRemovedItemIds(new Set());
       setMessage(`已批量删除 ${items.length} 件货物`);
       setErrorMessage('');
-      availableQuery.refetch();
-      boxesQuery.refetch();
     },
-    onError: (error) => {
+    onError: (error, _items, context) => {
+      if (context?.previousBox) {
+        setCurrentBox(context.previousBox);
+      }
+      if (context?.previousPackedIds) {
+        setLocallyPackedInventoryIds(context.previousPackedIds);
+      }
       setRemovedItemIds(new Set());
       setErrorMessage(toUserErrorMessage(error, '批量删除失败'));
     },
@@ -423,8 +574,10 @@ export function OutboundPackingPage() {
       }
       setMessage(`已删除 ${deletedBoxes.length} 个箱子`);
       setErrorMessage('');
-      availableQuery.refetch();
-      boxesQuery.refetch();
+      queryClient.setQueryData<BoxListResult | undefined>(boxesQueryKey, (current) =>
+        removeBoxesFromListResult(current, deletedIds),
+      );
+      queryClient.invalidateQueries({ queryKey: ['outbound-available-items'], refetchType: 'none' });
     },
     onError: (error) => setErrorMessage(toUserErrorMessage(error, '删除箱子失败')),
   });
@@ -435,8 +588,28 @@ export function OutboundPackingPage() {
       if (!targetBoxId) throw new Error('请先选择或新建箱子');
       return outboundApi.seal(targetBoxId);
     },
+    onMutate: async (boxId) => {
+      const targetBoxId = boxId ?? currentBox?.id;
+      const previousBox = currentBox;
+      const previousDetailBox = detailBox;
+      const previousBoxes = queryClient.getQueryData<BoxListResult>(boxesQueryKey);
+      const sealedAt = new Date().toISOString();
+      const sealBox = (box: PackingBox) =>
+        box.id === targetBoxId ? { ...box, status: 'sealed' as const, sealedAt } : box;
+      const boxToSeal = currentBox;
+      if (boxToSeal && boxToSeal.id === targetBoxId) {
+        setCurrentBox(sealBox(boxToSeal));
+      }
+      const detailBoxToSeal = detailBox;
+      if (detailBoxToSeal && detailBoxToSeal.id === targetBoxId) {
+        setDetailBox(sealBox(detailBoxToSeal));
+      }
+      setMessage('正在确认封箱');
+      setErrorMessage('');
+      return { previousBox, previousDetailBox, previousBoxes };
+    },
     onSuccess: (data) => {
-      const sealedBox = toPackingBox(data as OutboundBox, reworkBoxIds);
+      const sealedBox = updateBoxEverywhere(data as OutboundBox);
       setReworkBoxIds((current) => {
         const next = new Set(current);
         next.delete(sealedBox.id);
@@ -445,13 +618,19 @@ export function OutboundPackingPage() {
       setCurrentBox({ ...sealedBox, status: 'sealed' });
       setMessage('已确认封箱');
       setErrorMessage('');
-      queryClient.invalidateQueries({ queryKey: ['inventory-customer-summary'] });
-      queryClient.invalidateQueries({ queryKey: ['inventory-products'] });
-      queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
-      boxesQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ['inventory-customer-summary'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['inventory-products'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['inventory-items'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'], refetchType: 'none' });
     },
-    onError: (error) => setErrorMessage(toUserErrorMessage(error, '确认封箱失败')),
+    onError: (error, _boxId, context) => {
+      setCurrentBox(context?.previousBox ?? null);
+      setDetailBox(context?.previousDetailBox ?? null);
+      if (context?.previousBoxes) {
+        queryClient.setQueryData(boxesQueryKey, context.previousBoxes);
+      }
+      setErrorMessage(toUserErrorMessage(error, '确认封箱失败'));
+    },
   });
 
   const reopenMutation = useMutation({
@@ -464,7 +643,9 @@ export function OutboundPackingPage() {
       setDetailBox(reopenedBox);
       setMessage('已进入返工中，可继续添加或删除货物');
       setErrorMessage('');
-      boxesQuery.refetch();
+      queryClient.setQueryData<BoxListResult | undefined>(boxesQueryKey, (current) =>
+        upsertBoxListResult(current, reopenedRawBox),
+      );
     },
     onError: (error) => setErrorMessage(toUserErrorMessage(error, '返工失败')),
   });
@@ -472,8 +653,10 @@ export function OutboundPackingPage() {
   const openBoxDetail = (box: PackingBox) => {
     setBouncingBoxId(box.id);
     window.setTimeout(() => {
-      setDetailBox(box);
-      setBouncingBoxId(null);
+      void loadFullBox(box)
+        .then(setDetailBox)
+        .catch((error) => setErrorMessage(toUserErrorMessage(error, '读取箱子明细失败')))
+        .finally(() => setBouncingBoxId(null));
     }, 160);
   };
 
@@ -543,14 +726,17 @@ export function OutboundPackingPage() {
           pageSize={availablePageSize}
           search={inventorySearch}
           canAdd={Boolean(currentBox && canMutateCurrentBox)}
-          isAdding={addItemMutation.isPending}
+          isAdding={addItemMutation.isPending || batchAddItemsMutation.isPending}
+          selectedItemIds={selectedAvailableItemIds}
           onSearchChange={setInventorySearch}
+          onSelectionChange={setSelectedAvailableItemIds}
           onPageChange={setAvailablePage}
           onPageSizeChange={(nextPageSize) => {
             setAvailablePageSize(nextPageSize);
             setAvailablePage(1);
           }}
           onAdd={(item) => addItemMutation.mutate(item.id)}
+          onBatchAdd={(items) => batchAddItemsMutation.mutate(items.map((item) => item.id))}
         />
         <CurrentBoxWorkspace
           box={currentBox}
@@ -594,7 +780,11 @@ export function OutboundPackingPage() {
         onSelectionChange={setSelectedCreatedBoxIds}
         onRequestDelete={() => setDeleteBoxesConfirmOpen(true)}
         onOpenDetail={openBoxDetail}
-        onEdit={(box) => setCurrentBox(box)}
+        onEdit={(box) => {
+          void loadFullBox(box)
+            .then(setCurrentBox)
+            .catch((error) => setErrorMessage(toUserErrorMessage(error, '读取箱子失败')));
+        }}
         onSeal={(box) => {
           setCurrentBox(box);
           sealMutation.mutate(box.id);
@@ -795,7 +985,7 @@ function BoxQuickEditor(props: {
           <button
             type="button"
             className="outbound-btn outbound-btn-success"
-            disabled={!props.currentBox || props.currentBox.items.length === 0 || props.isSealing}
+            disabled={!props.currentBox || props.currentBox.itemCount === 0 || props.isSealing}
             onClick={props.onSeal}
           >
             <ShieldCheck size={16} />
@@ -824,17 +1014,47 @@ function InventoryPackingTable(props: {
   search: string;
   canAdd: boolean;
   isAdding: boolean;
+  selectedItemIds: Set<string>;
   onSearchChange: (value: string) => void;
+  onSelectionChange: (value: Set<string>) => void;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   onAdd: (item: PackingItem) => void;
+  onBatchAdd: (items: PackingItem[]) => void;
 }) {
+  const selectedItems = props.items.filter((item) => props.selectedItemIds.has(item.id));
+  const allVisibleSelected =
+    props.items.length > 0 && props.items.every((item) => props.selectedItemIds.has(item.id));
+  const toggleVisibleSelection = (checked: boolean) => {
+    props.onSelectionChange(
+      checked
+        ? new Set([...Array.from(props.selectedItemIds), ...props.items.map((item) => item.id)])
+        : new Set(
+            Array.from(props.selectedItemIds).filter(
+              (id) => !props.items.some((item) => item.id === id),
+            ),
+          ),
+    );
+  };
+  const toggleItemSelection = (itemId: string, checked: boolean) => {
+    const next = new Set(props.selectedItemIds);
+    if (checked) {
+      next.add(itemId);
+    } else {
+      next.delete(itemId);
+    }
+    props.onSelectionChange(next);
+  };
+
   return (
     <section className="outbound-panel outbound-operation-panel">
       <div className="outbound-section-heading">
         <div>
           <h2>客户库存 / 可装箱货物</h2>
-          <span>当前客户可装箱货物</span>
+          <span>
+            当前客户可装箱货物
+            {selectedItems.length ? ` · 已选 ${selectedItems.length} 件` : ''}
+          </span>
         </div>
         <label className="outbound-mini-search">
           <Search size={15} />
@@ -845,10 +1065,30 @@ function InventoryPackingTable(props: {
           />
         </label>
       </div>
+      <div className="outbound-box-footer compact">
+        <button
+          type="button"
+          className="outbound-btn outbound-btn-primary"
+          disabled={!props.canAdd || selectedItems.length === 0 || props.isAdding}
+          onClick={() => props.onBatchAdd(selectedItems)}
+        >
+          <PackagePlus size={16} />
+          批量装箱 {selectedItems.length ? `${selectedItems.length} 件` : ''}
+        </button>
+      </div>
       <div className="outbound-table-wrap">
         <table className="outbound-table">
           <thead>
             <tr>
+              <th>
+                <input
+                  type="checkbox"
+                  aria-label="选择当前页可装箱货物"
+                  checked={allVisibleSelected}
+                  disabled={props.items.length === 0}
+                  onChange={(event) => toggleVisibleSelection(event.target.checked)}
+                />
+              </th>
               <th>物流单号</th>
               <th>货物信息</th>
               <th>IMEI / Serial</th>
@@ -859,6 +1099,14 @@ function InventoryPackingTable(props: {
           <tbody>
             {props.items.map((item) => (
               <tr key={item.id}>
+                <td>
+                  <input
+                    type="checkbox"
+                    aria-label={`选择 ${item.imeiOrSerial ?? item.trackingNumber}`}
+                    checked={props.selectedItemIds.has(item.id)}
+                    onChange={(event) => toggleItemSelection(item.id, event.target.checked)}
+                  />
+                </td>
                 <td>
                   <strong className="mono">{item.trackingNumber || '-'}</strong>
                   <span>{item.carrier}</span>
@@ -886,7 +1134,7 @@ function InventoryPackingTable(props: {
             ))}
             {props.items.length === 0 ? (
               <tr>
-                <td colSpan={5}>没有匹配的可装箱货物</td>
+                <td colSpan={6}>没有匹配的可装箱货物</td>
               </tr>
             ) : null}
           </tbody>
@@ -966,7 +1214,7 @@ function CurrentBoxWorkspace(props: {
         </label>
       </div>
       <div className="outbound-box-summary">
-        <SummaryTile label="总货物" value={props.box?.items.length ?? 0} />
+        <SummaryTile label="总货物" value={props.box?.itemCount ?? 0} />
         <SummaryTile label="IMEI / Serial" value={imeiCount} />
         <SummaryTile
           label="当前状态"
@@ -1229,7 +1477,7 @@ function CreatedBoxCard(props: {
         <span>备注：{props.box.note || '-'}</span>
       </div>
       <div className="created-box-stats">
-        <span>货物数量：{props.box.items.length}</span>
+        <span>货物数量：{props.box.itemCount}</span>
         <span>IMEI / Serial：{imeiCount}</span>
       </div>
       <div className="created-box-actions">
@@ -1327,7 +1575,7 @@ function DeleteBoxesConfirmModal(props: {
     return null;
   }
   const sealedCount = props.boxes.filter((box) => box.status === 'sealed').length;
-  const itemCount = props.boxes.reduce((sum, box) => sum + box.items.length, 0);
+  const itemCount = props.boxes.reduce((sum, box) => sum + box.itemCount, 0);
   return (
     <div className="outbound-modal-backdrop compact" role="presentation" onClick={props.onClose}>
       <section
@@ -1438,7 +1686,7 @@ function BoxDetailModal(props: {
             重量：{props.box.weight} {props.box.weightUnit}
           </span>
           <span>备注：{props.box.note || '-'}</span>
-          <span>总货物数量：{props.box.items.length}</span>
+          <span>总货物数量：{props.box.itemCount}</span>
           <span>总 IMEI / Serial 数量：{imeiCount}</span>
           <span>UPS 数量：{carrierCounts.UPS}</span>
           <span>FedEx 数量：{carrierCounts.FedEx}</span>
@@ -1666,6 +1914,42 @@ type OutboundBox = {
   }>;
 };
 
+function upsertBoxListResult(
+  current: BoxListResult | undefined,
+  box: OutboundBox,
+): BoxListResult | undefined {
+  if (!current) {
+    return current;
+  }
+  const existingIndex = current.items.findIndex((item) => item.id === box.id);
+  if (existingIndex === -1) {
+    return {
+      ...current,
+      items: [box, ...current.items].slice(0, current.pageSize),
+      total: current.total + 1,
+    };
+  }
+  return {
+    ...current,
+    items: current.items.map((item) => (item.id === box.id ? box : item)),
+  };
+}
+
+function removeBoxesFromListResult(
+  current: BoxListResult | undefined,
+  deletedIds: Set<string>,
+): BoxListResult | undefined {
+  if (!current) {
+    return current;
+  }
+  const removedCount = current.items.filter((item) => deletedIds.has(item.id)).length;
+  return {
+    ...current,
+    items: current.items.filter((item) => !deletedIds.has(item.id)),
+    total: Math.max(0, current.total - removedCount),
+  };
+}
+
 function toPackingItem(item: AvailableItem, selectedCustomer?: CustomerOption): PackingItem {
   return {
     id: item.id,
@@ -1696,6 +1980,7 @@ function toPackingBox(box: OutboundBox, reworkBoxIds: Set<string>): PackingBox {
     weight: box.weightLb ?? defaultBoxWeight,
     weightUnit: 'lb',
     note: box.notes ?? undefined,
+    itemCount: box.itemCount,
     items: box.items.map((item) => ({
       id: item.inventoryItem.id,
       boxItemId: item.id,

@@ -61,6 +61,9 @@ export const inventoryApi = {
 export const outboundApi = {
   boxes: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/outbound/boxes', { params }),
+  getBox: (boxId: string) => request<unknown>('get', `/outbound/boxes/${boxId}`),
+  boxItems: (boxId: string, params?: QueryParams) =>
+    request<PaginatedResult<unknown>>('get', `/outbound/boxes/${boxId}/items`, { params }),
   availableItems: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/outbound/available-items', { params }),
   createBox: (data: Payload) => request<unknown>('post', '/outbound/boxes', { data }),

@@ -28,10 +28,10 @@ export async function refreshSession() {
 }
 
 export async function logout() {
-  try {
-    await request<{ loggedOut: true }>('post', '/auth/logout');
-  } finally {
-    authTokenStore.clear();
+  void request<{ loggedOut: true }>('post', '/auth/logout').catch(() => undefined);
+  authTokenStore.clear();
+  if (typeof window !== 'undefined') {
+    window.sessionStorage.clear();
   }
 }
 

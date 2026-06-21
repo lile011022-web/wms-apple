@@ -25,6 +25,7 @@ The customer inventory page should show:
 
 - Customer-level totals for total inventory, SKU count, in-stock, available outbound, packed, outbound, exception, and voided quantities.
 - SKU and product identity from the product catalog.
+- Related order numbers, including recent inbound batch numbers and latest outbound box numbers for that SKU.
 - Total quantity.
 - In-stock quantity.
 - Packed quantity.
@@ -58,15 +59,11 @@ Only `IN_STOCK` rows are available for outbound packing.
 
 Rows with `EXCEPTION`, `PACKED`, `OUTBOUND`, or `VOIDED` status must not appear as selectable inventory in outbound packing.
 
-## Batch Packing From Customer Inventory
+## Customer Inventory Page Boundary
 
-Customer inventory may offer batch packing as a shortcut, but it must not create separate inventory-state rules.
+The left navigation customer inventory page is for viewing customer-owned inventory only. It should not create boxes, select boxes, seal boxes, or expose batch packing controls.
 
-- Operators select a customer and warehouse before packing from the customer inventory page.
-- Only detail rows marked available for outbound can be selected.
-- The page may create a new open outbound box or select an existing open box for the same customer and warehouse.
-- Batch packing adds selected rows through the outbound box item API, so item ownership, warehouse ownership, duplicate packing, and status validation stay centralized.
-- Sealing from customer inventory uses the normal outbound seal action. After sealing, the rows remain visible as packed inventory and can be exported through sealed outbound detail reports.
+Batch packing belongs to the outbound packing workbench, where the selected customer inventory panel can add one or many available rows to the active outbound box.
 
 ## Export Behavior
 

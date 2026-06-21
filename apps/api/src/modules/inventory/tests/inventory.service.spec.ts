@@ -103,6 +103,13 @@ function createService(repositoryOverrides: Partial<Record<keyof InventoryReposi
         { productId: 'product-1', status: InventoryStatus.IN_STOCK, _count: { _all: 3 } },
         { productId: 'product-1', status: InventoryStatus.OUTBOUND, _count: { _all: 2 } },
       ],
+      orderRows: [
+        {
+          productId: 'product-1',
+          inboundBatch: { batchNo: 'INB-20260617000000-ABC123' },
+          outboundBoxItems: [{ outboundBox: { boxNo: 'BOX-20260617-001' } }],
+        },
+      ],
     }),
     findItems: jest.fn().mockResolvedValue([1, [inventoryItem]]),
     countItems: jest.fn().mockResolvedValue(1),
@@ -158,6 +165,7 @@ describe('InventoryService', () => {
             outboundQuantity: 2,
             availableForOutboundQuantity: 3,
           },
+          orderNumbers: ['INB-20260617000000-ABC123', 'BOX-20260617-001'],
         },
       ],
     });

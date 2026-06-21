@@ -331,6 +331,8 @@ model InventoryItem {
   @@index([customerId, status])
   @@index([warehouseId, status])
   @@index([productId, status])
+  @@index([customerId, warehouseId, status, receivedAt])
+  @@index([customerId, status, receivedAt])
   @@index([upsTrackingNo])
   @@map("inventory_items")
 }
@@ -358,6 +360,8 @@ model OutboundBox {
 
   @@unique([warehouseId, boxNo])
   @@index([customerId, status])
+  @@index([warehouseId, status, createdAt])
+  @@index([customerId, warehouseId, status, createdAt])
   @@map("outbound_boxes")
 }
 
@@ -372,6 +376,7 @@ model OutboundBoxItem {
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
   @@index([outboundBoxId])
+  @@index([outboundBoxId, packedAt])
   @@map("outbound_box_items")
 }
 

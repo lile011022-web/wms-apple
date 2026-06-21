@@ -46,6 +46,7 @@ export async function request<T>(
     params?: Record<string, unknown>;
   },
 ) {
+  const startedAt = performance.now();
   const config = {
     method,
     url,
@@ -56,6 +57,8 @@ export async function request<T>(
     const apiFailure = axios.isAxiosError<ApiResponse<T>>(error)
       ? error.response?.data
       : undefined;
+    const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+    logApiTiming(method, url, startedAt, status);
 
     if (apiFailure?.success === false) {
       if (isAuthFailure(apiFailure) && url !== '/auth/refresh') {
@@ -70,6 +73,7 @@ export async function request<T>(
 
     throw error;
   });
+  logApiTiming(method, url, startedAt, response.status);
 
   if (!response.data.success) {
     if (isAuthFailure(response.data) && url !== '/auth/refresh') {
@@ -87,6 +91,24 @@ export async function request<T>(
   }
 
   return response.data.data;
+}
+
+function logApiTiming(
+  method: string,
+  url: string,
+  startedAt: number,
+  status?: number,
+) {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  const durationMs = Math.round(performance.now() - startedAt);
+  const message = `[api] ${method.toUpperCase()} ${url} ${status ?? '-'} ${durationMs}ms`;
+  if (durationMs > 800) {
+    console.warn(message);
+    return;
+  }
+  console.debug(message);
 }
 
 function isAuthFailure<T>(failure: ApiResponse<T>) {

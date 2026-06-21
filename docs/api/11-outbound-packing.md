@@ -62,7 +62,7 @@ Rules:
 
 ## GET /outbound/boxes
 
-Lists outbound boxes.
+Lists outbound boxes. For performance, list rows return customer, warehouse, creator, `itemCount`, and an empty `items` array instead of loading every packed row in every box.
 
 Query parameters:
 
@@ -85,6 +85,18 @@ Allowed sort fields:
 Returns one outbound box with customer, warehouse, creator, item count, and packed inventory rows.
 
 Each item contains the outbound box item ID, inventory item ID, UPC, UPS, IMEI, Serial, inventory status, received time, packed time, and product block.
+
+## GET /outbound/boxes/:id/items
+
+Returns packed inventory rows in one outbound box with backend pagination.
+
+Query parameters:
+
+- `page`: optional, defaults to `1`.
+- `pageSize`: optional, defaults to the shared pagination default.
+- `search`: optional search across tracking number, UPC, IMEI, Serial, SKU, and product name.
+
+Use this endpoint when the current-box detail area or export preview needs many rows without loading the entire box in one response.
 
 ## GET /outbound/available-items
 
@@ -122,6 +134,8 @@ Rules:
 - The inventory item must not already be packed in any outbound box.
 - On success, the inventory item status becomes `PACKED`.
 - Adding an item writes an `OUTBOUND_BOX_ITEM_ADD` audit log.
+
+The outbound packing page can batch-pack by calling this endpoint once per selected available inventory row from `GET /outbound/available-items`. Batch packing remains a frontend orchestration over the same single-item API so customer ownership, warehouse ownership, duplicate packing, status, and audit checks stay centralized.
 
 ## DELETE /outbound/boxes/:id/items/:itemId
 

@@ -10,9 +10,11 @@ import { InventoryService } from '../inventory/inventory.service';
 import { AddOutboundBoxItemDto } from './dto/add-outbound-box-item.dto';
 import { CreateOutboundBoxDto } from './dto/create-outbound-box.dto';
 import { ListOutboundAvailableItemsQueryDto } from './dto/list-outbound-available-items-query.dto';
+import { ListOutboundBoxItemsQueryDto } from './dto/list-outbound-box-items-query.dto';
 import { ListOutboundBoxesQueryDto } from './dto/list-outbound-boxes-query.dto';
 import { UpdateOutboundBoxDto } from './dto/update-outbound-box.dto';
 import {
+  OutboundBoxListRecord,
   OutboundBoxRecord,
   OutboundInventoryItemRecord,
   OutboundRepository,
@@ -93,6 +95,39 @@ export class OutboundService {
   async getBox(id: string) {
     const box = await this.findExistingBox(id);
     return this.toBoxResponse(box);
+  }
+
+  async listBoxItems(id: string, query: ListOutboundBoxItemsQueryDto) {
+    await this.findExistingBox(id);
+    const [total, items] = await this.outboundRepository.listBoxItems({
+      boxId: id,
+      search: this.trimOptional(query.search),
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    });
+
+    return {
+      items: items.map((item) => ({
+        id: item.id,
+        inventoryItemId: item.inventoryItemId,
+        packedAt: item.packedAt,
+        inventoryItem: {
+          id: item.inventoryItem.id,
+          customer: item.inventoryItem.customer,
+          product: item.inventoryItem.product,
+          upc: item.inventoryItem.upc,
+          upsTrackingNo: item.inventoryItem.upsTrackingNo,
+          imei: item.inventoryItem.imei,
+          serial: item.inventoryItem.serial,
+          status: item.inventoryItem.status,
+          receivedAt: item.inventoryItem.receivedAt,
+          packedAt: item.inventoryItem.packedAt,
+        },
+      })),
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+    };
   }
 
   async updateBox(id: string, dto: UpdateOutboundBoxDto, operator: AuthenticatedUser) {
@@ -299,7 +334,9 @@ export class OutboundService {
     };
   }
 
-  private toBoxResponse(box: OutboundBoxRecord) {
+  private toBoxResponse(box: OutboundBoxRecord | OutboundBoxListRecord) {
+    const items = 'items' in box ? box.items : [];
+    const itemCount = 'items' in box ? box.items.length : box._count.items;
     return {
       id: box.id,
       boxNo: box.boxNo,
@@ -319,8 +356,8 @@ export class OutboundService {
         name: box.warehouse.name,
       },
       createdBy: box.createdBy,
-      itemCount: box.items.length,
-      items: box.items.map((item) => ({
+      itemCount,
+      items: items.map((item) => ({
         id: item.id,
         inventoryItemId: item.inventoryItemId,
         packedAt: item.packedAt,

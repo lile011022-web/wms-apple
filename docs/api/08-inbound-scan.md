@@ -62,7 +62,7 @@ Rules:
 
 - UPC must match an active UPC mapping and active product, otherwise the preview item is saved as `EXCEPTION`.
 - If unmatched UPC exceptions are enabled, an `UPC_NOT_MATCHED` exception record is created.
-- Products with `requiresImei = true` require a valid IMEI.
+- Products with `requiresImei = true` require a valid IMEI. IMEI validation accepts 15-digit numeric phone IMEI values and 10-18 character uppercase alphanumeric iPad identifiers such as `SH9LRL91YFC`.
 - Products with `requiresImei = false` require either Serial or IMEI in this phase.
 - Duplicate IMEI or Serial creates an exception preview item when duplicate detection is enabled.
 

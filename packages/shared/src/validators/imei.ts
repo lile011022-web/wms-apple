@@ -1,3 +1,4 @@
 export function isValidImei(value: string): boolean {
-  return /^\d{15}$/.test(value.trim());
+  const normalized = value.trim().toUpperCase();
+  return /^\d{15}$/.test(normalized) || /^(?=.*[A-Z])[A-Z0-9]{10,18}$/.test(normalized);
 }

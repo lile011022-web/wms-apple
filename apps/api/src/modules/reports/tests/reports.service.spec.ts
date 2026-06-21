@@ -57,6 +57,27 @@ const inventoryRow = {
   receivedAt: now,
 };
 
+const outboundRow = {
+  outboundBox: {
+    boxNo: 'BOX-20260621-001',
+    boxName: 'Apex Trading - Blue iPad',
+    notes: '每箱备注：翻新 iPad 蓝色机',
+    status: 'SEALED',
+    customer: { code: 'CUST-001', name: 'Apple Reseller' },
+    warehouse: { code: 'US-LAX-01' },
+    sealedAt: now,
+  },
+  inventoryItem: {
+    product: { sku: 'IPAD-WIFI-128-BLUE-RFB', name: 'iPad WI-FI 128GB Blue (Refurbished)' },
+    upc: '194253149189',
+    upsTrackingNo: '1Z999AA10123456784',
+    imei: 'SH9LRL91YFC',
+    serial: null,
+    status: 'PACKED',
+  },
+  packedAt: now,
+};
+
 function createService(
   repositoryOverrides: Partial<Record<keyof ReportsRepository, jest.Mock>> = {},
 ) {
@@ -161,6 +182,26 @@ describe('ReportsService', () => {
         format: ReportExportFormat.CSV,
       }),
     );
+  });
+
+  it('includes box notes in outbound detail downloads', async () => {
+    const { service } = createService({ findRows: jest.fn().mockResolvedValue([outboundRow]) });
+
+    await expect(
+      service.preview({
+        reportType: ReportType.OUTBOUND_DETAIL,
+        fields: ['boxNo', 'boxNotes', 'imei'],
+      }),
+    ).resolves.toMatchObject({
+      selectedFields: ['boxNo', 'boxNotes', 'imei'],
+      sampleRows: [
+        {
+          boxNo: 'BOX-20260621-001',
+          boxNotes: '每箱备注：翻新 iPad 蓝色机',
+          imei: 'SH9LRL91YFC',
+        },
+      ],
+    });
   });
 
   it('blocks synchronous exports above the phase-thirteen row limit', async () => {

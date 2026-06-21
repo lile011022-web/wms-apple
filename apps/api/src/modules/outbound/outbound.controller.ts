@@ -18,6 +18,7 @@ import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { AddOutboundBoxItemDto } from './dto/add-outbound-box-item.dto';
 import { CreateOutboundBoxDto } from './dto/create-outbound-box.dto';
 import { ListOutboundAvailableItemsQueryDto } from './dto/list-outbound-available-items-query.dto';
+import { ListOutboundBoxItemsQueryDto } from './dto/list-outbound-box-items-query.dto';
 import { ListOutboundBoxesQueryDto } from './dto/list-outbound-boxes-query.dto';
 import { UpdateOutboundBoxDto } from './dto/update-outbound-box.dto';
 import { OutboundService } from './outbound.service';
@@ -43,6 +44,11 @@ export class OutboundController {
   @Get('boxes/:id')
   getBox(@Param('id') id: string) {
     return this.outboundService.getBox(id);
+  }
+
+  @Get('boxes/:id/items')
+  listBoxItems(@Param('id') id: string, @Query() query: ListOutboundBoxItemsQueryDto) {
+    return this.outboundService.listBoxItems(id, query);
   }
 
   @Patch('boxes/:id')

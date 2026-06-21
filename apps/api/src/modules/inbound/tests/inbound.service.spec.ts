@@ -358,6 +358,33 @@ describe('InboundService', () => {
     );
   });
 
+  it('accepts alphanumeric iPad IMEI values and normalizes them for duplicate checks', async () => {
+    const iPadItem = {
+      ...pendingItem,
+      imei: 'SH9LRL91YFC',
+    };
+    const { repository, service } = createService({
+      createItem: jest.fn().mockResolvedValue(iPadItem),
+    });
+
+    await expect(
+      service.addItem('draft-1', {
+        upc: '194253149189',
+        imei: ' sh9lrl91yfc ',
+      }),
+    ).resolves.toMatchObject({
+      imei: 'SH9LRL91YFC',
+    });
+
+    expect(repository.findInventoryByImei).toHaveBeenCalledWith('SH9LRL91YFC');
+    expect(repository.createItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imei: 'SH9LRL91YFC',
+        status: InboundItemStatus.PENDING,
+      }),
+    );
+  });
+
   it('confirms a draft through the repository transaction boundary', async () => {
     const { repository, service } = createService({
       findDraftById: jest.fn().mockResolvedValue({ ...draft, inboundItems: [pendingItem] }),

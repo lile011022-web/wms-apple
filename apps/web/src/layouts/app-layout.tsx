@@ -109,8 +109,9 @@ export function AppLayout() {
   };
 
   const handleLogout = async () => {
-    await logout();
+    void logout();
     queryClient.clear();
+    queryClient.setQueryData(['current-user'], null);
   };
 
   return (

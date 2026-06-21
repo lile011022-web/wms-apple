@@ -104,10 +104,10 @@ The current backend reads `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET`. `JWT_SEC
 ## Start Production
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production build
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d
-docker compose -f docker-compose.prod.yml --env-file .env.production ps
+PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
 ```
+
+The production frontend is built by the Docker image and served from nginx. Do not run `npm run dev`, `pnpm dev`, or Vite directly on the VPS.
 
 Health check:
 
@@ -149,7 +149,9 @@ chmod +x infra/scripts/deploy.sh
 PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
 ```
 
-The script runs `git pull`, builds images, starts containers, prints container status, and prints the web and health-check URLs.
+The script runs `git pull --ff-only` when the server has a Git checkout, builds production images, runs Prisma migrations from a one-off API container, starts the stack with `docker compose up -d --remove-orphans`, prints container status, and prints the web and health-check URLs.
+
+Because the script always uses the same compose project name (`wms-scan`), repeated deployments restart or replace the existing containers instead of creating duplicate long-running Node, npm, Python, or Vite processes.
 
 The current VPS directory was uploaded as a working tree without `.git`, so Codex should sync the local checkout to `/opt/wms-scan` first, preserving `.env.production`, `backups/`, and Docker volumes. After syncing, run:
 
@@ -158,6 +160,17 @@ PROJECT_DIR=/opt/wms-scan infra/scripts/backup-postgres.sh
 PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
 curl http://24.199.87.181/api/v1/health
 ```
+
+Check for duplicate or development-mode processes after a deploy:
+
+```bash
+cd /opt/wms-scan
+docker compose -p wms-scan -f docker-compose.prod.yml --env-file .env.production ps
+docker compose -p wms-scan -f docker-compose.prod.yml --env-file .env.production top
+ps -eo pid,ppid,comm,args | grep -E 'npm run dev|pnpm dev|vite|nest start|uvicorn|python -m http.server' | grep -v grep
+```
+
+The last command should return no rows on production.
 
 ## Rollback
 

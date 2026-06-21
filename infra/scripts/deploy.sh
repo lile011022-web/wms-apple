@@ -14,14 +14,34 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 if [ -d .git ]; then
-  git pull
+  git pull --ff-only
 else
   echo "No .git directory found; skipping git pull. Upload or clone the latest code before deploying."
 fi
 
-docker compose -p "$COMPOSE_PROJECT_NAME" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build
-docker compose -p "$COMPOSE_PROJECT_NAME" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
-docker compose -p "$COMPOSE_PROJECT_NAME" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps
+COMPOSE="docker compose -p $COMPOSE_PROJECT_NAME -f $COMPOSE_FILE --env-file $ENV_FILE"
+
+echo "Building production images..."
+$COMPOSE build
+
+echo "Running production database migrations..."
+$COMPOSE run --rm api pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+
+echo "Starting production stack without orphan containers..."
+$COMPOSE up -d --remove-orphans
+
+echo "Current compose services:"
+$COMPOSE ps
+
+echo "Container process table:"
+$COMPOSE top || true
+
+echo "Checking for development servers outside Docker..."
+if ps -eo pid,ppid,comm,args | grep -E 'npm run dev|pnpm dev|vite|nest start|uvicorn|python -m http.server' | grep -v grep; then
+  echo "Warning: development server process found. Stop it before treating this host as production."
+else
+  echo "No Vite/Nest dev server or ad-hoc Python/Uvicorn process detected."
+fi
 
 WEB_DOMAIN="$(grep -E '^WEB_DOMAIN=' "$ENV_FILE" | tail -n 1 | cut -d '=' -f 2- || true)"
 if [ -n "$WEB_DOMAIN" ]; then

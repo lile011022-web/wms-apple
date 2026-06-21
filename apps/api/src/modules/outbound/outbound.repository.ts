@@ -30,7 +30,25 @@ const outboundBoxInclude = {
   },
 };
 
+const outboundBoxListInclude = {
+  customer: true,
+  warehouse: true,
+  createdBy: {
+    select: {
+      id: true,
+      email: true,
+      name: true,
+    },
+  },
+  _count: {
+    select: {
+      items: true,
+    },
+  },
+};
+
 export type OutboundBoxRecord = NonNullable<Awaited<ReturnType<OutboundRepository['findBoxById']>>>;
+export type OutboundBoxListRecord = Awaited<ReturnType<OutboundRepository['findBoxes']>>[1][number];
 export type OutboundInventoryItemRecord = NonNullable<
   Awaited<ReturnType<OutboundRepository['findInventoryItemById']>>
 >;
@@ -120,6 +138,52 @@ export class OutboundRepository {
     });
   }
 
+  listBoxItems(params: {
+    boxId: string;
+    search?: string;
+    skip: number;
+    take: number;
+  }) {
+    const search = params.search?.trim();
+    const where: Prisma.OutboundBoxItemWhereInput = {
+      outboundBoxId: params.boxId,
+      OR: search
+        ? [
+            { inventoryItem: { upsTrackingNo: { contains: search, mode: 'insensitive' } } },
+            { inventoryItem: { upc: { contains: search } } },
+            { inventoryItem: { imei: { contains: search } } },
+            { inventoryItem: { serial: { contains: search, mode: 'insensitive' } } },
+            { inventoryItem: { product: { sku: { contains: search, mode: 'insensitive' } } } },
+            { inventoryItem: { product: { name: { contains: search, mode: 'insensitive' } } } },
+          ]
+        : undefined,
+    };
+
+    return this.prisma.$transaction([
+      this.prisma.outboundBoxItem.count({ where }),
+      this.prisma.outboundBoxItem.findMany({
+        where,
+        skip: params.skip,
+        take: params.take,
+        orderBy: { packedAt: 'asc' },
+        include: {
+          inventoryItem: {
+            include: {
+              customer: { select: { id: true, code: true, name: true } },
+              product: {
+                select: {
+                  id: true,
+                  sku: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+  }
+
   findBoxes(params: {
     where: Prisma.OutboundBoxWhereInput;
     skip: number;
@@ -133,7 +197,7 @@ export class OutboundRepository {
         skip: params.skip,
         take: params.take,
         orderBy: params.orderBy,
-        include: outboundBoxInclude,
+        include: outboundBoxListInclude,
       }),
     ]);
   }

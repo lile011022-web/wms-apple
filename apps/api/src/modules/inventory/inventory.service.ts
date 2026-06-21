@@ -59,6 +59,7 @@ export class InventoryService {
         count: this.readGroupCount(row._count),
       })),
     );
+    const orderNumbersByProduct = this.toProductOrderNumbersMap(result.orderRows);
 
     return {
       items: result.products.map((product) => {
@@ -86,6 +87,7 @@ export class InventoryService {
             voidedQuantity: counts[InventoryStatus.VOIDED],
             availableForOutboundQuantity: counts[InventoryStatus.IN_STOCK],
           },
+          orderNumbers: orderNumbersByProduct.get(product.id) ?? [],
         };
       }),
       page: query.page,
@@ -307,6 +309,30 @@ export class InventoryService {
       const counts = map.get(row.productId) ?? this.emptyStatusCounts();
       counts[row.status] = row.count;
       map.set(row.productId, counts);
+    }
+    return map;
+  }
+
+  private toProductOrderNumbersMap(
+    rows: Array<{
+      productId: string;
+      inboundBatch: { batchNo: string } | null;
+      outboundBoxItems: Array<{ outboundBox: { boxNo: string } }>;
+    }>,
+  ) {
+    const map = new Map<string, string[]>();
+    for (const row of rows) {
+      const numbers = map.get(row.productId) ?? [];
+      const nextNumbers = [
+        row.inboundBatch?.batchNo,
+        row.outboundBoxItems[0]?.outboundBox.boxNo,
+      ].filter((value): value is string => Boolean(value));
+      for (const number of nextNumbers) {
+        if (!numbers.includes(number)) {
+          numbers.push(number);
+        }
+      }
+      map.set(row.productId, numbers.slice(0, 5));
     }
     return map;
   }

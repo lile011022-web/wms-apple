@@ -21,7 +21,7 @@ The customer must be locked before scan data becomes operational inventory. Pack
 ## IMEI And Serial
 
 - IMEI is the preferred single-item tracking ID for Apple devices.
-- Products with `requiresImei = true` must provide a valid IMEI.
+- Products with `requiresImei = true` must provide a valid IMEI value. The validator accepts classic 15-digit numeric IMEI values and Apple tablet alphanumeric identifiers such as `SH9LRL91YFC`.
 - Products with `requiresImei = false` can use Serial or IMEI in the current phase.
 - A preview item cannot provide both IMEI and Serial.
 - Duplicate IMEI or Serial values are exception conditions and must not create normal inventory.

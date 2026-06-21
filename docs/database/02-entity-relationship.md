@@ -45,7 +45,7 @@ Important constraints:
 - `InventoryItem.imei` is unique when present.
 - `InventoryItem.serial` is unique when present.
 - `InboundItem.inventoryItemId` is unique, preserving a one-to-one link from inbound detail to inventory detail when the scan becomes stock.
-- `InventoryItem.status` is indexed by customer, warehouse, and product so customer inventory and outbound picking pages can query quickly.
+- `InventoryItem.status` is indexed by customer, warehouse, product, received time, tracking number, IMEI, and Serial so customer inventory and outbound picking pages can query quickly.
 
 ## Outbound
 
@@ -56,6 +56,7 @@ Important constraints:
 
 - `OutboundBox` is unique by `warehouseId + boxNo`.
 - `OutboundBoxItem.inventoryItemId` is unique so one inventory item cannot be packed into multiple active box detail rows.
+- Outbound packing performance indexes include `OutboundBox(customerId, warehouseId, status, createdAt)`, `OutboundBox(warehouseId, status, createdAt)`, and `OutboundBoxItem(outboundBoxId, packedAt)` so box lists, status filters, and current-box item pages do not scan all rows.
 
 Service code must still validate customer ownership and item status inside a database transaction before sealing a box.
 

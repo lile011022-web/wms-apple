@@ -114,11 +114,40 @@ export class InventoryRepository {
         _count: { _all: true },
       }),
     ]);
+    const pageProductIds = products.map((product) => product.id);
+    const orderRows = pageProductIds.length
+      ? await this.prisma.inventoryItem.findMany({
+          where: {
+            AND: [params.where, { productId: { in: pageProductIds } }],
+          },
+          select: {
+            productId: true,
+            inboundBatch: {
+              select: {
+                batchNo: true,
+              },
+            },
+            outboundBoxItems: {
+              select: {
+                outboundBox: {
+                  select: {
+                    boxNo: true,
+                  },
+                },
+              },
+              orderBy: { packedAt: 'desc' },
+              take: 1,
+            },
+          },
+          orderBy: { receivedAt: 'desc' },
+        })
+      : [];
 
     return {
       total: ids.length,
       products,
       statusCounts,
+      orderRows,
     };
   }
 

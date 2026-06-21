@@ -313,6 +313,7 @@ export class ReportsService {
       [ReportType.OUTBOUND_DETAIL]: [
         field('boxNo', 'Box No', 'outboundBox', 'boxNo'),
         field('boxName', 'Box Name', 'outboundBox', 'boxName'),
+        field('boxNotes', 'Box Notes', 'outboundBox', 'notes'),
         field('boxStatus', 'Box Status', 'outboundBox', 'status'),
         field('customerCode', 'Customer Code', 'outboundBox', 'customer', 'code'),
         field('customerName', 'Customer Name', 'outboundBox', 'customer', 'name'),

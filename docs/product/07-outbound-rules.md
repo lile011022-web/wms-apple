@@ -60,6 +60,7 @@ Allowed operations for an open box:
 
 - Edit box name, size, weight, and notes.
 - Add one inventory row.
+- Batch add selected available inventory rows from the outbound packing customer inventory panel.
 - Remove one inventory row.
 - Clear all rows.
 - Seal the box.
