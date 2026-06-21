@@ -21,6 +21,7 @@ COPY apps/api apps/api
 RUN pnpm --filter @wms-scan/shared build
 RUN pnpm --filter @wms-scan/api prisma:generate
 RUN pnpm --filter @wms-scan/api build
+RUN pnpm --filter @wms-scan/api deploy /prod/api
 
 FROM node:22-alpine AS runner
 
@@ -31,7 +32,7 @@ ENV NODE_ENV=production
 RUN apk add --no-cache openssl
 RUN corepack enable
 
-COPY --from=builder /app /app
+COPY --from=builder /prod/api /app/apps/api
 
 WORKDIR /app/apps/api
 
