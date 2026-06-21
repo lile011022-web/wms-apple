@@ -22,6 +22,11 @@ RUN pnpm --filter @wms-scan/shared build
 RUN pnpm --filter @wms-scan/api prisma:generate
 RUN pnpm --filter @wms-scan/api build
 RUN pnpm --filter @wms-scan/api deploy /prod/api
+RUN generated_client_dir="$(find /app/node_modules/.pnpm -path '*/node_modules/.prisma/client' -type d | head -n 1)" \
+  && deployed_prisma_client_dir="$(find /prod/api/node_modules/.pnpm -path '*/node_modules/@prisma/client' -type d | head -n 1)" \
+  && deployed_node_modules_dir="$(dirname "$(dirname "$deployed_prisma_client_dir")")" \
+  && mkdir -p "$deployed_node_modules_dir/.prisma" \
+  && cp -R "$generated_client_dir" "$deployed_node_modules_dir/.prisma/client"
 
 FROM node:22-alpine AS runner
 
