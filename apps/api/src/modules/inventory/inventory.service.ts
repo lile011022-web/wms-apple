@@ -59,7 +59,7 @@ export class InventoryService {
         count: this.readGroupCount(row._count),
       })),
     );
-    const orderNumbersByProduct = this.toProductOrderNumbersMap(result.orderRows);
+    const trackingNumberCountByProduct = this.toProductTrackingNumberCountMap(result.trackingRows);
 
     return {
       items: result.products.map((product) => {
@@ -87,7 +87,7 @@ export class InventoryService {
             voidedQuantity: counts[InventoryStatus.VOIDED],
             availableForOutboundQuantity: counts[InventoryStatus.IN_STOCK],
           },
-          orderNumbers: orderNumbersByProduct.get(product.id) ?? [],
+          trackingNumberCount: trackingNumberCountByProduct.get(product.id) ?? 0,
         };
       }),
       page: query.page,
@@ -313,28 +313,22 @@ export class InventoryService {
     return map;
   }
 
-  private toProductOrderNumbersMap(
+  private toProductTrackingNumberCountMap(
     rows: Array<{
       productId: string;
-      inboundBatch: { batchNo: string } | null;
-      outboundBoxItems: Array<{ outboundBox: { boxNo: string } }>;
+      upsTrackingNo: string | null;
     }>,
   ) {
-    const map = new Map<string, string[]>();
+    const map = new Map<string, Set<string>>();
     for (const row of rows) {
-      const numbers = map.get(row.productId) ?? [];
-      const nextNumbers = [
-        row.inboundBatch?.batchNo,
-        row.outboundBoxItems[0]?.outboundBox.boxNo,
-      ].filter((value): value is string => Boolean(value));
-      for (const number of nextNumbers) {
-        if (!numbers.includes(number)) {
-          numbers.push(number);
-        }
+      if (!row.upsTrackingNo) {
+        continue;
       }
-      map.set(row.productId, numbers.slice(0, 5));
+      const numbers = map.get(row.productId) ?? new Set<string>();
+      numbers.add(row.upsTrackingNo);
+      map.set(row.productId, numbers);
     }
-    return map;
+    return new Map([...map.entries()].map(([productId, numbers]) => [productId, numbers.size]));
   }
 
   private emptyStatusCounts(): Record<InventoryStatus, number> {

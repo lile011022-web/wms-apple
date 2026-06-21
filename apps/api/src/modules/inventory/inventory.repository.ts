@@ -115,30 +115,19 @@ export class InventoryRepository {
       }),
     ]);
     const pageProductIds = products.map((product) => product.id);
-    const orderRows = pageProductIds.length
+    const trackingRows = pageProductIds.length
       ? await this.prisma.inventoryItem.findMany({
           where: {
-            AND: [params.where, { productId: { in: pageProductIds } }],
+            AND: [
+              params.where,
+              { productId: { in: pageProductIds }, upsTrackingNo: { not: null } },
+            ],
           },
           select: {
             productId: true,
-            inboundBatch: {
-              select: {
-                batchNo: true,
-              },
-            },
-            outboundBoxItems: {
-              select: {
-                outboundBox: {
-                  select: {
-                    boxNo: true,
-                  },
-                },
-              },
-              orderBy: { packedAt: 'desc' },
-              take: 1,
-            },
+            upsTrackingNo: true,
           },
+          distinct: ['productId', 'upsTrackingNo'],
           orderBy: { receivedAt: 'desc' },
         })
       : [];
@@ -147,7 +136,7 @@ export class InventoryRepository {
       total: ids.length,
       products,
       statusCounts,
-      orderRows,
+      trackingRows,
     };
   }
 

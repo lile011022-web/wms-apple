@@ -1,6 +1,6 @@
 # Inventory API
 
-Inventory endpoints power the customer inventory page, outbound packing inventory selection, detail download filters, and dashboard inventory totals. The customer inventory page combines `customer-summary`, `products`, and `items` so operators can review totals, SKU-level counts, SKU-related order numbers, and item-level tracking numbers in one workflow. Box creation, batch packing, and sealing belong to the outbound packing page and outbound APIs.
+Inventory endpoints power the customer inventory page, outbound packing inventory selection, detail download filters, and dashboard inventory totals. The customer inventory page combines `customer-summary`, `products`, and `items` so operators can review totals, SKU-level counts, SKU-related package tracking number counts, and item-level tracking numbers in one workflow. Box creation, batch packing, and sealing belong to the outbound packing page and outbound APIs.
 
 All endpoints use the `/api/v1` prefix and require bearer authentication with `inventory.read`.
 
@@ -78,7 +78,7 @@ Each row contains a product block and status counts:
         "voidedQuantity": 0,
         "availableForOutboundQuantity": 3
       },
-      "orderNumbers": ["INB-20260617000000-ABC123", "BOX-CUST-001-20260621-001"]
+      "trackingNumberCount": 2
     }
   ],
   "page": 1,

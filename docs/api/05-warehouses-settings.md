@@ -10,11 +10,11 @@ All endpoints require:
 Authorization: Bearer <accessToken>
 ```
 
-Current phase-four controllers require `settings.manage`.
+`GET /warehouses` is available to any authenticated user so operational pages can load warehouse choices. Creating or updating warehouses still requires `settings.manage`.
 
 ## GET /warehouses
 
-Lists warehouses for system configuration and default warehouse selection.
+Lists warehouses for system configuration, default warehouse selection, and operational workflow selectors.
 
 Query parameters:
 
@@ -42,6 +42,8 @@ Response `data`:
 
 Creates a warehouse.
 
+Requires `settings.manage`.
+
 Request:
 
 ```json
@@ -64,6 +66,8 @@ Business rules:
 ## PATCH /warehouses/:id
 
 Updates warehouse profile fields.
+
+Requires `settings.manage`.
 
 Request fields are optional:
 

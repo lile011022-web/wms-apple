@@ -19,7 +19,7 @@ const permissions = [
   ['roles.manage', 'Manage roles and role permissions'],
 ] as const;
 
-const operatorPermissionCodes = [
+const operatorPermissionCodes: readonly string[] = [
   'dashboard.read',
   'audit-logs.read',
   'customers.manage',

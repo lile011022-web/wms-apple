@@ -42,7 +42,12 @@ export function CustomerInventoryPage() {
   const productSummaryQuery = useQuery({
     queryKey: ['inventory-products', customerId, warehouseId, summaryPage, summaryPageSize],
     queryFn: () =>
-      inventoryApi.products({ customerId, warehouseId, page: summaryPage, pageSize: summaryPageSize }),
+      inventoryApi.products({
+        customerId,
+        warehouseId,
+        page: summaryPage,
+        pageSize: summaryPageSize,
+      }),
     enabled: Boolean(customerId),
   });
   const productSummary = productSummaryQuery.data as ProductSummaryResult | undefined;
@@ -56,9 +61,7 @@ export function CustomerInventoryPage() {
   const inventory = inventoryQuery.data as InventoryResult | undefined;
 
   const isFetching =
-    customerSummaryQuery.isFetching ||
-    productSummaryQuery.isFetching ||
-    inventoryQuery.isFetching;
+    customerSummaryQuery.isFetching || productSummaryQuery.isFetching || inventoryQuery.isFetching;
 
   return (
     <section className="page-frame">
@@ -124,7 +127,10 @@ export function CustomerInventoryPage() {
           <SummaryMetric label="库存总数" value={customerSummary?.totalQuantity ?? 0} />
           <SummaryMetric label="SKU 款数" value={customerSummary?.skuCount ?? 0} />
           <SummaryMetric label="在库" value={customerSummary?.inStockQuantity ?? 0} />
-          <SummaryMetric label="可出库" value={customerSummary?.availableForOutboundQuantity ?? 0} />
+          <SummaryMetric
+            label="可出库"
+            value={customerSummary?.availableForOutboundQuantity ?? 0}
+          />
           <SummaryMetric label="已装箱" value={customerSummary?.packedQuantity ?? 0} />
           <SummaryMetric label="已出库" value={customerSummary?.outboundQuantity ?? 0} />
           <SummaryMetric
@@ -158,7 +164,7 @@ export function CustomerInventoryPage() {
               <th>UPC</th>
               <th>SKU</th>
               <th>商品</th>
-              <th>单号</th>
+              <th>物流单号数</th>
               <th>总数</th>
               <th>在库</th>
               <th>可出库</th>
@@ -173,7 +179,7 @@ export function CustomerInventoryPage() {
                 <td className="mono">{row.product.upcs.join(', ') || '-'}</td>
                 <td className="mono">{row.product.sku}</td>
                 <td>{row.product.name}</td>
-                <td className="mono">{row.orderNumbers.join(', ') || '-'}</td>
+                <td>{row.trackingNumberCount}</td>
                 <td>{row.summary.totalQuantity}</td>
                 <td>{row.summary.inStockQuantity}</td>
                 <td>{row.summary.availableForOutboundQuantity}</td>
@@ -210,11 +216,8 @@ export function CustomerInventoryPage() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>
-                单号
-              </th>
+              <th>单号</th>
               <th>入库单号</th>
-              <th>物流单号</th>
               <th>出单号/箱号</th>
               <th>IMEI</th>
               <th>UPC</th>
@@ -225,9 +228,8 @@ export function CustomerInventoryPage() {
           <tbody>
             {inventory?.items.map((item) => (
               <tr key={item.id}>
-                <td className="mono">{item.inboundBatch?.batchNo ?? item.latestOutboundBox?.boxNo ?? '-'}</td>
-                <td className="mono">{item.inboundBatch?.batchNo ?? '-'}</td>
                 <td className="mono">{item.upsTrackingNo ?? '-'}</td>
+                <td className="mono">{item.inboundBatch?.batchNo ?? '-'}</td>
                 <td className="mono">{item.latestOutboundBox?.boxNo ?? '-'}</td>
                 <td>{item.imei ?? item.serial}</td>
                 <td>{item.upc}</td>
@@ -237,7 +239,7 @@ export function CustomerInventoryPage() {
             ))}
             {!inventory || inventory.items.length === 0 ? (
               <tr>
-                <td colSpan={8}>暂无库存</td>
+                <td colSpan={7}>暂无库存</td>
               </tr>
             ) : null}
           </tbody>
@@ -279,7 +281,7 @@ type ProductSummaryItem = {
     exceptionQuantity: number;
     availableForOutboundQuantity: number;
   };
-  orderNumbers: string[];
+  trackingNumberCount: number;
 };
 type InventoryResult = {
   items: InventoryItem[];

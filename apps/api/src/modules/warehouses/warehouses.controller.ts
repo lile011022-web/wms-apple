@@ -13,7 +13,6 @@ import { WarehousesService } from './warehouses.service';
 @ApiTags('Warehouses')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Permissions('settings.manage')
 @Controller('warehouses')
 export class WarehousesController {
   constructor(private readonly warehousesService: WarehousesService) {}
@@ -24,11 +23,13 @@ export class WarehousesController {
   }
 
   @Post()
+  @Permissions('settings.manage')
   create(@Body() dto: CreateWarehouseDto, @CurrentUser() user: AuthenticatedUser) {
     return this.warehousesService.create(dto, user);
   }
 
   @Patch(':id')
+  @Permissions('settings.manage')
   update(
     @Param('id') id: string,
     @Body() dto: UpdateWarehouseDto,

@@ -138,12 +138,7 @@ export class OutboundRepository {
     });
   }
 
-  listBoxItems(params: {
-    boxId: string;
-    search?: string;
-    skip: number;
-    take: number;
-  }) {
+  listBoxItems(params: { boxId: string; search?: string; skip: number; take: number }) {
     const search = params.search?.trim();
     const where: Prisma.OutboundBoxItemWhereInput = {
       outboundBoxId: params.boxId,

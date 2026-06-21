@@ -3,11 +3,9 @@ import {
   Archive,
   ArrowDownUp,
   Box,
-  CheckCircle2,
   Eye,
   PackagePlus,
   RefreshCw,
-  RotateCcw,
   Save,
   Search,
   ShieldCheck,
@@ -95,7 +93,6 @@ export function OutboundPackingPage() {
   const [warehouseId, setWarehouseId] = useState('');
   const [currentBox, setCurrentBox] = useState<PackingBox | null>(null);
   const [detailBox, setDetailBox] = useState<PackingBox | null>(null);
-  const [trackingSearch, setTrackingSearch] = useState('');
   const [inventorySearch, setInventorySearch] = useState('');
   const [boxSearch, setBoxSearch] = useState('');
   const [boxNoDraft, setBoxNoDraft] = useState(defaultBoxNo);
@@ -152,7 +149,7 @@ export function OutboundPackingPage() {
   }, [customerId, customers, warehouseId, warehouses]);
 
   const selectedCustomer = customers.find((customer) => customer.id === customerId);
-  const activeInventorySearch = inventorySearch.trim() || trackingSearch.trim();
+  const activeInventorySearch = inventorySearch.trim();
   const availableQueryKey = [
     'outbound-available-items',
     customerId,
@@ -161,7 +158,13 @@ export function OutboundPackingPage() {
     availablePage,
     availablePageSize,
   ] as const;
-  const boxesQueryKey = ['outbound-boxes', customerId, warehouseId, boxesPage, boxesPageSize] as const;
+  const boxesQueryKey = [
+    'outbound-boxes',
+    customerId,
+    warehouseId,
+    boxesPage,
+    boxesPageSize,
+  ] as const;
   const availableQuery = useQuery({
     queryKey: availableQueryKey,
     queryFn: () =>
@@ -172,7 +175,7 @@ export function OutboundPackingPage() {
         pageSize: availablePageSize,
         ...(activeInventorySearch ? { search: activeInventorySearch } : {}),
       }),
-    enabled: Boolean(customerId),
+    enabled: Boolean(customerId && warehouseId),
   });
   const available = availableQuery.data as AvailableResult | undefined;
   const availableItems = useMemo(
@@ -289,6 +292,9 @@ export function OutboundPackingPage() {
 
   const createBoxMutation = useMutation({
     mutationFn: () => {
+      if (!warehouseId) {
+        throw new Error('请先选择仓库。');
+      }
       if (boxNameExists(boxName)) {
         throw new Error('箱子名称已存在，请换一个名称。');
       }
@@ -557,6 +563,10 @@ export function OutboundPackingPage() {
       if (boxesToDelete.length === 0) {
         throw new Error('请先选择要删除的箱子');
       }
+      const sealedBoxes = boxesToDelete.filter((box) => box.status === 'sealed');
+      if (sealedBoxes.length) {
+        throw new Error(`已选中 ${sealedBoxes.length} 个已封箱箱子，请先返工后再删除。`);
+      }
       for (const box of boxesToDelete) {
         await outboundApi.deleteBox(box.id);
       }
@@ -577,7 +587,10 @@ export function OutboundPackingPage() {
       queryClient.setQueryData<BoxListResult | undefined>(boxesQueryKey, (current) =>
         removeBoxesFromListResult(current, deletedIds),
       );
-      queryClient.invalidateQueries({ queryKey: ['outbound-available-items'], refetchType: 'none' });
+      queryClient.invalidateQueries({
+        queryKey: ['outbound-available-items'],
+        refetchType: 'none',
+      });
     },
     onError: (error) => setErrorMessage(toUserErrorMessage(error, '删除箱子失败')),
   });
@@ -618,7 +631,10 @@ export function OutboundPackingPage() {
       setCurrentBox({ ...sealedBox, status: 'sealed' });
       setMessage('已确认封箱');
       setErrorMessage('');
-      queryClient.invalidateQueries({ queryKey: ['inventory-customer-summary'], refetchType: 'none' });
+      queryClient.invalidateQueries({
+        queryKey: ['inventory-customer-summary'],
+        refetchType: 'none',
+      });
       queryClient.invalidateQueries({ queryKey: ['inventory-products'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['inventory-items'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'], refetchType: 'none' });
@@ -665,8 +681,8 @@ export function OutboundPackingPage() {
       <TrackingSearchBar
         customers={customers}
         customerId={customerId}
-        trackingSearch={trackingSearch}
-        isSearching={availableQuery.isFetching}
+        warehouses={warehouses}
+        warehouseId={warehouseId}
         onCustomerChange={(nextCustomerId) => {
           setCustomerId(nextCustomerId);
           setCurrentBox(null);
@@ -674,8 +690,13 @@ export function OutboundPackingPage() {
           setAvailablePage(1);
           setBoxesPage(1);
         }}
-        onSearchChange={setTrackingSearch}
-        onSearch={() => availableQuery.refetch()}
+        onWarehouseChange={(nextWarehouseId) => {
+          setWarehouseId(nextWarehouseId);
+          setCurrentBox(null);
+          setDetailBox(null);
+          setAvailablePage(1);
+          setBoxesPage(1);
+        }}
       />
 
       <BoxQuickEditor
@@ -815,11 +836,10 @@ export function OutboundPackingPage() {
 function TrackingSearchBar(props: {
   customers: CustomerOption[];
   customerId: string;
-  trackingSearch: string;
-  isSearching: boolean;
+  warehouses: Array<{ id: string; code: string; name: string }>;
+  warehouseId: string;
   onCustomerChange: (customerId: string) => void;
-  onSearchChange: (value: string) => void;
-  onSearch: () => void;
+  onWarehouseChange: (warehouseId: string) => void;
 }) {
   return (
     <section className="outbound-topbar">
@@ -840,25 +860,19 @@ function TrackingSearchBar(props: {
           ))}
         </select>
       </label>
-      <div className="outbound-search-group">
-        <label className="outbound-search-control">
-          <Search size={16} />
-          <input
-            value={props.trackingSearch}
-            onChange={(event) => props.onSearchChange(event.target.value)}
-            placeholder="搜索 UPS / FedEx / USPS 单号"
-          />
-        </label>
-        <button
-          type="button"
-          className="outbound-btn outbound-btn-primary"
-          onClick={props.onSearch}
+      <label className="outbound-control outbound-customer-select">
+        <span>仓库</span>
+        <select
+          value={props.warehouseId}
+          onChange={(event) => props.onWarehouseChange(event.target.value)}
         >
-          <Search size={16} />
-          {props.isSearching ? '搜索中' : '搜索'}
-        </button>
-        <span className="outbound-search-hint">支持 UPS、FedEx、USPS 单号自动识别</span>
-      </div>
+          {props.warehouses.map((warehouse) => (
+            <option key={warehouse.id} value={warehouse.id}>
+              {warehouse.code} - {warehouse.name}
+            </option>
+          ))}
+        </select>
+      </label>
     </section>
   );
 }
@@ -1381,7 +1395,7 @@ function CreatedBoxList(props: {
             onClick={props.onRequestDelete}
           >
             <Trash2 size={16} />
-            删除选中
+            {selectedCount ? '删除选中' : '先选箱子'}
           </button>
           <button
             type="button"
@@ -1575,6 +1589,7 @@ function DeleteBoxesConfirmModal(props: {
     return null;
   }
   const sealedCount = props.boxes.filter((box) => box.status === 'sealed').length;
+  const canConfirmDelete = props.boxes.length > 0 && sealedCount === 0;
   const itemCount = props.boxes.reduce((sum, box) => sum + box.itemCount, 0);
   return (
     <div className="outbound-modal-backdrop compact" role="presentation" onClick={props.onClose}>
@@ -1625,11 +1640,11 @@ function DeleteBoxesConfirmModal(props: {
           <button
             type="button"
             className="outbound-btn outbound-btn-danger"
-            disabled={props.isDeleting || props.boxes.length === 0}
+            disabled={props.isDeleting || !canConfirmDelete}
             onClick={props.onConfirm}
           >
             <Trash2 size={16} />
-            确认删除
+            {sealedCount ? '请先返工' : '确认删除'}
           </button>
         </div>
       </section>

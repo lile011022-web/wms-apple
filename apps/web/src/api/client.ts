@@ -54,9 +54,7 @@ export async function request<T>(
     params: options?.params,
   };
   const response = await apiClient.request<ApiResponse<T>>(config).catch(async (error: unknown) => {
-    const apiFailure = axios.isAxiosError<ApiResponse<T>>(error)
-      ? error.response?.data
-      : undefined;
+    const apiFailure = axios.isAxiosError<ApiResponse<T>>(error) ? error.response?.data : undefined;
     const status = axios.isAxiosError(error) ? error.response?.status : undefined;
     logApiTiming(method, url, startedAt, status);
 
@@ -93,12 +91,7 @@ export async function request<T>(
   return response.data.data;
 }
 
-function logApiTiming(
-  method: string,
-  url: string,
-  startedAt: number,
-  status?: number,
-) {
+function logApiTiming(method: string, url: string, startedAt: number, status?: number) {
   if (!import.meta.env.DEV) {
     return;
   }

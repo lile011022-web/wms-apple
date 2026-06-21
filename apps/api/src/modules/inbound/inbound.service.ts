@@ -393,9 +393,7 @@ export class InboundService {
       counts.set(value, (counts.get(value) ?? 0) + 1);
     }
 
-    return [...counts.entries()]
-      .filter(([, count]) => count > 1)
-      .map(([value]) => value);
+    return [...counts.entries()].filter(([, count]) => count > 1).map(([value]) => value);
   }
 
   private normalizeRecordQuery(query: ListInboundRecordsQueryDto) {

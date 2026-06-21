@@ -98,6 +98,13 @@ When a sealed box is reopened for rework:
 - Operators can add or remove items, then seal the box again.
 - An `OUTBOUND_BOX_REOPEN` audit log is written.
 
+When an open or rework box is deleted:
+
+- The box is voided instead of physically removed.
+- Existing packed rows return to `IN_STOCK`.
+- Sealed boxes must be reopened before deletion.
+- The outbound packing page must block mixed selections that include sealed boxes before sending delete requests.
+
 ## Audit Requirements
 
 All box operations that change the box or its contents are audited.

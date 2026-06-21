@@ -31,10 +31,7 @@ export function PaginationControls({
       </div>
       <div>
         <span>每页</span>
-        <select
-          value={pageSize}
-          onChange={(event) => onPageSizeChange(Number(event.target.value))}
-        >
+        <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
           {pageSizeOptions.map((option) => (
             <option key={option} value={option}>
               {option}

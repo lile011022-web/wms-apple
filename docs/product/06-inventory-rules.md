@@ -25,7 +25,7 @@ The customer inventory page should show:
 
 - Customer-level totals for total inventory, SKU count, in-stock, available outbound, packed, outbound, exception, and voided quantities.
 - SKU and product identity from the product catalog.
-- Related order numbers, including recent inbound batch numbers and latest outbound box numbers for that SKU.
+- Count of distinct related package tracking numbers for that SKU. In the customer inventory page, `单号` means the inbound logistics number stored as `upsTrackingNo`, but SKU summary rows show only the count instead of listing every tracking number.
 - Total quantity.
 - In-stock quantity.
 - Packed quantity.

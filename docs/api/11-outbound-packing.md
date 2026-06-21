@@ -184,6 +184,18 @@ Rules:
 - Box items remain linked to the same box and inventory remains `PACKED` until an operator removes an item.
 - Reopening writes an `OUTBOUND_BOX_REOPEN` audit log.
 
+## DELETE /outbound/boxes/:id
+
+Voids an open or rework outbound box.
+
+Rules:
+
+- The box must not be `SEALED`.
+- Sealed boxes must be reopened for rework before deletion.
+- Deletion is a safe void operation, not a physical database delete.
+- Packed inventory rows in the deleted box return to `IN_STOCK`.
+- Deletion writes an `OUTBOUND_BOX_DELETE` audit log.
+
 ## Response Shape
 
 Outbound box responses use this shape:

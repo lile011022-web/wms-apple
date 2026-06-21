@@ -691,9 +691,7 @@ function buildInboundReviewSummary(draft: InboundDraft | null) {
     upcCount: upcRows.size,
     productCount: productNames.size,
     trackingCount: trackingNumbers.size,
-    upcRows: Array.from(upcRows.values()).sort((left, right) =>
-      left.upc.localeCompare(right.upc),
-    ),
+    upcRows: Array.from(upcRows.values()).sort((left, right) => left.upc.localeCompare(right.upc)),
   };
 }
 
@@ -770,7 +768,9 @@ function parseInboundImportCsv(text: string): ImportInboundItemRow[] {
 
   return rows.slice(1).map((row, index) => {
     const record: InboundImportRecord = Object.fromEntries(
-      normalizedHeaders.map((field, column) => [field, row[column] ?? '']).filter(([field]) => field),
+      normalizedHeaders
+        .map((field, column) => [field, row[column] ?? ''])
+        .filter(([field]) => field),
     );
     const lineNo = index + 2;
     const upc = (record.upc ?? '').trim();

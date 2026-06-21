@@ -71,7 +71,7 @@ Usage logic:
 - Load active warehouses for the default warehouse selector.
 - Load grouped settings into local form state.
 - Save the full grouped settings payload through `PATCH /settings`.
-- Require the signed-in user to have backend `settings.manage` permission.
+- Require the signed-in user to have backend `settings.manage` permission for `GET /settings` and `PATCH /settings`; `GET /warehouses` only requires authentication because inbound and outbound workflow pages also use it.
 - Surface load and save failures in-page without replacing backend validation rules.
 
 ## Where To Extend Later

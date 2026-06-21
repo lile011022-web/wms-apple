@@ -47,7 +47,19 @@ The response returns estimated row count, selected fields, available field white
     "customerId": "customer-1",
     "outboundStatus": "SEALED"
   },
-  "fields": ["boxNo", "boxName", "boxNotes", "customerName", "sku", "productName", "upc", "upsTrackingNo", "imei", "serial", "sealedAt"]
+  "fields": [
+    "boxNo",
+    "boxName",
+    "boxNotes",
+    "customerName",
+    "sku",
+    "productName",
+    "upc",
+    "upsTrackingNo",
+    "imei",
+    "serial",
+    "sealedAt"
+  ]
 }
 ```
 

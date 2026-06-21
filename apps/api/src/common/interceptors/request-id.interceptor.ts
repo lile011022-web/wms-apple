@@ -34,12 +34,7 @@ export class RequestIdInterceptor implements NestInterceptor {
     );
   }
 
-  private logRequest(
-    request: Request,
-    response: Response,
-    startedAt: number,
-    error?: unknown,
-  ) {
+  private logRequest(request: Request, response: Response, startedAt: number, error?: unknown) {
     const durationMs = Date.now() - startedAt;
     const status =
       response.statusCode ||

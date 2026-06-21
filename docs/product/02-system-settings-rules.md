@@ -10,6 +10,7 @@ System Settings controls warehouse profile data and operational switches that la
 - Warehouse code is normalized to uppercase.
 - Inactive warehouses should remain available for historical records, but should not be offered as the default choice for new operations in future workflow screens.
 - The default warehouse is stored as `warehouse.defaultId` and must reference an existing warehouse.
+- Authenticated operational users may read warehouse choices for inbound and outbound workflows; creating or editing warehouse records remains a system settings action.
 
 ## Scan Rules
 
