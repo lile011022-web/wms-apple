@@ -25,7 +25,7 @@ echo "Building production images..."
 $COMPOSE build
 
 echo "Running production database migrations..."
-$COMPOSE run --rm api pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+$COMPOSE run --rm -e CI=true api sh -lc './node_modules/.bin/prisma migrate deploy --schema prisma/schema.prisma'
 
 echo "Starting production stack without orphan containers..."
 $COMPOSE up -d --remove-orphans
