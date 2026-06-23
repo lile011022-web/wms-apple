@@ -4,12 +4,6 @@ import { IsIn, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class
 import { outboundBoxSizePresets } from './create-outbound-box.dto';
 
 export class UpdateOutboundBoxDto {
-  @ApiPropertyOptional({ example: 'Customer A mixed iPhone box' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  boxName?: string;
-
   @ApiPropertyOptional({ enum: outboundBoxSizePresets, example: '14*14*14' })
   @IsOptional()
   @IsIn(outboundBoxSizePresets)
@@ -28,6 +22,12 @@ export class UpdateOutboundBoxDto {
   @Min(0)
   @Max(9999)
   weightLb?: number;
+
+  @ApiPropertyOptional({ example: '1Z999AA10123456784' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  shippingTrackingNo?: string;
 
   @ApiPropertyOptional({ example: 'Repacked after customer request' })
   @IsOptional()

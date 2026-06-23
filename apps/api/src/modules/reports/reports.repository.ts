@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AuditAction, Prisma, ReportExportStatus } from '@prisma/client';
+import { AuditAction, InboundBatchStatus, Prisma, ReportExportStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { ReportFilterDto } from './dto/report-filter.dto';
 import { ReportType } from './dto/report-type';
@@ -21,6 +21,51 @@ export type ReportExportRecord = NonNullable<
 @Injectable()
 export class ReportsRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  findInboundBatchOptions(params: {
+    customerId?: string;
+    search?: string;
+    skip: number;
+    take: number;
+  }) {
+    const search = this.trimOptional(params.search);
+    const where: Prisma.InboundBatchWhereInput = {
+      status: InboundBatchStatus.CONFIRMED,
+      customerId: this.trimOptional(params.customerId),
+      OR: search
+        ? [
+            { batchNo: { contains: search, mode: 'insensitive' } },
+            { customer: { code: { contains: search, mode: 'insensitive' } } },
+            { customer: { name: { contains: search, mode: 'insensitive' } } },
+          ]
+        : undefined,
+    };
+
+    return this.prisma.$transaction([
+      this.prisma.inboundBatch.count({ where }),
+      this.prisma.inboundBatch.findMany({
+        where,
+        skip: params.skip,
+        take: params.take,
+        orderBy: [{ confirmedAt: 'desc' }, { createdAt: 'desc' }],
+        select: {
+          id: true,
+          batchNo: true,
+          confirmedAt: true,
+          customer: { select: { id: true, code: true, name: true } },
+          warehouse: { select: { id: true, code: true, name: true } },
+          _count: { select: { inboundItems: true } },
+        },
+      }),
+    ]);
+  }
+
+  findInboundBatchById(id: string) {
+    return this.prisma.inboundBatch.findUnique({
+      where: { id },
+      select: { id: true, batchNo: true },
+    });
+  }
 
   countRows(reportType: ReportType, filters: ReportFilterDto) {
     switch (reportType) {

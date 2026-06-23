@@ -1,5 +1,5 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { Download, RefreshCw, Search } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Download, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { customersApi, inboundApi } from '../../api/workflow';
 import { PaginationControls } from '../../components/pagination-controls';
@@ -13,6 +13,9 @@ export function InboundRecordsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [preview, setPreview] = useState<InboundExportPreview | null>(null);
+  const [message, setMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const queryClient = useQueryClient();
 
   const customersQuery = useQuery({
     queryKey: ['customer-options'],
@@ -50,6 +53,30 @@ export function InboundRecordsPage() {
     mutationFn: () => inboundApi.exportPreview(params),
     onSuccess: (data) => setPreview(data as InboundExportPreview),
   });
+
+  const forceConfirmMutation = useMutation({
+    mutationFn: ({ itemId, reason }: { itemId: string; reason: string }) =>
+      inboundApi.forceConfirmRecord(itemId, { reason }),
+    onSuccess: () => {
+      setMessage('已强制入库，并记录原因与审计日志。');
+      setErrorMessage('');
+      void recordsQuery.refetch();
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      void queryClient.invalidateQueries({ queryKey: ['inventory'] });
+    },
+    onError: (error) => {
+      setMessage('');
+      setErrorMessage(error instanceof Error ? error.message : '强制入库失败');
+    },
+  });
+
+  function handleForceConfirm(item: InboundRecord) {
+    setMessage('');
+    setErrorMessage('');
+    const reason = window.prompt('请输入强制入库原因');
+    if (!reason) return;
+    forceConfirmMutation.mutate({ itemId: item.id, reason });
+  }
 
   return (
     <section className="page-frame">
@@ -147,6 +174,8 @@ export function InboundRecordsPage() {
           当前筛选预计导出 {preview.estimatedRowCount} 行，后端已返回可复用报表参数。
         </div>
       ) : null}
+      {message ? <div className="inline-success">{message}</div> : null}
+      {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
 
       <section className="panel data-panel">
         <div className="section-title">
@@ -176,27 +205,51 @@ export function InboundRecordsPage() {
               <th>状态</th>
               <th>扫描时间</th>
               <th>操作人员</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
-            {records?.items.map((item) => (
-              <tr key={item.id}>
-                <td className="mono">{item.batch?.batchNo ?? item.inboundBatch?.batchNo ?? '-'}</td>
-                <td>{item.customer?.code ?? '-'}</td>
-                <td className="mono">{item.upc}</td>
-                <td className="mono">{item.imei ?? item.serial ?? '-'}</td>
-                <td>{item.product?.name ?? '-'}</td>
-                <td className="mono">{item.upsTrackingNo ?? '-'}</td>
-                <td>
-                  <span className={statusClass(item.status)}>{item.status}</span>
-                </td>
-                <td>{formatDate(item.scannedAt ?? item.createdAt)}</td>
-                <td>{formatOperator(item.batch?.operator ?? item.inboundBatch?.operator)}</td>
-              </tr>
-            ))}
+            {records?.items.map((item) => {
+              const canForceConfirm =
+                item.status === 'EXCEPTION' && Boolean(item.product) && !item.inventoryItemId;
+              return (
+                <tr key={item.id}>
+                  <td className="mono">
+                    {item.batch?.batchNo ?? item.inboundBatch?.batchNo ?? '-'}
+                  </td>
+                  <td>{item.customer?.code ?? '-'}</td>
+                  <td className="mono">{item.upc}</td>
+                  <td className="mono">{item.imei ?? item.serial ?? '-'}</td>
+                  <td>{item.product?.name ?? '-'}</td>
+                  <td className="mono">{item.upsTrackingNo ?? '-'}</td>
+                  <td>
+                    <span className={statusClass(item.status)}>
+                      {item.forcedInbound ? 'FORCED' : item.status}
+                    </span>
+                  </td>
+                  <td>{formatDate(item.scannedAt ?? item.createdAt)}</td>
+                  <td>{formatOperator(item.batch?.operator ?? item.inboundBatch?.operator)}</td>
+                  <td>
+                    {canForceConfirm ? (
+                      <button
+                        type="button"
+                        className="table-action"
+                        disabled={forceConfirmMutation.isPending}
+                        onClick={() => handleForceConfirm(item)}
+                      >
+                        <ShieldCheck size={14} />
+                        强制入库
+                      </button>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {!records || records.items.length === 0 ? (
               <tr>
-                <td colSpan={9}>暂无入库记录</td>
+                <td colSpan={10}>暂无入库记录</td>
               </tr>
             ) : null}
           </tbody>
@@ -220,6 +273,11 @@ type InboundRecord = {
   serial?: string | null;
   upsTrackingNo?: string | null;
   status: string;
+  inventoryItemId?: string | null;
+  forcedInbound?: boolean;
+  forceReason?: string | null;
+  forcedAt?: string | null;
+  forcedById?: string | null;
   scannedAt?: string | null;
   createdAt: string;
   customer?: { code: string; name: string } | null;

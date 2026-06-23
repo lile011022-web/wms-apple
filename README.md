@@ -99,6 +99,12 @@ PROJECT_DIR=/opt/wms-scan infra/scripts/backup-postgres.sh
 PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
 ```
 
+部署脚本会打印每一步耗时。只改前端时可执行 `PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh web`；只改后端时可执行 `PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh api`。如果已经通过外部构建流程推送预构建镜像，可在服务器 `.env.production` 配置 `WEB_IMAGE` 和 `API_IMAGE` 后执行：
+
+```bash
+USE_PREBUILT_IMAGES=true COMPOSE_FILE=docker-compose.prod.images.yml PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
+```
+
 同步服务器时必须保留 `.env.production`、`backups/` 和 Docker volumes，不要覆盖真实生产配置或数据库备份。
 
 ### 当前测试服务器数据库

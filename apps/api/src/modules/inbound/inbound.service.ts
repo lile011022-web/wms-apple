@@ -23,6 +23,7 @@ import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { SettingsService } from '../settings/settings.service';
 import { AddInboundItemDto } from './dto/add-inbound-item.dto';
 import { CreateInboundDraftDto } from './dto/create-inbound-draft.dto';
+import { ForceConfirmInboundItemDto } from './dto/force-confirm-inbound-item.dto';
 import { ImportInboundItemsDto } from './dto/import-inbound-items.dto';
 import { ListInboundRecordsQueryDto } from './dto/list-inbound-records-query.dto';
 import { ScanInboundUpsDto } from './dto/scan-inbound-ups.dto';
@@ -84,14 +85,25 @@ export class InboundService {
 
   async scanUps(draftId: string, dto: ScanInboundUpsDto) {
     const draft = await this.findOpenDraft(draftId);
-    const upsTrackingNo = this.normalizeUps(dto.upsTrackingNo);
+    const upsTrackingNo = normalizePackageTracking(dto.upsTrackingNo);
     const settings = await this.settingsService.getSettings();
+    const valid = isValidPackageTracking(upsTrackingNo);
+    if (!valid) {
+      return {
+        draftId: draft.id,
+        upsTrackingNo,
+        valid: false,
+        duplicate: false,
+        duplicateCount: 0,
+      };
+    }
+
     const duplicateCount = await this.inboundRepository.countConfirmedItemsByUps(upsTrackingNo);
 
     return {
       draftId: draft.id,
       upsTrackingNo,
-      valid: true,
+      valid,
       duplicate: settings.scanRules.detectDuplicateUps && duplicateCount > 0,
       duplicateCount,
     };
@@ -99,102 +111,41 @@ export class InboundService {
 
   async addItem(draftId: string, dto: AddInboundItemDto) {
     const draft = await this.findOpenDraft(draftId);
+    this.assertLatestDraftItemIsNotException(draft);
     const settings = await this.settingsService.getSettings();
-    const upc = this.normalizeUpc(dto.upc);
-    const upsTrackingNo = dto.upsTrackingNo ? this.normalizeUps(dto.upsTrackingNo) : undefined;
-    const imei = dto.imei ? this.normalizeImei(dto.imei) : undefined;
-    const serial = dto.serial ? this.normalizeSerial(dto.serial) : undefined;
-
-    if (imei && serial) {
-      throw new BadRequestException('Use either IMEI or Serial for one inbound item, not both.');
-    }
-
-    const productUpc = await this.inboundRepository.findProductByUpc(upc);
-    if (
-      !productUpc ||
-      productUpc.status !== ProductStatus.ACTIVE ||
-      productUpc.product.status !== ProductStatus.ACTIVE
-    ) {
-      const item = await this.inboundRepository.createItem(
-        {
-          inboundBatch: { connect: { id: draft.id } },
-          customer: { connect: { id: draft.customerId } },
-          upsTrackingNo,
-          upc,
-          imei,
-          serial,
-          status: InboundItemStatus.EXCEPTION,
-        },
-        settings.exceptionHandling.createUnmatchedUpcException
-          ? {
-              type: ExceptionType.UPC_NOT_MATCHED,
-              customer: { connect: { id: draft.customerId } },
-              warehouse: { connect: { id: draft.warehouseId } },
-              rawValue: upc,
-              upsTrackingNo,
-              upc,
-              imei,
-              serial,
-            }
-          : undefined,
-      );
-      return this.toItemResponse(item);
-    }
-
-    if (productUpc.product.requiresImei && !imei) {
-      throw new BadRequestException('This product requires IMEI before inbound confirmation.');
-    }
-    if (!productUpc.product.requiresImei && !imei && !serial) {
-      throw new BadRequestException('Serial or IMEI is required for this inbound item.');
-    }
-
-    const duplicate = await this.findDuplicateIdentity(imei, serial);
-    if (duplicate && settings.scanRules.detectDuplicateImei) {
-      const item = await this.inboundRepository.createItem(
-        {
-          inboundBatch: { connect: { id: draft.id } },
-          customer: { connect: { id: draft.customerId } },
-          product: { connect: { id: productUpc.product.id } },
-          upsTrackingNo,
-          upc,
-          imei,
-          serial,
-          status: InboundItemStatus.EXCEPTION,
-        },
-        settings.exceptionHandling.createDuplicateImeiException
-          ? {
-              type: ExceptionType.IMEI_DUPLICATED,
-              customer: { connect: { id: draft.customerId } },
-              warehouse: { connect: { id: draft.warehouseId } },
-              product: { connect: { id: productUpc.product.id } },
-              inventoryItem: { connect: { id: duplicate.id } },
-              rawValue: imei ?? serial ?? upc,
-              upsTrackingNo,
-              upc,
-              imei,
-              serial,
-            }
-          : undefined,
-      );
-      return this.toItemResponse(item);
-    }
-
-    const item = await this.inboundRepository.createItem({
-      inboundBatch: { connect: { id: draft.id } },
-      customer: { connect: { id: draft.customerId } },
-      product: { connect: { id: productUpc.product.id } },
-      upsTrackingNo,
-      upc,
-      imei,
-      serial,
-      status: InboundItemStatus.PENDING,
-    });
+    const prepared = await this.prepareInboundItemInput(draft, dto, settings);
+    const item = await this.inboundRepository.createItem(
+      this.toInboundItemCreateInput(draft, prepared),
+      prepared.exception,
+    );
 
     return this.toItemResponse(item);
   }
 
+  async updateItem(draftId: string, itemId: string, dto: AddInboundItemDto) {
+    const draft = await this.findOpenDraft(draftId);
+    const item = await this.inboundRepository.findItemById(itemId);
+    if (!item || item.inboundBatchId !== draft.id) {
+      throw new NotFoundException('Inbound draft item not found.');
+    }
+    if (item.status !== InboundItemStatus.PENDING && item.status !== InboundItemStatus.EXCEPTION) {
+      throw new ConflictException('Only pending or exception draft items can be corrected.');
+    }
+
+    const settings = await this.settingsService.getSettings();
+    const prepared = await this.prepareInboundItemInput(draft, dto, settings);
+    const updated = await this.inboundRepository.updateItem(
+      item.id,
+      this.toInboundItemUpdateInput(prepared),
+      prepared.exception,
+    );
+
+    return this.toItemResponse(updated);
+  }
+
   async importItems(draftId: string, dto: ImportInboundItemsDto) {
-    await this.findOpenDraft(draftId);
+    const activeDraft = await this.findOpenDraft(draftId);
+    this.assertLatestDraftItemIsNotException(activeDraft);
     let importedCount = 0;
     const failedRows: Array<{
       lineNo: number;
@@ -257,6 +208,7 @@ export class InboundService {
 
   async confirmDraft(draftId: string, operator: AuthenticatedUser) {
     const draft = await this.findOpenDraft(draftId);
+    this.assertLatestDraftItemIsNotException(draft);
     const confirmableItems = draft.inboundItems.filter(
       (item) => item.status === InboundItemStatus.PENDING && item.productId,
     );
@@ -311,6 +263,51 @@ export class InboundService {
     return this.toItemResponse(item);
   }
 
+  async forceConfirmRecord(
+    id: string,
+    dto: ForceConfirmInboundItemDto,
+    operator: AuthenticatedUser,
+  ) {
+    const item = await this.inboundRepository.findItemById(id);
+    if (!item) {
+      throw new NotFoundException('Inbound record not found.');
+    }
+    if (item.status !== InboundItemStatus.EXCEPTION) {
+      throw new ConflictException('Only exception inbound records can be force confirmed.');
+    }
+    if (item.inventoryItemId) {
+      throw new ConflictException('Inbound record already has inventory.');
+    }
+    if (item.inboundBatch.status !== InboundBatchStatus.CONFIRMED) {
+      throw new ConflictException(
+        'Only records from confirmed inbound batches can be force confirmed.',
+      );
+    }
+    if (!item.productId || !item.product || item.product.status !== ProductStatus.ACTIVE) {
+      throw new ConflictException('Cannot force inbound without a matched active product.');
+    }
+
+    const reason = dto.reason.trim();
+    if (!reason) {
+      throw new BadRequestException('Force inbound reason is required.');
+    }
+
+    const duplicate = await this.findDuplicateIdentity(
+      item.imei ?? undefined,
+      item.serial ?? undefined,
+    );
+    if (duplicate) {
+      throw new ConflictException('Cannot force inbound with duplicated IMEI or Serial.');
+    }
+
+    const confirmed = await this.inboundRepository.forceConfirmItem({
+      itemId: item.id,
+      operatorId: operator.id,
+      reason,
+    });
+    return this.toItemResponse(confirmed);
+  }
+
   async getRecordItems(batchId: string, query: ListInboundRecordsQueryDto) {
     const allowedSortFields = new Set(['scannedAt', 'createdAt', 'updatedAt', 'upc', 'imei']);
     const sortBy = query.sortBy && allowedSortFields.has(query.sortBy) ? query.sortBy : 'scannedAt';
@@ -345,6 +342,123 @@ export class InboundService {
     };
   }
 
+  private async prepareInboundItemInput(
+    draft: InboundDraftRecord,
+    dto: AddInboundItemDto,
+    settings: Awaited<ReturnType<SettingsService['getSettings']>>,
+  ): Promise<PreparedInboundItemInput> {
+    const scanMode = dto.scanMode ?? 'STANDARD';
+    const upc = this.normalizeUpc(dto.upc);
+    const upsTrackingNo = dto.upsTrackingNo
+      ? this.normalizeUps(dto.upsTrackingNo, dto.trackingExceptionConfirmed)
+      : undefined;
+    const imei = dto.imei ? this.normalizeImei(dto.imei) : undefined;
+    const serial = dto.serial ? this.normalizeSerial(dto.serial) : undefined;
+
+    if (!upsTrackingNo) {
+      throw new BadRequestException('Package tracking number is required for inbound scanning.');
+    }
+    if (imei && serial) {
+      throw new BadRequestException('Use either IMEI or Serial for one inbound item, not both.');
+    }
+
+    const productUpc = await this.inboundRepository.findProductByUpc(upc);
+    if (
+      !productUpc ||
+      productUpc.status !== ProductStatus.ACTIVE ||
+      productUpc.product.status !== ProductStatus.ACTIVE
+    ) {
+      return {
+        upc,
+        upsTrackingNo,
+        imei,
+        serial,
+        status: InboundItemStatus.EXCEPTION,
+        exception: settings.exceptionHandling.createUnmatchedUpcException
+          ? {
+              type: ExceptionType.UPC_NOT_MATCHED,
+              customer: { connect: { id: draft.customerId } },
+              warehouse: { connect: { id: draft.warehouseId } },
+              rawValue: upc,
+              upsTrackingNo,
+              upc,
+              imei,
+              serial,
+            }
+          : undefined,
+      };
+    }
+
+    if (scanMode === 'STANDARD' && productUpc.product.requiresImei && !imei) {
+      throw new BadRequestException('This product requires IMEI before inbound confirmation.');
+    }
+    if (scanMode === 'STANDARD' && !productUpc.product.requiresImei && !imei && !serial) {
+      throw new BadRequestException('Serial or IMEI is required for this inbound item.');
+    }
+
+    const duplicate = await this.findDuplicateIdentity(imei, serial);
+    if (duplicate && settings.scanRules.detectDuplicateImei) {
+      return {
+        productId: productUpc.product.id,
+        upc,
+        upsTrackingNo,
+        imei,
+        serial,
+        status: InboundItemStatus.EXCEPTION,
+        exception: settings.exceptionHandling.createDuplicateImeiException
+          ? {
+              type: ExceptionType.IMEI_DUPLICATED,
+              customer: { connect: { id: draft.customerId } },
+              warehouse: { connect: { id: draft.warehouseId } },
+              product: { connect: { id: productUpc.product.id } },
+              inventoryItem: { connect: { id: duplicate.id } },
+              rawValue: imei ?? serial ?? upc,
+              upsTrackingNo,
+              upc,
+              imei,
+              serial,
+            }
+          : undefined,
+      };
+    }
+
+    return {
+      productId: productUpc.product.id,
+      upc,
+      upsTrackingNo,
+      imei,
+      serial,
+      status: InboundItemStatus.PENDING,
+    };
+  }
+
+  private toInboundItemCreateInput(
+    draft: InboundDraftRecord,
+    input: PreparedInboundItemInput,
+  ): Prisma.InboundItemCreateInput {
+    return {
+      inboundBatch: { connect: { id: draft.id } },
+      customer: { connect: { id: draft.customerId } },
+      product: input.productId ? { connect: { id: input.productId } } : undefined,
+      upsTrackingNo: input.upsTrackingNo,
+      upc: input.upc,
+      imei: input.imei,
+      serial: input.serial,
+      status: input.status,
+    };
+  }
+
+  private toInboundItemUpdateInput(input: PreparedInboundItemInput): Prisma.InboundItemUpdateInput {
+    return {
+      product: input.productId ? { connect: { id: input.productId } } : { disconnect: true },
+      upsTrackingNo: input.upsTrackingNo,
+      upc: input.upc,
+      imei: input.imei ?? null,
+      serial: input.serial ?? null,
+      status: input.status,
+    };
+  }
+
   private async findOpenDraft(id: string) {
     const draft = await this.inboundRepository.findDraftById(id);
     if (!draft) {
@@ -354,6 +468,19 @@ export class InboundService {
       throw new ConflictException('Inbound draft is already closed.');
     }
     return draft;
+  }
+
+  private assertLatestDraftItemIsNotException(draft: InboundDraftRecord) {
+    const latestItem = [...draft.inboundItems]
+      .filter((item) => item.status !== InboundItemStatus.VOIDED)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      .at(-1);
+
+    if (latestItem?.status === InboundItemStatus.EXCEPTION) {
+      throw new ConflictException(
+        '上一条入库明细仍为异常，请先在当前入库单中修正该异常后再继续入库。',
+      );
+    }
   }
 
   private async findDuplicateIdentity(imei?: string, serial?: string) {
@@ -421,9 +548,9 @@ export class InboundService {
     return normalized;
   }
 
-  private normalizeUps(value: string) {
+  private normalizeUps(value: string, allowUnsupportedFormat = false) {
     const normalized = normalizePackageTracking(value);
-    if (!isValidPackageTracking(normalized)) {
+    if (!isValidPackageTracking(normalized) && !allowUnsupportedFormat) {
       throw new BadRequestException('Invalid package tracking number format.');
     }
     return normalized;
@@ -513,6 +640,10 @@ export class InboundService {
       scannedAt: item.scannedAt,
       product: item.product ? this.toProductResponse(item.product) : null,
       inventoryItemId: item.inventoryItemId,
+      forcedInbound: item.forcedInbound,
+      forceReason: item.forceReason,
+      forcedAt: item.forcedAt,
+      forcedById: item.forcedById,
       exceptions: item.exceptions.map((exception) => ({
         id: exception.id,
         type: exception.type,
@@ -544,6 +675,10 @@ export class InboundService {
       },
       product: item.product ? this.toProductResponse(item.product) : null,
       inventoryItemId: item.inventoryItemId,
+      forcedInbound: item.forcedInbound,
+      forceReason: item.forceReason,
+      forcedAt: item.forcedAt,
+      forcedById: item.forcedById,
       upsTrackingNo: item.upsTrackingNo,
       upc: item.upc,
       imei: item.imei,
@@ -580,3 +715,13 @@ export class InboundService {
     };
   }
 }
+
+type PreparedInboundItemInput = {
+  productId?: string;
+  upsTrackingNo: string;
+  upc: string;
+  imei?: string;
+  serial?: string;
+  status: 'PENDING' | 'EXCEPTION';
+  exception?: Prisma.ExceptionRecordCreateInput;
+};

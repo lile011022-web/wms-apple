@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { CreateReportExportDto } from './dto/create-report-export.dto';
+import { ListInboundBatchOptionsQueryDto } from './dto/list-inbound-batch-options-query.dto';
 import { ListReportExportsQueryDto } from './dto/list-report-exports-query.dto';
 import { PreviewReportDto } from './dto/preview-report.dto';
 import { ReportsService } from './reports.service';
@@ -26,6 +27,11 @@ export class ReportsController {
   @Post('exports')
   createExport(@Body() dto: CreateReportExportDto, @CurrentUser() user: AuthenticatedUser) {
     return this.reportsService.createExport(dto, user);
+  }
+
+  @Get('inbound-batches')
+  listInboundBatchOptions(@Query() query: ListInboundBatchOptionsQueryDto) {
+    return this.reportsService.listInboundBatchOptions(query);
   }
 
   @Get('exports')

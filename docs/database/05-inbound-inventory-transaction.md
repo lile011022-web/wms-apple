@@ -51,3 +51,25 @@ Outbound phases later move inventory to `PACKED` and `OUTBOUND`.
 Duplicate IMEI and Serial values do not create inventory.
 
 Duplicate UPS values from prior confirmed inbound records do not create inventory in the current phase. Multiple rows in the same draft may still share one UPS value because one package can contain multiple units.
+
+## Force Confirm Transaction
+
+`POST /inbound/records/:id/force-confirm` is a controlled follow-up transaction for one exception inbound item.
+
+Before the write transaction, the service checks:
+
+1. The inbound row exists and is `EXCEPTION`.
+2. The parent batch is already `CONFIRMED`.
+3. The row has a matched active product.
+4. The row does not already have `inventoryItemId`.
+5. IMEI or Serial is not already present in `inventory_items`.
+6. The operator supplied a reason.
+
+Inside the transaction, the repository:
+
+1. Creates one `inventory_items` row using the original customer, warehouse, product, UPC, package tracking number, IMEI, and Serial.
+2. Updates open `exception_records` for the inbound row to `RESOLVED` with the force reason.
+3. Updates the inbound row to `CONFIRMED`, links the inventory item, and stores `forcedInbound`, `forceReason`, `forcedAt`, and `forcedById`.
+4. Writes an `INBOUND_FORCE_CONFIRM` audit log with before/after snapshots.
+
+If any write fails, the transaction rolls back and no partial inventory is created.

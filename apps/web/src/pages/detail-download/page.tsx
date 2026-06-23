@@ -17,26 +17,43 @@ export function DetailDownloadPage() {
   const [reportType, setReportType] = useState('INVENTORY_DETAIL');
   const [format, setFormat] = useState('CSV');
   const [customerId, setCustomerId] = useState('');
+  const [batchId, setBatchId] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
   const [sealedOnly, setSealedOnly] = useState(true);
   const [preview, setPreview] = useState<ReportPreview | null>(null);
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const hasInvalidDateRange = Boolean(dateFrom && dateTo && new Date(dateFrom) > new Date(dateTo));
 
   const customersQuery = useQuery({
     queryKey: ['customer-options'],
     queryFn: () => customersApi.options(),
   });
   const customers = (customersQuery.data as CustomerOption[] | undefined) ?? [];
+  const inboundBatchesQuery = useQuery({
+    queryKey: ['report-inbound-batches', customerId],
+    queryFn: () =>
+      reportsApi.inboundBatches({ page: 1, pageSize: 100, customerId: customerId || undefined }),
+    enabled: reportType === 'INBOUND_DETAIL',
+  });
+  const inboundBatches =
+    ((inboundBatchesQuery.data as ExportBatchResult | undefined)?.items as
+      | InboundBatchOption[]
+      | undefined) ?? [];
 
   const filters = useMemo(
     () => ({
       customerId: customerId || undefined,
+      batchId: reportType === 'INBOUND_DETAIL' ? batchId || undefined : undefined,
+      dateFrom: toIsoDateTime(dateFrom),
+      dateTo: toIsoDateTime(dateTo),
       search: search || undefined,
       outboundStatus: reportType === 'OUTBOUND_DETAIL' && sealedOnly ? 'SEALED' : undefined,
     }),
-    [customerId, reportType, sealedOnly, search],
+    [batchId, customerId, dateFrom, dateTo, reportType, sealedOnly, search],
   );
 
   const exportsQuery = useQuery({
@@ -46,7 +63,12 @@ export function DetailDownloadPage() {
   const exports = exportsQuery.data as ExportResult | undefined;
 
   const previewMutation = useMutation({
-    mutationFn: () => reportsApi.preview({ reportType, filters }),
+    mutationFn: () => {
+      if (hasInvalidDateRange) {
+        throw new Error('结束时间不能早于开始时间');
+      }
+      return reportsApi.preview({ reportType, filters });
+    },
     onSuccess: (data) => {
       const nextPreview = data as ReportPreview;
       setPreview(nextPreview);
@@ -58,13 +80,17 @@ export function DetailDownloadPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      reportsApi.createExport({
+    mutationFn: () => {
+      if (hasInvalidDateRange) {
+        throw new Error('结束时间不能早于开始时间');
+      }
+      return reportsApi.createExport({
         reportType,
         format,
         filters,
         fields: selectedFields,
-      }),
+      });
+    },
     onSuccess: async (data) => {
       const created = data as ReportExport;
       await queryClient.invalidateQueries({ queryKey: ['report-exports'] });
@@ -99,6 +125,14 @@ export function DetailDownloadPage() {
     setPreview(null);
     setSelectedFields([]);
   }, [reportType]);
+
+  useEffect(() => {
+    setPreview(null);
+  }, [filters]);
+
+  useEffect(() => {
+    setBatchId('');
+  }, [customerId, reportType]);
 
   const toggleField = (field: string) => {
     setSelectedFields((current) =>
@@ -149,6 +183,35 @@ export function DetailDownloadPage() {
           </select>
         </label>
         <label>
+          <span>开始时间</span>
+          <input
+            type="datetime-local"
+            value={dateFrom}
+            onChange={(event) => setDateFrom(event.target.value)}
+          />
+        </label>
+        <label>
+          <span>结束时间</span>
+          <input
+            type="datetime-local"
+            value={dateTo}
+            onChange={(event) => setDateTo(event.target.value)}
+          />
+        </label>
+        {reportType === 'INBOUND_DETAIL' ? (
+          <label>
+            <span>入库批次</span>
+            <select value={batchId} onChange={(event) => setBatchId(event.target.value)}>
+              <option value="">全部批次</option>
+              {inboundBatches.map((batch) => (
+                <option key={batch.id} value={batch.id}>
+                  {batch.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        <label>
           <span>搜索</span>
           <input
             value={search}
@@ -168,14 +231,24 @@ export function DetailDownloadPage() {
             </select>
           </label>
         ) : null}
-        <button type="button" className="btn" onClick={() => previewMutation.mutate()}>
+        <button
+          type="button"
+          className="btn"
+          disabled={hasInvalidDateRange || previewMutation.isPending}
+          onClick={() => previewMutation.mutate()}
+        >
           <Eye size={16} />
           预览
         </button>
         <button
           type="button"
           className="btn"
-          disabled={!preview || selectedFields.length === 0 || createMutation.isPending}
+          disabled={
+            !preview ||
+            selectedFields.length === 0 ||
+            hasInvalidDateRange ||
+            createMutation.isPending
+          }
           onClick={() => createMutation.mutate()}
         >
           <FileSpreadsheet size={16} />
@@ -183,6 +256,7 @@ export function DetailDownloadPage() {
         </button>
       </section>
 
+      {hasInvalidDateRange ? <div className="inline-error">结束时间不能早于开始时间</div> : null}
       {message ? <div className="inline-success">{message}</div> : null}
       {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
 
@@ -268,6 +342,14 @@ export function DetailDownloadPage() {
 }
 
 type CustomerOption = { id: string; label: string };
+type ExportBatchResult = { items: InboundBatchOption[]; total: number };
+type InboundBatchOption = {
+  id: string;
+  batchNo: string;
+  label: string;
+  rowCount: number;
+  confirmedAt?: string | null;
+};
 type ReportPreview = {
   estimatedRowCount: number;
   selectedFields: string[];
@@ -348,6 +430,14 @@ function downloadReportFile(file: ReportDownload) {
     anchor.remove();
     globalThis.URL.revokeObjectURL(url);
   }, 0);
+}
+
+function toIsoDateTime(value: string) {
+  if (!value) {
+    return undefined;
+  }
+
+  return new Date(value).toISOString();
 }
 
 function toUserErrorMessage(error: unknown, fallback: string) {

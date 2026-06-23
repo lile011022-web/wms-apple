@@ -14,7 +14,6 @@ Request body:
 {
   "customerId": "customer-1",
   "warehouseId": "warehouse-1",
-  "boxName": "Customer A first box",
   "sizePreset": "12*12*12",
   "customSize": null,
   "weightLb": 45,
@@ -28,11 +27,13 @@ Rules:
 - `warehouseId` is required.
 - Customer must be active.
 - Warehouse must be active.
-- If `boxNo` is omitted, the backend generates a deterministic customer-linked box number: `BOX-{CUSTOMER_CODE}-{YYYYMMDD}-{SEQUENCE}`.
+- Operators no longer enter a box number.
+- The backend always generates the internal box number: `BOX-{CUSTOMER_CODE}-{YYYYMMDD}-{SEQUENCE}`.
+- The backend always generates the visible box name: `{CUSTOMER_NAME}{YYYYMMDD}箱{SEQUENCE}`.
 - Example generated box number: `BOX-BB0001-20260618-001`.
+- Example generated box name: `BestBuy20260618箱1`.
 - The generated `SEQUENCE` increments from the latest box number with the same customer/date prefix inside the warehouse.
-- Generated box numbers do not use random suffixes.
-- A provided `boxNo` is uppercased and must still be unique inside the warehouse.
+- Generated box numbers and names do not use random suffixes.
 - `sizePreset` supports `12*12*12`, `14*14*14`, and `CUSTOM`.
 - `customSize` is required when `sizePreset` is `CUSTOM`.
 - `weightLb` defaults to `45` and is stored in pounds.
@@ -46,10 +47,10 @@ Request body:
 
 ```json
 {
-  "boxName": "Customer A rework box",
   "sizePreset": "CUSTOM",
   "customSize": "16*14*12",
   "weightLb": 42.5,
+  "shippingTrackingNo": "1Z999AA10123456784",
   "notes": "Customer requested repack"
 }
 ```
@@ -58,6 +59,8 @@ Rules:
 
 - The box must be `OPEN`.
 - Only submitted fields are changed.
+- Box name is system-generated at creation and cannot be edited.
+- `shippingTrackingNo` stores the outbound shipment or label number shown beside the box evidence controls.
 - Updating box settings writes an `OUTBOUND_BOX_UPDATE` audit log.
 
 ## GET /outbound/boxes
@@ -111,6 +114,11 @@ Query parameters:
 - `page`, `pageSize`, `sortBy`, `sortOrder`: standard inventory pagination and sorting.
 
 The backend delegates to `GET /inventory/available-for-outbound`, forces `status = IN_STOCK`, and requires the selected customer.
+
+Frontend packing modes reuse this endpoint:
+
+- Detailed scan packing searches available inventory by scanned IMEI / Serial, then verifies the scanned UPC before adding the row to the current box.
+- Bulk box packing reads all available pages for the selected customer and warehouse, validates that per-box quantities equal the available total, then creates boxes and calls `POST /outbound/boxes/:id/items` for each assigned row.
 
 ## POST /outbound/boxes/:id/items
 
@@ -169,8 +177,39 @@ Rules:
 
 - The box must be `OPEN`.
 - The box must contain at least one item.
+- The box must have at least one uploaded packing photo or video evidence file.
 - Sealing runs inside a database transaction.
 - The backend marks the box `SEALED`, sets `sealedAt`, ensures all box inventory rows are `PACKED`, and writes an `OUTBOUND_BOX_SEAL` audit log.
+
+## POST /outbound/boxes/:id/photos
+
+Uploads photo or video evidence for an open outbound box before sealing.
+
+Request body:
+
+- `multipart/form-data`
+- Field name: `photo`
+- Accepted file types: JPG, PNG, WebP, MP4, MOV, WebM.
+- Maximum file size: 100 MB.
+
+Rules:
+
+- The box must be `OPEN`.
+- Operators should upload a clear photo or short video of the packed box contents before sealing.
+- The web client compresses large mobile photos to JPEG before upload. Videos are uploaded as selected and use a longer timeout for this multipart request.
+- Uploading a file writes an `OUTBOUND_BOX_PHOTO_ADD` audit log.
+- The response returns the refreshed outbound box, including `photos`.
+
+## DELETE /outbound/boxes/:id/photos/:photoId
+
+Deletes one photo or video evidence file from an open outbound box before sealing.
+
+Rules:
+
+- The box must be `OPEN`.
+- The evidence file must belong to the box.
+- Deleting an evidence file writes an `OUTBOUND_BOX_PHOTO_DELETE` audit log.
+- The response returns `{ deletedPhotoId, box }`.
 
 ## POST /outbound/boxes/:id/reopen
 
@@ -203,11 +242,12 @@ Outbound box responses use this shape:
 ```json
 {
   "id": "box-1",
-  "boxNo": "BOX-20260617-001",
-  "boxName": "Customer A first box",
+  "boxNo": "BOX-CUST-001-20260618-001",
+  "boxName": "Apple Reseller20260618箱1",
   "sizePreset": "12*12*12",
   "customSize": null,
   "weightLb": 45,
+  "shippingTrackingNo": "1Z999AA10123456784",
   "status": "OPEN",
   "customer": {
     "id": "customer-1",
@@ -225,6 +265,22 @@ Outbound box responses use this shape:
     "name": "Outbound Operator"
   },
   "itemCount": 1,
+  "photos": [
+    {
+      "id": "photo-1",
+      "fileName": "BOX-20260617-001-example.jpg",
+      "originalName": "packing-photo.jpg",
+      "mimeType": "image/jpeg",
+      "fileSize": 842133,
+      "fileUrl": "/uploads/outbound-box-photos/BOX-20260617-001-example.jpg",
+      "createdAt": "2026-06-22T00:00:00.000Z",
+      "uploadedBy": {
+        "id": "user-1",
+        "email": "operator@wms-scan.local",
+        "name": "Outbound Operator"
+      }
+    }
+  ],
   "items": [
     {
       "id": "box-item-1",

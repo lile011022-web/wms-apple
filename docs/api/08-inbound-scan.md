@@ -44,7 +44,7 @@ per-UPC product counts. No separate summary endpoint is required for this draft-
 }
 ```
 
-Returns normalized package tracking data and duplicate status. This endpoint accepts UPS, USPS, and FedEx tracking numbers, then validates and checks the tracking number before item scans. The request and response keep the legacy `upsTrackingNo` field name for API compatibility.
+Returns normalized package tracking data and duplicate status. This endpoint accepts UPS, USPS, and FedEx tracking numbers, then validates and checks the tracking number before item scans. FedEx currently accepts common pure-numeric 12, 15, 20, and 22 digit formats, including Express-style 12 digit values and 96-prefixed SmartPost/Ground Economy-style values. Unsupported formats return `valid: false` instead of failing the request, so the web page can ask the operator whether to continue. The request and response keep the legacy `upsTrackingNo` field name for API compatibility.
 
 ## Add Preview Item
 
@@ -54,17 +54,61 @@ Returns normalized package tracking data and duplicate status. This endpoint acc
 {
   "upsTrackingNo": "9611020987654312345672",
   "upc": "194253149189",
-  "imei": "356789012345678"
+  "imei": "356789012345678",
+  "scanMode": "STANDARD",
+  "trackingExceptionConfirmed": false
 }
 ```
 
 Rules:
 
+- `upsTrackingNo` is required for scan entry. The API keeps the legacy field name, but the business
+  meaning is UPS, USPS, or FedEx package tracking number.
+- `trackingExceptionConfirmed` is optional. It should only be sent after the operator confirms a
+  package tracking warning. When true, unsupported package tracking formats can be saved to the draft
+  instead of being rejected.
+- `scanMode` is optional and defaults to `STANDARD`.
+- `STANDARD` mode is the strict mode used by the web page's `一版模式`: package tracking number, UPC,
+  and IMEI/Serial are required according to product rules.
+- `TRACKING_UPC` mode is the simplified web page mode: package tracking number and UPC can create a
+  normal pending preview item without IMEI/Serial, as long as the UPC matches an active product.
 - UPC must match an active UPC mapping and active product, otherwise the preview item is saved as `EXCEPTION`.
 - If unmatched UPC exceptions are enabled, an `UPC_NOT_MATCHED` exception record is created.
-- Products with `requiresImei = true` require a valid IMEI. IMEI validation accepts 15-digit numeric phone IMEI values and 10-18 character uppercase alphanumeric iPad identifiers such as `SH9LRL91YFC`.
-- Products with `requiresImei = false` require either Serial or IMEI in this phase.
+- In `STANDARD` mode, products with `requiresImei = true` require a valid IMEI. IMEI validation accepts 15-digit numeric phone IMEI values and 10-18 character uppercase alphanumeric iPad identifiers such as `SH9LRL91YFC`.
+- In `STANDARD` mode, products with `requiresImei = false` require either Serial or IMEI in this phase.
 - Duplicate IMEI or Serial creates an exception preview item when duplicate detection is enabled.
+- If the latest non-voided preview item in the active draft is still `EXCEPTION`, the API rejects
+  adding another item with a conflict error. The operator must correct or remove that latest
+  exception row first.
+
+The web client shows the latest added row below the scanner inputs. When exception rows exist in the
+active draft, clicking the exception metric locates the first exception row and opens that row for
+inline editing. Saving the row overwrites the original preview item and re-runs the same validation
+rules; it does not create a second preview item.
+
+## Update Preview Item
+
+`PATCH /api/v1/inbound/drafts/:id/items/:itemId`
+
+```json
+{
+  "upsTrackingNo": "1Z586F5V0387747419",
+  "upc": "195950626100",
+  "imei": "353621843307253",
+  "scanMode": "STANDARD"
+}
+```
+
+Rules:
+
+- Only rows in an open `DRAFT` batch can be updated.
+- Only `PENDING` or `EXCEPTION` preview rows can be corrected.
+- The request body follows the same fields and validation rules as `POST /drafts/:id/items`.
+- Saving a correction overwrites the original `InboundItem` row. It must not create a new inbound
+  item.
+- Existing open exception records for the corrected row are marked `INVALID`, then the corrected row
+  is validated again. If the corrected values are still invalid, a new open exception can be created
+  for the same row.
 
 ## Import Preview Items
 
@@ -93,6 +137,8 @@ Request:
 Rules:
 
 - Up to 1000 rows can be submitted in one import.
+- If the latest non-voided preview item in the active draft is still `EXCEPTION`, import is rejected
+  before any CSV row is appended. Correct or remove that latest exception row first.
 - Each row is added with the same validation and exception behavior as `POST /drafts/:id/items`.
 - Standard CSV imports use three required columns: package tracking number (`单号`), UPC, and IMEI.
 - Valid rows are appended to the current draft immediately.
@@ -129,6 +175,8 @@ Removal is logical. Preview rows move to `VOIDED` so history remains traceable d
 
 Confirmation runs inside one database transaction:
 
+- Rejects confirmation if the latest non-voided preview item is still `EXCEPTION`, so the operator
+  must correct or remove the latest abnormal row before inventory can be confirmed.
 - Rejects same-draft duplicate IMEI or Serial values before inventory writes.
 - Rechecks duplicate IMEI, Serial, and package tracking values.
 - Creates `inventory_items` for confirmable preview rows.
@@ -161,3 +209,26 @@ Search covers package tracking number, UPC, IMEI, Serial, customer code/name, pr
 `GET /api/v1/inbound/records/:id`
 
 Returns one inbound item with batch, customer, product, linked inventory item, and exception summary.
+
+## Force Confirm Exception Record
+
+`POST /api/v1/inbound/records/:id/force-confirm`
+
+```json
+{
+  "reason": "FedEx tracking exception reviewed by supervisor."
+}
+```
+
+This endpoint is for controlled exception handling after an inbound batch has already been confirmed.
+
+Rules:
+
+- Only `EXCEPTION` inbound records can be force confirmed.
+- The record must already have a matched active product.
+- The record must not already be linked to inventory.
+- The batch must already be `CONFIRMED`.
+- IMEI or Serial must still be unique in inventory.
+- A non-empty reason is required.
+
+On success the API creates the missing inventory item, marks the inbound row `CONFIRMED`, saves `forcedInbound`, `forceReason`, `forcedAt`, and `forcedById`, resolves open exception records for that inbound row, and writes an `INBOUND_FORCE_CONFIRM` audit log.

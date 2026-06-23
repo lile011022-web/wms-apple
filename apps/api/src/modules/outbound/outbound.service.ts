@@ -5,6 +5,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CustomerStatus, InventoryStatus, OutboundBoxStatus, Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { InventoryService } from '../inventory/inventory.service';
 import { AddOutboundBoxItemDto } from './dto/add-outbound-box-item.dto';
@@ -19,6 +22,24 @@ import {
   OutboundInventoryItemRecord,
   OutboundRepository,
 } from './outbound.repository';
+
+export type UploadedOutboundBoxPhotoFile = {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+};
+
+const outboundBoxPhotoDirectory = 'uploads/outbound-box-photos';
+const allowedPhotoMimeTypes = new Map([
+  ['image/jpeg', '.jpg'],
+  ['image/png', '.png'],
+  ['image/webp', '.webp'],
+  ['video/mp4', '.mp4'],
+  ['video/quicktime', '.mov'],
+  ['video/webm', '.webm'],
+]);
+const maxPhotoSizeBytes = 100 * 1024 * 1024;
 
 @Injectable()
 export class OutboundService {
@@ -48,21 +69,26 @@ export class OutboundService {
       throw new ConflictException('Inactive warehouse cannot be used for outbound packing.');
     }
 
-    const boxNo =
-      this.normalizeBoxNo(dto.boxNo) ?? (await this.generateBoxNo(customer.code, warehouse.id));
+    const generatedBoxIdentity = await this.generateBoxIdentity({
+      customerCode: customer.code,
+      customerName: customer.name,
+      warehouseId: warehouse.id,
+    });
+    const boxNo = generatedBoxIdentity.boxNo;
     const existing = await this.outboundRepository.findBoxByNo(warehouseId, boxNo);
     if (existing) {
       throw new ConflictException('Outbound box number already exists in this warehouse.');
     }
-    await this.assertUniqueBoxName(warehouseId, dto.boxName);
+    await this.assertUniqueBoxName(warehouseId, generatedBoxIdentity.boxName);
 
     const box = await this.outboundRepository.createBoxWithAudit(
       {
         boxNo,
-        boxName: this.trimOptional(dto.boxName),
+        boxName: generatedBoxIdentity.boxName,
         sizePreset: this.normalizeSizePreset(dto.sizePreset, '12*12*12'),
         customSize: this.normalizeCustomSize(dto.sizePreset, dto.customSize),
         weightLb: dto.weightLb ?? 45,
+        shippingTrackingNo: this.trimOptional(dto.shippingTrackingNo),
         customer: { connect: { id: customer.id } },
         warehouse: { connect: { id: warehouse.id } },
         createdBy: { connect: { id: operator.id } },
@@ -134,10 +160,6 @@ export class OutboundService {
     const box = await this.findOpenBox(id);
     const data: Prisma.OutboundBoxUpdateInput = {};
 
-    if (dto.boxName !== undefined) {
-      data.boxName = this.trimOptional(dto.boxName) ?? null;
-      await this.assertUniqueBoxName(box.warehouseId, dto.boxName, box.id);
-    }
     if (dto.sizePreset !== undefined) {
       data.sizePreset = this.normalizeSizePreset(dto.sizePreset);
       data.customSize = this.normalizeCustomSize(dto.sizePreset, dto.customSize) ?? null;
@@ -149,6 +171,9 @@ export class OutboundService {
     }
     if (dto.notes !== undefined) {
       data.notes = this.trimOptional(dto.notes) ?? null;
+    }
+    if (dto.shippingTrackingNo !== undefined) {
+      data.shippingTrackingNo = this.trimOptional(dto.shippingTrackingNo) ?? null;
     }
 
     const updated = await this.outboundRepository.updateBoxWithAudit({
@@ -219,12 +244,70 @@ export class OutboundService {
     if (box.items.length === 0) {
       throw new BadRequestException('Outbound box has no items to seal.');
     }
+    if (box.photos.length === 0) {
+      throw new BadRequestException('Please upload a box photo before sealing.');
+    }
 
     const sealed = await this.outboundRepository.sealBox({
       boxId: box.id,
       operatorId: operator.id,
     });
     return this.toBoxResponse(sealed);
+  }
+
+  async uploadPhoto(
+    boxId: string,
+    file: UploadedOutboundBoxPhotoFile | undefined,
+    operator: AuthenticatedUser,
+  ) {
+    const box = await this.findOpenBox(boxId);
+    const normalizedFile = this.validatePhotoFile(file);
+    const extension = allowedPhotoMimeTypes.get(normalizedFile.mimetype) ?? '.jpg';
+    const fileName = `${box.boxNo}-${randomUUID()}${extension}`;
+    const storageDirectory = path.join(process.cwd(), outboundBoxPhotoDirectory);
+    const storagePath = path.join(outboundBoxPhotoDirectory, fileName);
+    const absolutePath = path.join(process.cwd(), storagePath);
+    const fileUrl = `/uploads/outbound-box-photos/${fileName}`;
+
+    await mkdir(storageDirectory, { recursive: true });
+    await writeFile(absolutePath, normalizedFile.buffer);
+
+    try {
+      const updated = await this.outboundRepository.addPhotoToBox({
+        boxId: box.id,
+        operatorId: operator.id,
+        fileName,
+        originalName: normalizedFile.originalname,
+        mimeType: normalizedFile.mimetype,
+        fileSize: normalizedFile.size,
+        storagePath,
+        fileUrl,
+      });
+      return this.toBoxResponse(updated);
+    } catch (error) {
+      await this.deleteStoredFile(storagePath);
+      throw error;
+    }
+  }
+
+  async deletePhoto(boxId: string, photoId: string, operator: AuthenticatedUser) {
+    const box = await this.findOpenBox(boxId);
+    const photo = box.photos.find((item) => item.id === photoId);
+    if (!photo) {
+      throw new NotFoundException('Outbound box photo not found.');
+    }
+
+    const result = await this.outboundRepository.removePhotoFromBox({
+      boxId: box.id,
+      photoId,
+      operatorId: operator.id,
+    });
+    await this.deleteStoredFile(result.photo.storagePath);
+
+    return {
+      deletedPhotoId: result.photo.id,
+      box: this.toBoxResponse(result.box),
+    };
   }
 
   async reopenBox(boxId: string, operator: AuthenticatedUser) {
@@ -344,6 +427,7 @@ export class OutboundService {
       sizePreset: box.sizePreset,
       customSize: box.customSize,
       weightLb: box.weightLb,
+      shippingTrackingNo: box.shippingTrackingNo,
       status: box.status,
       customer: {
         id: box.customer.id,
@@ -385,15 +469,21 @@ export class OutboundService {
           packedAt: item.inventoryItem.packedAt,
         },
       })),
+      photos: box.photos.map((photo) => ({
+        id: photo.id,
+        fileName: photo.fileName,
+        originalName: photo.originalName,
+        mimeType: photo.mimeType,
+        fileSize: photo.fileSize,
+        fileUrl: photo.fileUrl,
+        createdAt: photo.createdAt,
+        uploadedBy: photo.uploadedBy,
+      })),
       notes: box.notes,
       sealedAt: box.sealedAt,
       createdAt: box.createdAt,
       updatedAt: box.updatedAt,
     };
-  }
-
-  private normalizeBoxNo(value?: string) {
-    return this.trimOptional(value)?.toUpperCase();
   }
 
   private async assertUniqueBoxName(
@@ -432,23 +522,60 @@ export class OutboundService {
     return normalizedSizePreset === 'CUSTOM' ? normalizedCustomSize : undefined;
   }
 
-  private async generateBoxNo(customerCode: string, warehouseId: string) {
+  private async generateBoxIdentity(params: {
+    customerCode: string;
+    customerName: string;
+    warehouseId: string;
+  }) {
     const dateKey = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const safeCustomerCode = customerCode
+    const safeCustomerCode = params.customerCode
       .trim()
       .toUpperCase()
       .replace(/[^A-Z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
     const prefix = `BOX-${safeCustomerCode}-${dateKey}-`;
-    const latestBox = await this.outboundRepository.findLatestBoxByPrefix(warehouseId, prefix);
+    const latestBox = await this.outboundRepository.findLatestBoxByPrefix(
+      params.warehouseId,
+      prefix,
+    );
     const latestSequence = latestBox ? Number(latestBox.boxNo.slice(prefix.length)) : 0;
     const nextSequence = Number.isFinite(latestSequence) ? latestSequence + 1 : 1;
 
-    return `${prefix}${nextSequence.toString().padStart(3, '0')}`;
+    return {
+      boxNo: `${prefix}${nextSequence.toString().padStart(3, '0')}`,
+      boxName: `${params.customerName.trim() || params.customerCode}${dateKey}箱${nextSequence}`,
+    };
   }
 
   private trimOptional(value?: string | null) {
     const trimmed = value?.trim();
     return trimmed ? trimmed : undefined;
+  }
+
+  private validatePhotoFile(file: UploadedOutboundBoxPhotoFile | undefined) {
+    if (!file) {
+      throw new BadRequestException('photo file is required.');
+    }
+    if (!allowedPhotoMimeTypes.has(file.mimetype)) {
+      throw new BadRequestException(
+        'Only JPG, PNG, WebP, MP4, MOV, or WebM files can be uploaded.',
+      );
+    }
+    if (file.size > maxPhotoSizeBytes) {
+      throw new BadRequestException('Packing evidence file must be 100 MB or smaller.');
+    }
+    if (!file.buffer?.length) {
+      throw new BadRequestException('Uploaded photo is empty.');
+    }
+
+    return file;
+  }
+
+  private async deleteStoredFile(storagePath: string) {
+    try {
+      await unlink(path.join(process.cwd(), storagePath));
+    } catch {
+      // The database record is the source of truth; missing files should not block rework.
+    }
   }
 }

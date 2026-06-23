@@ -34,6 +34,7 @@ describe('shared scan validators', () => {
     expect(isValidPackageTracking('1Z999AA10123456784')).toBe(true);
     expect(isValidUspsTracking('9400111899223857000000')).toBe(true);
     expect(isValidFedexTracking('9611020987654312345672')).toBe(true);
+    expect(isValidFedexTracking('96320804008675235705004823280')).toBe(true);
     expect(normalizePackageTracking(' 9400 1118 9922 3857 0000 00 ')).toBe(
       '9400111899223857000000',
     );

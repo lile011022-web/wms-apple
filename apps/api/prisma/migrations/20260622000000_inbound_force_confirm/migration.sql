@@ -1,0 +1,7 @@
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'INBOUND_FORCE_CONFIRM';
+
+ALTER TABLE "inbound_items"
+  ADD COLUMN "forcedInbound" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN "forceReason" TEXT,
+  ADD COLUMN "forcedAt" TIMESTAMP(3),
+  ADD COLUMN "forcedById" TEXT;

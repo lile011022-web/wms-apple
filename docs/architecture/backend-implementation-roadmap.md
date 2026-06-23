@@ -410,6 +410,11 @@ apps/api/src/modules/<module-name>/
 - <strong><font color="red">🔴 已完成：扫描 IMEI 或 Serial。</font></strong>
 - <strong><font color="red">🔴 已完成：CSV 文件批量导入当前入库草稿明细。</font></strong>
 - <strong><font color="red">🔴 已完成：本次入库预览。</font></strong>
+- <strong><font color="red">🔴 已完成：入库扫码支持一版模式和物流+UPC 简化模式，并显示上一条入库明细。</font></strong>
+- <strong><font color="red">🔴 已完成：物流单号输入时检查规则和重复异常，操作员确认后可继续入库。</font></strong>
+- <strong><font color="red">🔴 已完成：入库扫码异常汇总可定位到异常明细并带回输入区修正。</font></strong>
+- <strong><font color="red">🔴 已完成：入库扫码异常明细支持行内覆盖修正，修正后复用原明细行并重新校验。</font></strong>
+- <strong><font color="red">🔴 已完成：上一条入库明细为异常时暂停继续入库、导入和确认，必须先原地修正或删除异常行。</font></strong>
 - <strong><font color="red">🔴 已完成：当前入库草稿明细前端分页。</font></strong>
 - <strong><font color="red">🔴 已完成：移除预览明细。</font></strong>
 - <strong><font color="red">🔴 已完成：清空本次草稿。</font></strong>
@@ -423,6 +428,7 @@ apps/api/src/modules/<module-name>/
 - `GET /inbound/drafts/:id`
 - `POST /inbound/drafts/:id/ups`
 - `POST /inbound/drafts/:id/items`
+- `PATCH /inbound/drafts/:id/items/:itemId`
 - `POST /inbound/drafts/:id/items/import`
 - `DELETE /inbound/drafts/:id/items/:itemId`
 - `DELETE /inbound/drafts/:id/items`
@@ -567,14 +573,18 @@ apps/api/src/modules/<module-name>/
 要完成的内容：
 
 - <strong><font color="red">🔴 已完成：选择客户。</font></strong>
-- <strong><font color="red">🔴 已完成：创建箱号。</font></strong>
+- <strong><font color="red">🔴 已完成：系统自动创建内部箱号，并用客户名+日期+箱序号生成箱子名称。</font></strong>
 - <strong><font color="red">🔴 已完成：查询当前客户可装箱库存。</font></strong>
 - <strong><font color="red">🔴 已完成：按 UPS、UPC、IMEI、商品名搜索可装箱明细。</font></strong>
 - <strong><font color="red">🔴 已完成：出库装箱搜索通过统一物流字段支持 UPS、USPS、FedEx、UPC、IMEI、Serial、SKU 和商品名。</font></strong>
 - <strong><font color="red">🔴 已完成：可装箱库存、最近箱子和箱内明细展示分页。</font></strong>
-- <strong><font color="red">🔴 已完成：建箱前可填写箱子名称、固定尺寸、自定义尺寸、重量 lb 和备注。</font></strong>
-- <strong><font color="red">🔴 已完成：开放箱可编辑箱子名称、尺寸、重量和备注。</font></strong>
+- <strong><font color="red">🔴 已完成：建箱前可填写固定尺寸、自定义尺寸、重量 lb 和备注，箱子名称由系统自动生成。</font></strong>
+- <strong><font color="red">🔴 已完成：开放箱可编辑尺寸、重量和备注，箱子名称保持系统生成值。</font></strong>
+- <strong><font color="red">🔴 已完成：已创建箱子支持封箱前上传装箱照片，封箱必须至少保留一张照片。</font></strong>
+- <strong><font color="red">🔴 已完成：已创建箱子照片操作旁支持录入出库单号。</font></strong>
 - <strong><font color="red">🔴 已完成：加入当前箱。</font></strong>
+- <strong><font color="red">🔴 已完成：当前箱子工作区支持细致扫码装箱，随机扫描 UPC 和 IMEI/Serial 后自动匹配并加入当前箱。</font></strong>
+- <strong><font color="red">🔴 已完成：客户可装箱库存支持全部批量装箱，按箱数和每箱数量随机或手动分配库存。</font></strong>
 - <strong><font color="red">🔴 已完成：从当前箱移除。</font></strong>
 - <strong><font color="red">🔴 已完成：清空当前箱。</font></strong>
 - <strong><font color="red">🔴 已完成：封箱确认。</font></strong>
@@ -593,6 +603,8 @@ apps/api/src/modules/<module-name>/
 - <strong><font color="red">🔴 已完成：`DELETE /outbound/boxes/:id/items`。</font></strong>
 - <strong><font color="red">🔴 已完成：`POST /outbound/boxes/:id/seal`。</font></strong>
 - <strong><font color="red">🔴 已完成：`POST /outbound/boxes/:id/reopen`。</font></strong>
+- <strong><font color="red">🔴 已完成：`POST /outbound/boxes/:id/photos`。</font></strong>
+- <strong><font color="red">🔴 已完成：`DELETE /outbound/boxes/:id/photos/:photoId`。</font></strong>
 - <strong><font color="red">🔴 已完成：`GET /outbound/boxes`。</font></strong>
 
 核心业务规则：
@@ -601,6 +613,7 @@ apps/api/src/modules/<module-name>/
 - <strong><font color="red">🔴 已完成：只能装当前客户名下库存。</font></strong>
 - <strong><font color="red">🔴 已完成：非在库状态不能加入箱。</font></strong>
 - <strong><font color="red">🔴 已完成：封箱必须在数据库事务中完成。</font></strong>
+- <strong><font color="red">🔴 已完成：封箱前必须上传装箱照片，照片上传和删除都记录操作人。</font></strong>
 - <strong><font color="red">🔴 已完成：封箱必须写 audit log。</font></strong>
 - <strong><font color="red">🔴 已完成：建箱、编辑箱子、加货、删货、清空、封箱和返工都写 audit log，记录操作人。</font></strong>
 
@@ -619,7 +632,7 @@ apps/api/src/modules/<module-name>/
 
 验收标准：
 
-- <strong><font color="red">🔴 已完成：出库装箱页面可创建箱号、编辑箱子设置、加入明细、移除明细、清空箱子、封箱和返工。</font></strong>
+- <strong><font color="red">🔴 已完成：出库装箱页面可自动创建箱子名称、编辑箱子设置、加入明细、移除明细、清空箱子、封箱和返工。</font></strong>
 
 ## 15 阶段十一：异常池
 
@@ -984,6 +997,7 @@ infra/
 - 数据库备份策略。
 - 健康检查。
 - 回滚方案。
+- <strong><font color="red">🔴 已完成：生产部署脚本已支持步骤耗时统计、web/api 按服务部署、BuildKit pnpm 缓存和 GHCR 预构建镜像拉取路径，用于降低低成本 VPS 上的重复构建时间。</font></strong>
 
 建议部署标题：
 

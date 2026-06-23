@@ -32,6 +32,7 @@ const inventoryItemInclude = {
         select: {
           id: true,
           boxNo: true,
+          boxName: true,
           status: true,
           sealedAt: true,
         },

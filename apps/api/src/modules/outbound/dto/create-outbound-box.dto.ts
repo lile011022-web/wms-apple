@@ -1,15 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  IsIn,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Max,
-  MaxLength,
-  Min,
-  MinLength,
-} from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export const outboundBoxSizePresets = ['12*12*12', '14*14*14', 'CUSTOM'] as const;
 
@@ -23,19 +14,6 @@ export class CreateOutboundBoxDto {
   @IsOptional()
   @IsString()
   warehouseId?: string;
-
-  @ApiPropertyOptional({ example: 'BOX-20260617-001' })
-  @IsOptional()
-  @IsString()
-  @MinLength(2)
-  @MaxLength(60)
-  boxNo?: string;
-
-  @ApiPropertyOptional({ example: 'Customer A mixed iPhone box' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  boxName?: string;
 
   @ApiPropertyOptional({ enum: outboundBoxSizePresets, example: '12*12*12' })
   @IsOptional()
@@ -55,6 +33,12 @@ export class CreateOutboundBoxDto {
   @Min(0)
   @Max(9999)
   weightLb?: number;
+
+  @ApiPropertyOptional({ example: '1Z999AA10123456784' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  shippingTrackingNo?: string;
 
   @ApiPropertyOptional({ example: 'Outbound packing lane A' })
   @IsOptional()

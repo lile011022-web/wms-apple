@@ -251,6 +251,11 @@ describe('Core inbound, outbound, and customer-change workflow', () => {
     const openBox = {
       id: 'box-1',
       boxNo: 'BOX-001',
+      boxName: 'Current Customer20260617箱1',
+      sizePreset: '12*12*12',
+      customSize: null,
+      weightLb: 45,
+      shippingTrackingNo: null,
       customerId: currentCustomer.id,
       warehouseId: warehouse.id,
       createdById: operator.id,
@@ -267,18 +272,37 @@ describe('Core inbound, outbound, and customer-change workflow', () => {
         name: operator.name,
       },
       items: [],
+      photos: [],
+    };
+    const boxPhoto = {
+      id: 'photo-1',
+      outboundBoxId: openBox.id,
+      uploadedById: operator.id,
+      fileName: 'BOX-001-photo.jpg',
+      originalName: 'packing-photo.jpg',
+      mimeType: 'image/jpeg',
+      fileSize: 1024,
+      storagePath: 'uploads/outbound-box-photos/BOX-001-photo.jpg',
+      fileUrl: '/uploads/outbound-box-photos/BOX-001-photo.jpg',
+      createdAt: now,
+      uploadedBy: {
+        id: operator.id,
+        email: operator.email,
+        name: operator.name,
+      },
     };
     const outboundRepository = {
       findCustomerById: jest.fn().mockResolvedValue(currentCustomer),
       findWarehouseById: jest.fn().mockResolvedValue(warehouse),
       findBoxByNo: jest.fn().mockResolvedValue(null),
       findBoxByName: jest.fn().mockResolvedValue(null),
+      findLatestBoxByPrefix: jest.fn().mockResolvedValue(null),
       createBox: jest.fn().mockResolvedValue(openBox),
       createBoxWithAudit: jest.fn().mockResolvedValue(openBox),
       findBoxById: jest
         .fn()
         .mockResolvedValueOnce(openBox)
-        .mockResolvedValueOnce({ ...openBox, items: [boxItem] }),
+        .mockResolvedValueOnce({ ...openBox, items: [boxItem], photos: [boxPhoto] }),
       findInventoryItemById: jest.fn().mockResolvedValue(inventoryItem),
       addItemToBox: jest.fn().mockResolvedValue({ ...openBox, items: [boxItem] }),
       sealBox: jest.fn().mockResolvedValue({
@@ -286,6 +310,7 @@ describe('Core inbound, outbound, and customer-change workflow', () => {
         status: OutboundBoxStatus.SEALED,
         sealedAt: now,
         items: [boxItem],
+        photos: [boxPhoto],
       }),
     } as unknown as jest.Mocked<OutboundRepository>;
     const outboundService = new OutboundService(outboundRepository, {
@@ -293,7 +318,7 @@ describe('Core inbound, outbound, and customer-change workflow', () => {
     } as unknown as InventoryService);
 
     const box = await outboundService.createBox(
-      { customerId: currentCustomer.id, warehouseId: warehouse.id, boxNo: 'BOX-001' },
+      { customerId: currentCustomer.id, warehouseId: warehouse.id },
       operator,
     );
     await expect(

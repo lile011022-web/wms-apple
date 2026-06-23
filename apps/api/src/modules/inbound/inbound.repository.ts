@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
+  AuditAction,
+  ExceptionStatus,
   ExceptionType,
   InboundBatchStatus,
   InboundItemStatus,
@@ -126,6 +128,46 @@ export class InboundRepository {
   createItem(data: Prisma.InboundItemCreateInput, exception?: Prisma.ExceptionRecordCreateInput) {
     return this.prisma.$transaction(async (tx) => {
       const item = await tx.inboundItem.create({
+        data,
+      });
+
+      if (exception) {
+        await tx.exceptionRecord.create({
+          data: {
+            ...exception,
+            inboundItem: { connect: { id: item.id } },
+          },
+        });
+      }
+
+      return tx.inboundItem.findUniqueOrThrow({
+        where: { id: item.id },
+        include: inboundItemInclude,
+      });
+    });
+  }
+
+  updateItem(
+    id: string,
+    data: Prisma.InboundItemUpdateInput,
+    exception?: Prisma.ExceptionRecordCreateInput,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const resolvedAt = new Date();
+      await tx.exceptionRecord.updateMany({
+        where: {
+          inboundItemId: id,
+          status: ExceptionStatus.OPEN,
+        },
+        data: {
+          status: ExceptionStatus.INVALID,
+          resolutionNote: 'Inbound draft row corrected.',
+          resolvedAt,
+        },
+      });
+
+      const item = await tx.inboundItem.update({
+        where: { id },
         data,
       });
 
@@ -329,6 +371,92 @@ export class InboundRepository {
         where: { id: draft.id },
         include: inboundBatchInclude,
       });
+    });
+  }
+
+  async forceConfirmItem(input: { itemId: string; operatorId: string; reason: string }) {
+    return this.prisma.$transaction(async (tx) => {
+      const item = await tx.inboundItem.findUniqueOrThrow({
+        where: { id: input.itemId },
+        include: inboundItemInclude,
+      });
+      if (!item.productId) {
+        throw new Error('Force inbound requires a matched product.');
+      }
+
+      const inventoryItem = await tx.inventoryItem.create({
+        data: {
+          customerId: item.customerId,
+          warehouseId: item.inboundBatch.warehouseId,
+          productId: item.productId,
+          inboundBatchId: item.inboundBatchId,
+          imei: item.imei,
+          serial: item.serial,
+          upc: item.upc,
+          upsTrackingNo: item.upsTrackingNo,
+        },
+      });
+      const forcedAt = new Date();
+
+      await tx.exceptionRecord.updateMany({
+        where: {
+          inboundItemId: item.id,
+          status: ExceptionStatus.OPEN,
+        },
+        data: {
+          status: ExceptionStatus.RESOLVED,
+          resolutionNote: `Force inbound: ${input.reason}`,
+          resolvedById: input.operatorId,
+          resolvedAt: forcedAt,
+        },
+      });
+
+      const updated = await tx.inboundItem.update({
+        where: { id: item.id },
+        data: {
+          status: InboundItemStatus.CONFIRMED,
+          inventoryItemId: inventoryItem.id,
+          forcedInbound: true,
+          forceReason: input.reason,
+          forcedAt,
+          forcedById: input.operatorId,
+        },
+        include: inboundItemInclude,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: AuditAction.INBOUND_FORCE_CONFIRM,
+          resourceType: 'inbound-item',
+          resourceId: item.id,
+          operatorId: input.operatorId,
+          beforeSnapshot: {
+            status: item.status,
+            inventoryItemId: item.inventoryItemId,
+            exceptions: item.exceptions.map((exception) => ({
+              id: exception.id,
+              type: exception.type,
+              status: exception.status,
+            })),
+          },
+          afterSnapshot: {
+            status: updated.status,
+            inventoryItemId: inventoryItem.id,
+            forcedInbound: updated.forcedInbound,
+            forcedAt,
+          },
+          metadata: {
+            reason: input.reason,
+            batchId: item.inboundBatchId,
+            customerId: item.customerId,
+            warehouseId: item.inboundBatch.warehouseId,
+            productId: item.productId,
+            inventoryItemId: inventoryItem.id,
+          },
+        },
+      });
+
+      return updated;
     });
   }
 

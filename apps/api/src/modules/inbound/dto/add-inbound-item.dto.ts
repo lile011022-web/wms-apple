@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+
+export const inboundScanModes = ['STANDARD', 'TRACKING_UPC'] as const;
+export type InboundScanMode = (typeof inboundScanModes)[number];
 
 export class AddInboundItemDto {
   @ApiProperty({ example: '194253149189' })
@@ -29,4 +32,23 @@ export class AddInboundItemDto {
   @IsString()
   @MaxLength(20)
   serial?: string;
+
+  @ApiPropertyOptional({
+    enum: inboundScanModes,
+    example: 'STANDARD',
+    description:
+      'STANDARD requires package tracking, UPC, and IMEI/Serial. TRACKING_UPC allows package tracking + UPC only.',
+  })
+  @IsOptional()
+  @IsIn(inboundScanModes)
+  scanMode?: InboundScanMode;
+
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'Set after the operator confirms an abnormal package tracking warning. Allows saving unsupported tracking formats.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  trackingExceptionConfirmed?: boolean;
 }

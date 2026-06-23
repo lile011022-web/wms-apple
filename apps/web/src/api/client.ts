@@ -44,6 +44,7 @@ export async function request<T>(
   options?: {
     data?: unknown;
     params?: Record<string, unknown>;
+    timeout?: number;
   },
 ) {
   const startedAt = performance.now();
@@ -52,6 +53,7 @@ export async function request<T>(
     url,
     data: options?.data,
     params: options?.params,
+    timeout: options?.timeout,
   };
   const response = await apiClient.request<ApiResponse<T>>(config).catch(async (error: unknown) => {
     const apiFailure = axios.isAxiosError<ApiResponse<T>>(error) ? error.response?.data : undefined;

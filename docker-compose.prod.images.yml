@@ -1,10 +1,6 @@
 services:
   web:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-      args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+    image: ${WEB_IMAGE}
     container_name: wms-scan-web
     restart: unless-stopped
     depends_on:
@@ -16,9 +12,7 @@ services:
       - wms_internal
 
   api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
+    image: ${API_IMAGE}
     container_name: wms-scan-api
     restart: unless-stopped
     environment:
@@ -37,8 +31,6 @@ services:
         condition: service_healthy
     expose:
       - '3000'
-    volumes:
-      - ./uploads:/app/apps/api/uploads
     networks:
       - wms_internal
 

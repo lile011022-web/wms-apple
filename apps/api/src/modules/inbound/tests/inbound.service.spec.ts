@@ -116,6 +116,10 @@ const pendingItem = {
   customerId: 'customer-1',
   productId: 'product-1',
   inventoryItemId: null,
+  forcedInbound: false,
+  forceReason: null,
+  forcedAt: null,
+  forcedById: null,
   upsTrackingNo: '1Z999AA10123456784',
   upc: '194253149189',
   imei: '356789012345678',
@@ -150,12 +154,14 @@ function createService(repositoryOverrides: Partial<Record<keyof InboundReposito
     findInventoryBySerial: jest.fn().mockResolvedValue(null),
     countConfirmedItemsByUps: jest.fn().mockResolvedValue(0),
     createItem: jest.fn().mockResolvedValue(pendingItem),
+    updateItem: jest.fn().mockResolvedValue(pendingItem),
     findItemById: jest.fn().mockResolvedValue(pendingItem),
     findRecords: jest.fn().mockResolvedValue([1, [pendingItem]]),
     countRecords: jest.fn().mockResolvedValue(1),
     findRecordItemsByBatchId: jest.fn().mockResolvedValue([1, [pendingItem]]),
     deleteItem: jest.fn(),
     clearDraftItems: jest.fn(),
+    forceConfirmItem: jest.fn(),
     confirmDraft: jest.fn().mockResolvedValue({
       ...draft,
       status: InboundBatchStatus.CONFIRMED,
@@ -205,14 +211,32 @@ describe('InboundService', () => {
       upsTrackingNo: '9611020987654312345672',
       valid: true,
     });
+    await expect(
+      service.scanUps('draft-1', { upsTrackingNo: '96320804008675235705004823280' }),
+    ).resolves.toMatchObject({
+      upsTrackingNo: '96320804008675235705004823280',
+      valid: true,
+    });
 
     expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('1Z999AA10123456784');
     expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('9400111899223857000000');
     expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('9611020987654312345672');
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith(
+      '96320804008675235705004823280',
+    );
   });
 
   it('rejects unsupported package tracking numbers before saving inbound items', async () => {
     const { service } = createService({});
+
+    await expect(
+      service.scanUps('draft-1', { upsTrackingNo: 'not-a-tracking-number' }),
+    ).resolves.toMatchObject({
+      upsTrackingNo: 'NOT-A-TRACKING-NUMBER',
+      valid: false,
+      duplicate: false,
+      duplicateCount: 0,
+    });
 
     await expect(
       service.addItem('draft-1', {
@@ -221,6 +245,158 @@ describe('InboundService', () => {
         imei: '356789012345678',
       }),
     ).rejects.toThrow('Invalid package tracking number format.');
+  });
+
+  it('allows unsupported package tracking after operator confirmation', async () => {
+    const { repository, service } = createService({});
+
+    await expect(
+      service.addItem('draft-1', {
+        upsTrackingNo: 'not-a-tracking-number',
+        upc: '194253149189',
+        imei: '356789012345678',
+        trackingExceptionConfirmed: true,
+      }),
+    ).resolves.toMatchObject({ status: InboundItemStatus.PENDING });
+    expect(repository.createItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        upsTrackingNo: 'NOT-A-TRACKING-NUMBER',
+        status: InboundItemStatus.PENDING,
+      }),
+      undefined,
+    );
+  });
+
+  it('requires package tracking before saving inbound items', async () => {
+    const { repository, service } = createService({});
+
+    await expect(
+      service.addItem('draft-1', {
+        upc: '194253149189',
+        imei: '356789012345678',
+      }),
+    ).rejects.toThrow('Package tracking number is required for inbound scanning.');
+    expect(repository.createItem).not.toHaveBeenCalled();
+  });
+
+  it('force-confirms a matched exception item with a required reason', async () => {
+    const exceptionItem = {
+      ...pendingItem,
+      status: InboundItemStatus.EXCEPTION,
+      inboundBatch: {
+        ...draft,
+        status: InboundBatchStatus.CONFIRMED,
+      },
+      exceptions: [
+        {
+          id: 'exception-1',
+          type: ExceptionType.UPS_DUPLICATED,
+          status: ExceptionStatus.OPEN,
+          customerId: 'customer-1',
+          warehouseId: 'warehouse-1',
+          productId: 'product-1',
+          inboundItemId: 'item-1',
+          inventoryItemId: null,
+          rawValue: '1Z999AA10123456784',
+          upsTrackingNo: '1Z999AA10123456784',
+          upc: '194253149189',
+          imei: '356789012345678',
+          serial: null,
+          resolutionNote: null,
+          resolvedById: null,
+          resolvedAt: null,
+          beforeSnapshot: null,
+          afterSnapshot: null,
+          createdAt: new Date('2026-06-17T00:00:00Z'),
+          updatedAt: new Date('2026-06-17T00:00:00Z'),
+        },
+      ],
+    };
+    const confirmedItem = {
+      ...exceptionItem,
+      status: InboundItemStatus.CONFIRMED,
+      inventoryItemId: 'inventory-1',
+      inventoryItem: {
+        id: 'inventory-1',
+        customerId: 'customer-1',
+        warehouseId: 'warehouse-1',
+        productId: 'product-1',
+        inboundBatchId: 'draft-1',
+        outboundBoxId: null,
+        imei: '356789012345678',
+        serial: null,
+        upc: '194253149189',
+        upsTrackingNo: '1Z999AA10123456784',
+        status: InventoryStatus.IN_STOCK,
+        notes: null,
+        receivedAt: new Date('2026-06-17T00:00:00Z'),
+        packedAt: null,
+        shippedAt: null,
+        voidedAt: null,
+        createdAt: new Date('2026-06-17T00:00:00Z'),
+        updatedAt: new Date('2026-06-17T00:00:00Z'),
+      },
+      forcedInbound: true,
+      forceReason: 'FedEx tracking reviewed',
+      forcedAt: new Date('2026-06-17T00:00:00Z'),
+      forcedById: 'user-1',
+    };
+    const { repository, service } = createService({
+      findItemById: jest.fn().mockResolvedValue(exceptionItem),
+      forceConfirmItem: jest.fn().mockResolvedValue(confirmedItem),
+    });
+
+    await expect(
+      service.forceConfirmRecord('item-1', { reason: ' FedEx tracking reviewed ' }, operator),
+    ).resolves.toMatchObject({
+      id: 'item-1',
+      status: InboundItemStatus.CONFIRMED,
+      inventoryItemId: 'inventory-1',
+      forcedInbound: true,
+      forceReason: 'FedEx tracking reviewed',
+    });
+    expect(repository.forceConfirmItem).toHaveBeenCalledWith({
+      itemId: 'item-1',
+      operatorId: 'user-1',
+      reason: 'FedEx tracking reviewed',
+    });
+  });
+
+  it('rejects force inbound when the exception item has no matched active product', async () => {
+    const { service } = createService({
+      findItemById: jest.fn().mockResolvedValue({
+        ...pendingItem,
+        productId: null,
+        product: null,
+        status: InboundItemStatus.EXCEPTION,
+        inboundBatch: {
+          ...draft,
+          status: InboundBatchStatus.CONFIRMED,
+        },
+      }),
+    });
+
+    await expect(
+      service.forceConfirmRecord('item-1', { reason: 'manual review' }, operator),
+    ).rejects.toThrow('Cannot force inbound without a matched active product.');
+  });
+
+  it('rejects force inbound when IMEI or Serial already exists in inventory', async () => {
+    const { service } = createService({
+      findItemById: jest.fn().mockResolvedValue({
+        ...pendingItem,
+        status: InboundItemStatus.EXCEPTION,
+        inboundBatch: {
+          ...draft,
+          status: InboundBatchStatus.CONFIRMED,
+        },
+      }),
+      findInventoryByImei: jest.fn().mockResolvedValue({ id: 'inventory-existing' }),
+    });
+
+    await expect(
+      service.forceConfirmRecord('item-1', { reason: 'manual review' }, operator),
+    ).rejects.toThrow('Cannot force inbound with duplicated IMEI or Serial.');
   });
 
   it('creates an unmatched UPC exception item for preview', async () => {
@@ -260,13 +436,19 @@ describe('InboundService', () => {
       createItem: jest.fn().mockResolvedValue(exceptionItem),
     });
 
-    await expect(service.addItem('draft-1', { upc: '884909876543' })).resolves.toMatchObject({
+    await expect(
+      service.addItem('draft-1', {
+        upsTrackingNo: '1Z999AA10123456784',
+        upc: '884909876543',
+      }),
+    ).resolves.toMatchObject({
       status: InboundItemStatus.EXCEPTION,
       product: null,
       exceptions: [{ type: ExceptionType.UPC_NOT_MATCHED }],
     });
     expect(repository.createItem).toHaveBeenCalledWith(
       expect.objectContaining({
+        upsTrackingNo: '1Z999AA10123456784',
         upc: '884909876543',
         status: InboundItemStatus.EXCEPTION,
       }),
@@ -345,6 +527,7 @@ describe('InboundService', () => {
     });
 
     await service.addItem('draft-1', {
+      upsTrackingNo: '1Z999AA10123456784',
       upc: '194253149189',
       imei: '356789012345678',
     });
@@ -369,6 +552,7 @@ describe('InboundService', () => {
 
     await expect(
       service.addItem('draft-1', {
+        upsTrackingNo: '1Z999AA10123456784',
         upc: '194253149189',
         imei: ' sh9lrl91yfc ',
       }),
@@ -379,10 +563,131 @@ describe('InboundService', () => {
     expect(repository.findInventoryByImei).toHaveBeenCalledWith('SH9LRL91YFC');
     expect(repository.createItem).toHaveBeenCalledWith(
       expect.objectContaining({
+        upsTrackingNo: '1Z999AA10123456784',
         imei: 'SH9LRL91YFC',
         status: InboundItemStatus.PENDING,
       }),
+      undefined,
     );
+  });
+
+  it('allows package tracking and UPC only in simplified inbound mode', async () => {
+    const simplifiedItem = {
+      ...pendingItem,
+      imei: null,
+      serial: null,
+    };
+    const { repository, service } = createService({
+      createItem: jest.fn().mockResolvedValue(simplifiedItem),
+    });
+
+    await expect(
+      service.addItem('draft-1', {
+        upsTrackingNo: '1Z999AA10123456784',
+        upc: '194253149189',
+        scanMode: 'TRACKING_UPC',
+      }),
+    ).resolves.toMatchObject({
+      status: InboundItemStatus.PENDING,
+      imei: null,
+      serial: null,
+    });
+
+    expect(repository.createItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        upsTrackingNo: '1Z999AA10123456784',
+        upc: '194253149189',
+        imei: undefined,
+        serial: undefined,
+        status: InboundItemStatus.PENDING,
+      }),
+      undefined,
+    );
+  });
+
+  it('corrects an exception draft item in place without creating another row', async () => {
+    const exceptionItem = {
+      ...pendingItem,
+      id: 'item-exception',
+      productId: null,
+      product: null,
+      upc: '884909876543',
+      imei: null,
+      status: InboundItemStatus.EXCEPTION,
+      exceptions: [
+        {
+          id: 'exception-1',
+          type: ExceptionType.UPC_NOT_MATCHED,
+          status: ExceptionStatus.OPEN,
+          rawValue: '884909876543',
+          resolutionNote: null,
+        },
+      ],
+    };
+    const correctedItem = {
+      ...pendingItem,
+      id: 'item-exception',
+      upc: '194253149189',
+      imei: null,
+      serial: null,
+      status: InboundItemStatus.PENDING,
+    };
+    const { repository, service } = createService({
+      findItemById: jest.fn().mockResolvedValue(exceptionItem),
+      updateItem: jest.fn().mockResolvedValue(correctedItem),
+    });
+
+    await expect(
+      service.updateItem('draft-1', 'item-exception', {
+        upsTrackingNo: '1Z999AA10123456784',
+        upc: '194253149189',
+        scanMode: 'TRACKING_UPC',
+      }),
+    ).resolves.toMatchObject({
+      id: 'item-exception',
+      upc: '194253149189',
+      status: InboundItemStatus.PENDING,
+    });
+
+    expect(repository.createItem).not.toHaveBeenCalled();
+    expect(repository.updateItem).toHaveBeenCalledWith(
+      'item-exception',
+      expect.objectContaining({
+        upsTrackingNo: '1Z999AA10123456784',
+        upc: '194253149189',
+        imei: null,
+        serial: null,
+        status: InboundItemStatus.PENDING,
+      }),
+      undefined,
+    );
+  });
+
+  it('stops new inbound work when the latest draft item is still an exception', async () => {
+    const latestExceptionItem = {
+      ...pendingItem,
+      id: 'item-latest-exception',
+      status: InboundItemStatus.EXCEPTION,
+      createdAt: new Date('2026-06-17T00:02:00Z'),
+    };
+    const { repository, service } = createService({
+      findDraftById: jest
+        .fn()
+        .mockResolvedValue({ ...draft, inboundItems: [pendingItem, latestExceptionItem] }),
+    });
+
+    await expect(
+      service.addItem('draft-1', {
+        upsTrackingNo: '9400111899223857000000',
+        upc: '194253149189',
+        scanMode: 'TRACKING_UPC',
+      }),
+    ).rejects.toThrow('上一条入库明细仍为异常，请先在当前入库单中修正该异常后再继续入库。');
+    await expect(service.confirmDraft('draft-1', operator)).rejects.toThrow(
+      '上一条入库明细仍为异常，请先在当前入库单中修正该异常后再继续入库。',
+    );
+    expect(repository.createItem).not.toHaveBeenCalled();
+    expect(repository.confirmDraft).not.toHaveBeenCalled();
   });
 
   it('confirms a draft through the repository transaction boundary', async () => {

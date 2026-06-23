@@ -123,9 +123,10 @@ Customer inventory item tables should display the returned tracking context:
 
 - `inboundBatch.batchNo`: inbound batch number.
 - `upsTrackingNo`: package tracking/order number captured during inbound scan or CSV import.
-- `latestOutboundBox.boxNo`: outbound box/order number when the inventory row has been packed or shipped.
+- `latestOutboundBox.boxNo`: internal outbound box/order number when the inventory row has been packed or shipped.
+- `latestOutboundBox.boxName`: operator-facing generated box name, used by outbound packing search to tell staff which box already contains the item.
 
-The left navigation customer inventory page is read-only for box workflows. Batch packing must use `GET /inventory/available-for-outbound` from the outbound packing page, then add selected rows through `POST /outbound/boxes/:id/items`. Customer, warehouse, duplicate-packing, status, and audit rules remain owned by the outbound module.
+The left navigation customer inventory page is read-only for box workflows. Batch packing must use `GET /inventory/available-for-outbound` from the outbound packing page, then add selected rows through `POST /outbound/boxes/:id/items`. The outbound packing page may call `GET /inventory/items` when an operator searches a specific value so packed rows can be found and their `latestOutboundBox` context can be shown, but only rows with `availableForOutbound = true` may be added to a box. Customer, warehouse, duplicate-packing, status, and audit rules remain owned by the outbound module.
 
 ## GET /inventory/items/:id
 

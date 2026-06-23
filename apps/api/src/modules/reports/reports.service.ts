@@ -7,6 +7,7 @@ import {
 import { Prisma, ReportExportStatus } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { CreateReportExportDto } from './dto/create-report-export.dto';
+import { ListInboundBatchOptionsQueryDto } from './dto/list-inbound-batch-options-query.dto';
 import { ListReportExportsQueryDto } from './dto/list-report-exports-query.dto';
 import { PreviewReportDto } from './dto/preview-report.dto';
 import { ReportExportFormat } from './dto/report-export-format';
@@ -36,6 +37,30 @@ const MAX_SYNC_EXPORT_ROWS = 5000;
 @Injectable()
 export class ReportsService {
   constructor(private readonly reportsRepository: ReportsRepository) {}
+
+  async listInboundBatchOptions(query: ListInboundBatchOptionsQueryDto) {
+    const [total, batches] = await this.reportsRepository.findInboundBatchOptions({
+      customerId: this.trimOptional(query.customerId),
+      search: this.trimOptional(query.search),
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    });
+
+    return {
+      items: batches.map((batch) => ({
+        id: batch.id,
+        batchNo: batch.batchNo,
+        label: `${batch.batchNo} / ${batch.customer.code} / ${batch._count.inboundItems} 行`,
+        customer: batch.customer,
+        warehouse: batch.warehouse,
+        rowCount: batch._count.inboundItems,
+        confirmedAt: batch.confirmedAt,
+      })),
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+    };
+  }
 
   async preview(dto: PreviewReportDto) {
     const filters = this.normalizeFilters(dto.filters);
@@ -94,6 +119,7 @@ export class ReportsService {
         throw new BadRequestException('Large reports must be handled by a background job.');
       }
 
+      const batchFileNamePart = await this.resolveBatchFileNamePart(reportType, filters, rows);
       const metadata = this.buildExportMetadata({
         reportType,
         format,
@@ -101,6 +127,7 @@ export class ReportsService {
         filters,
         rows,
         exportId: created.id,
+        batchFileNamePart,
       });
       const completed = await this.reportsRepository.updateExport({
         id: created.id,
@@ -194,6 +221,7 @@ export class ReportsService {
     filters: ReportFilterDto;
     rows: unknown[];
     exportId: string;
+    batchFileNamePart?: string;
   }): ExportMetadata {
     const columns = this.getSelectedColumns(input.reportType, input.fields);
     const content =
@@ -211,7 +239,10 @@ export class ReportsService {
       fields: input.fields,
       format: input.format,
       rowCount: input.rows.length,
-      fileName: `${input.reportType.toLowerCase()}-${input.exportId}.${extension}`,
+      fileName:
+        [input.reportType.toLowerCase(), input.batchFileNamePart, input.exportId]
+          .filter(Boolean)
+          .join('-') + `.${extension}`,
       contentType,
       fileContent: content,
       generatedAt: new Date().toISOString(),
@@ -410,6 +441,36 @@ export class ReportsService {
       }
     }
     return normalized;
+  }
+
+  private async resolveBatchFileNamePart(
+    reportType: ReportType,
+    filters: ReportFilterDto,
+    rows: unknown[],
+  ) {
+    if (reportType !== ReportType.INBOUND_DETAIL || !filters.batchId) {
+      return undefined;
+    }
+
+    const firstRowBatchNo = this.readPath(rows[0], 'inboundBatch', 'batchNo');
+    if (typeof firstRowBatchNo === 'string' && firstRowBatchNo.trim()) {
+      return this.sanitizeFileNamePart(firstRowBatchNo);
+    }
+
+    const batch = await this.reportsRepository.findInboundBatchById(filters.batchId);
+    return batch?.batchNo ? this.sanitizeFileNamePart(batch.batchNo) : undefined;
+  }
+
+  private sanitizeFileNamePart(value: string) {
+    return value
+      .trim()
+      .replace(/[^A-Za-z0-9._-]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  private trimOptional(value?: string | null) {
+    const trimmed = value?.trim();
+    return trimmed || undefined;
   }
 
   private toExportResponse(reportExport: ReportExportRecord) {

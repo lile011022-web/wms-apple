@@ -32,6 +32,11 @@ The customer must be locked before scan data becomes operational inventory. Pack
 - The current API and database field remains `upsTrackingNo` for compatibility, but the business meaning is package tracking number.
 - Multiple items may share one package tracking number within the same package.
 - A package tracking value already confirmed in prior inbound records is treated as a duplicate package signal and can create `UPS_DUPLICATED` exceptions.
+- FedEx accepts common pure-numeric formats: 12, 15, 20, and 22 digits. The 12-digit Express style, 22-digit 96xx style, and longer 96-prefixed SmartPost/Ground Economy style values pass package tracking validation.
+- When a package tracking number is entered, the scan page should warn the operator if the number
+  does not match a supported UPS/USPS/FedEx rule or if it already appears in confirmed inbound
+  records. The operator can either modify the number or explicitly continue inbound. After explicit
+  confirmation, the current scan can still be saved with that package tracking value.
 
 ## Confirmation
 
@@ -56,12 +61,48 @@ Inbound preview deletion is logical during the draft lifecycle. Removed rows are
 
 Confirmed inbound records and inventory rows must not be physically deleted by normal inbound workflows.
 
+## Force Inbound
+
+Force inbound is a supervisor exception workflow for rows that were saved as `EXCEPTION` but should become inventory after manual review.
+
+The system must:
+
+- Allow force inbound only from the inbound records page, after the batch has already been confirmed.
+- Require a matched active UPC/product before any inventory can be created.
+- Reject rows that already have inventory.
+- Reject duplicate IMEI or Serial values even when force inbound is used.
+- Require an operator reason and keep it on the inbound item.
+- Resolve the row's open exception records and write an `INBOUND_FORCE_CONFIRM` audit log.
+
+Force inbound is not a way to bypass UPC matching or duplicate IMEI/Serial protection. If the product cannot be identified, the UPC/product data must be fixed first.
+
 ## Scan Entry Automation
 
-When a customer is locked and the package tracking number, UPC, and IMEI fields are all filled, the
-web page can automatically add the row to the current draft after the input stabilizes. The manual
-add action should remain available as a fallback. The final confirmation must still require an
-operator click so the review summary can be checked first.
+The inbound scan page supports two entry modes:
+
+- `一版模式`: package tracking number, UPC, and IMEI must all be scanned before the page
+  automatically adds the row to the current draft.
+- `物流+UPC 模式`: package tracking number and UPC are enough to automatically add a row to the
+  current draft. UPC must still match an active product before the row can become normal inventory.
+
+The manual add action should remain available as a fallback. The page should show the most recently
+added inbound row below the scan inputs with the same package tracking number, UPC, and IMEI field
+layout as the active scan entry form. Operators can click edit on this latest row and save changes in
+place; saving must overwrite the original preview row and must not create another preview row.
+
+If the active draft contains exception rows, the exception summary should help the operator jump to
+the exception row and edit that row in place. Saving the correction must overwrite the original
+preview row and re-run the same UPC, package tracking, IMEI/Serial, duplicate, and scan-mode rules.
+It must not add another preview row. The original exception row remains removable during the draft
+lifecycle.
+
+If the latest active preview row is an `EXCEPTION`, the inbound scan workflow must stop before any
+next receiving action. Manual scanning, automatic scanning, CSV import, and final confirmation are
+blocked until that latest exception row is corrected in place or removed. This keeps operators from
+continuing after a bad scan and forces the abnormal data to be resolved at the source row.
+
+The final confirmation must still require an operator click so the review summary can be checked
+first.
 
 ## Batch File Import
 

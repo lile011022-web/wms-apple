@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -7,6 +17,7 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { AddInboundItemDto } from './dto/add-inbound-item.dto';
 import { CreateInboundDraftDto } from './dto/create-inbound-draft.dto';
+import { ForceConfirmInboundItemDto } from './dto/force-confirm-inbound-item.dto';
 import { ImportInboundItemsDto } from './dto/import-inbound-items.dto';
 import { ListInboundRecordsQueryDto } from './dto/list-inbound-records-query.dto';
 import { ScanInboundUpsDto } from './dto/scan-inbound-ups.dto';
@@ -40,6 +51,15 @@ export class InboundController {
     return this.inboundService.addItem(id, dto);
   }
 
+  @Patch('drafts/:id/items/:itemId')
+  updateItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: AddInboundItemDto,
+  ) {
+    return this.inboundService.updateItem(id, itemId, dto);
+  }
+
   @Post('drafts/:id/items/import')
   importItems(@Param('id') id: string, @Body() dto: ImportInboundItemsDto) {
     return this.inboundService.importItems(id, dto);
@@ -58,6 +78,15 @@ export class InboundController {
   @Post('drafts/:id/confirm')
   confirmDraft(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.inboundService.confirmDraft(id, user);
+  }
+
+  @Post('records/:id/force-confirm')
+  forceConfirmRecord(
+    @Param('id') id: string,
+    @Body() dto: ForceConfirmInboundItemDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inboundService.forceConfirmRecord(id, dto, user);
   }
 
   @Get('records')

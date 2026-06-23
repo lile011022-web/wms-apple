@@ -149,7 +149,21 @@ chmod +x infra/scripts/deploy.sh
 PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
 ```
 
-The script runs `git pull --ff-only` when the server has a Git checkout, builds production images, runs Prisma migrations from a one-off API container, starts the stack with `docker compose up -d --remove-orphans`, prints container status, and prints the web and health-check URLs.
+The script runs `git pull --ff-only` when the server has a Git checkout, builds production images, runs Prisma migrations from a one-off API container, starts the stack with `docker compose up -d --remove-orphans`, prints container status, and prints the web and health-check URLs. Each major step prints elapsed seconds so slow deploys can be traced to Git update, image build or pull, Prisma migration, or container restart.
+
+For smaller changes, deploy only the affected service:
+
+```bash
+# Frontend-only page or style change.
+PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh web
+
+# API, Prisma, migration, or backend-only change.
+PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh api
+```
+
+`RUN_MIGRATIONS=auto` is the default. It runs Prisma migrations during full deployments and `api` deployments, but skips them for `web` deployments. Use `RUN_MIGRATIONS=always` or `RUN_MIGRATIONS=never` only when the release scope explicitly requires that override.
+
+Docker BuildKit is enabled by default in the deploy script. The production Dockerfiles use persistent BuildKit cache mounts for the pnpm store, so repeated VPS builds should spend less time downloading packages after the first cached build.
 
 Because the script always uses the same compose project name (`wms-scan`), repeated deployments restart or replace the existing containers instead of creating duplicate long-running Node, npm, Python, or Vite processes.
 
@@ -160,6 +174,33 @@ PROJECT_DIR=/opt/wms-scan infra/scripts/backup-postgres.sh
 PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
 curl http://24.199.87.181/api/v1/health
 ```
+
+## Prebuilt Image Deployments
+
+For faster releases on the small VPS, build images outside the server and publish these GHCR images:
+
+```text
+ghcr.io/<owner>/<repo>/api:<tag>
+ghcr.io/<owner>/<repo>/web:<tag>
+```
+
+On the server, set the image names in `.env.production`:
+
+```bash
+WEB_IMAGE=ghcr.io/<owner>/<repo>/web:<tag>
+API_IMAGE=ghcr.io/<owner>/<repo>/api:<tag>
+```
+
+Then deploy by pulling images instead of building on the VPS:
+
+```bash
+USE_PREBUILT_IMAGES=true \
+COMPOSE_FILE=docker-compose.prod.images.yml \
+PROJECT_DIR=/opt/wms-scan \
+infra/scripts/deploy.sh
+```
+
+This path still uses the same database backup, Prisma migration, container restart, and health-check expectations. It only moves the expensive Node/Docker build work away from the low-cost VPS.
 
 Check for duplicate or development-mode processes after a deploy:
 

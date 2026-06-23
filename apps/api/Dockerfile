@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 FROM node:22-alpine AS builder
 
 WORKDIR /app
@@ -13,7 +15,9 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.js
 COPY packages/shared/package.json packages/shared/package.json
 COPY apps/api/package.json apps/api/package.json
 
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=wms-api-pnpm-store,target=/pnpm/store \
+  pnpm config set store-dir /pnpm/store \
+  && pnpm install --frozen-lockfile
 
 COPY packages/shared packages/shared
 COPY apps/api apps/api
@@ -21,12 +25,8 @@ COPY apps/api apps/api
 RUN pnpm --filter @wms-scan/shared build
 RUN pnpm --filter @wms-scan/api prisma:generate
 RUN pnpm --filter @wms-scan/api build
-RUN pnpm --filter @wms-scan/api deploy /prod/api
-RUN generated_client_dir="$(find /app/node_modules/.pnpm -path '*/node_modules/.prisma/client' -type d | head -n 1)" \
-  && deployed_prisma_client_dir="$(find /prod/api/node_modules/.pnpm -path '*/node_modules/@prisma/client' -type d | head -n 1)" \
-  && deployed_node_modules_dir="$(dirname "$(dirname "$deployed_prisma_client_dir")")" \
-  && mkdir -p "$deployed_node_modules_dir/.prisma" \
-  && cp -R "$generated_client_dir" "$deployed_node_modules_dir/.prisma/client"
+RUN pnpm --filter @wms-scan/api deploy --prod /prod/api
+RUN cd /prod/api && ./node_modules/.bin/prisma generate --schema prisma/schema.prisma
 
 FROM node:22-alpine AS runner
 

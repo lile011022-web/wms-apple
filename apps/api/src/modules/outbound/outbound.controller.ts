@@ -7,8 +7,11 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -21,7 +24,7 @@ import { ListOutboundAvailableItemsQueryDto } from './dto/list-outbound-availabl
 import { ListOutboundBoxItemsQueryDto } from './dto/list-outbound-box-items-query.dto';
 import { ListOutboundBoxesQueryDto } from './dto/list-outbound-boxes-query.dto';
 import { UpdateOutboundBoxDto } from './dto/update-outbound-box.dto';
-import { OutboundService } from './outbound.service';
+import { OutboundService, UploadedOutboundBoxPhotoFile } from './outbound.service';
 
 @ApiTags('Outbound')
 @ApiBearerAuth('access-token')
@@ -91,6 +94,25 @@ export class OutboundController {
   @Post('boxes/:id/seal')
   sealBox(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.outboundService.sealBox(id, user);
+  }
+
+  @Post('boxes/:id/photos')
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  uploadPhoto(
+    @Param('id') id: string,
+    @UploadedFile() file: UploadedOutboundBoxPhotoFile | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.outboundService.uploadPhoto(id, file, user);
+  }
+
+  @Delete('boxes/:id/photos/:photoId')
+  deletePhoto(
+    @Param('id') id: string,
+    @Param('photoId') photoId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.outboundService.deletePhoto(id, photoId, user);
   }
 
   @Post('boxes/:id/reopen')

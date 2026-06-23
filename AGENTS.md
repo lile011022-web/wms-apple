@@ -30,8 +30,14 @@ Deployment workflow after local changes are complete:
 2. Commit and push the finished change to GitHub `main` when appropriate.
 3. Sync the local checkout to `/opt/wms-scan` with `rsync`, preserving server-only files.
 4. Run a production database backup before replacing containers.
-5. Run the production deploy script on the server.
+5. Run the production deploy script on the server. Use `infra/scripts/deploy.sh web` for web-only changes and `infra/scripts/deploy.sh api` for API/database changes when the scope allows it.
 6. Verify container status and `http://24.199.87.181/api/v1/health`.
+
+For GHCR prebuilt-image deployments, configure `WEB_IMAGE` and `API_IMAGE` in the server-only `.env.production`, then run:
+
+```bash
+USE_PREBUILT_IMAGES=true COMPOSE_FILE=docker-compose.prod.images.yml PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
+```
 
 Never copy or overwrite server-only secrets. Exclude at least `.env`, `.env.production`, `node_modules`, `.git`, `dist`, `build`, `coverage`, and `backups` during server sync.
 

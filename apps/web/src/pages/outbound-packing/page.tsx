@@ -3,24 +3,32 @@ import {
   Archive,
   ArrowDownUp,
   Box,
+  Camera,
+  ClipboardList,
   Eye,
+  ImagePlus,
   PackagePlus,
   RefreshCw,
   Save,
+  ScanLine,
   Search,
+  Send,
   ShieldCheck,
+  Shuffle,
   Trash2,
   X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
-import { listWarehouses } from '../../api/settings';
-import { customersApi, outboundApi } from '../../api/workflow';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { getSystemSettings, listWarehouses } from '../../api/settings';
+import { customersApi, inventoryApi, outboundApi } from '../../api/workflow';
+import { selectDefaultWarehouseId } from '../../utils/default-warehouse';
 
 type Carrier = 'UPS' | 'FedEx' | 'USPS';
 type BoxStatus = 'draft' | 'sealed' | 'rework';
-type ItemStatus = 'available' | 'packed' | 'exception';
+type ItemStatus = 'available' | 'packed' | 'outbound' | 'exception' | 'voided';
 type WeightUnit = 'lb';
+type OutboundPackingMode = 'DETAILED_SCAN' | 'BULK_BOX';
 
 type BoxSizePreset = {
   label: string;
@@ -41,8 +49,10 @@ type PackingItem = {
   customerId: string;
   customerName: string;
   status: ItemStatus;
+  availableForOutbound?: boolean;
   addedAt?: string;
-  raw?: AvailableItem | OutboundBox['items'][number];
+  latestOutboundBox?: LatestOutboundBox | null;
+  raw?: AvailableItem | InventorySearchItem | OutboundBox['items'][number];
 };
 
 type PackingBox = {
@@ -57,8 +67,10 @@ type PackingBox = {
   weight: number;
   weightUnit: WeightUnit;
   note?: string;
+  shippingTrackingNo?: string;
   itemCount: number;
   items: PackingItem[];
+  photos: OutboundBoxPhoto[];
   createdAt: string;
   updatedAt: string;
   sealedAt?: string | null;
@@ -85,7 +97,6 @@ const boxSizePresets: BoxSizePreset[] = [
 
 const customSizePreset = 'Custom';
 const defaultBoxWeight = 45;
-const defaultBoxNo = 'Box 0042';
 
 export function OutboundPackingPage() {
   const queryClient = useQueryClient();
@@ -93,10 +104,14 @@ export function OutboundPackingPage() {
   const [warehouseId, setWarehouseId] = useState('');
   const [currentBox, setCurrentBox] = useState<PackingBox | null>(null);
   const [detailBox, setDetailBox] = useState<PackingBox | null>(null);
+  const [packingMode, setPackingMode] = useState<OutboundPackingMode>('DETAILED_SCAN');
   const [inventorySearch, setInventorySearch] = useState('');
   const [boxSearch, setBoxSearch] = useState('');
-  const [boxNoDraft, setBoxNoDraft] = useState(defaultBoxNo);
-  const [boxName, setBoxName] = useState('');
+  const [scanValue, setScanValue] = useState('');
+  const [scanUpc, setScanUpc] = useState('');
+  const [scanImeiOrSerial, setScanImeiOrSerial] = useState('');
+  const [scanBlockReason, setScanBlockReason] = useState('');
+  const scanAutoSubmitTimerRef = useRef<number | null>(null);
   const [sizeLabel, setSizeLabel] = useState(defaultSizePreset.label);
   const [manualSizeOpen, setManualSizeOpen] = useState(false);
   const [manualSize, setManualSize] = useState({
@@ -116,6 +131,11 @@ export function OutboundPackingPage() {
   const [selectedBoxItemIds, setSelectedBoxItemIds] = useState<Set<string>>(() => new Set());
   const [selectedCreatedBoxIds, setSelectedCreatedBoxIds] = useState<Set<string>>(() => new Set());
   const [deleteBoxesConfirmOpen, setDeleteBoxesConfirmOpen] = useState(false);
+  const [batchPackingOpen, setBatchPackingOpen] = useState(false);
+  const [batchBoxCount, setBatchBoxCount] = useState('2');
+  const [batchAllocationCounts, setBatchAllocationCounts] = useState<string[]>(['']);
+  const [batchItems, setBatchItems] = useState<PackingItem[]>([]);
+  const [isBatchItemsLoading, setIsBatchItemsLoading] = useState(false);
   const [boxesPage, setBoxesPage] = useState(1);
   const [boxesPageSize] = useState(8);
   const [reworkBoxIds, setReworkBoxIds] = useState<Set<string>>(() => new Set());
@@ -125,6 +145,7 @@ export function OutboundPackingPage() {
     () => new Set(),
   );
   const [bouncingBoxId, setBouncingBoxId] = useState<string | null>(null);
+  const [uploadingPhotoBoxId, setUploadingPhotoBoxId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -136,6 +157,10 @@ export function OutboundPackingPage() {
     queryKey: ['warehouses', 'active'],
     queryFn: () => listWarehouses({ isActive: true }),
   });
+  const settingsQuery = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: getSystemSettings,
+  });
   const customers = (customersQuery.data as CustomerOption[] | undefined) ?? [];
   const warehouses = warehousesQuery.data ?? [];
 
@@ -143,10 +168,13 @@ export function OutboundPackingPage() {
     if (!customerId && customers[0]) {
       setCustomerId(customers[0].id);
     }
-    if (!warehouseId && warehouses[0]) {
-      setWarehouseId(warehouses[0].id);
+    if (!warehouseId) {
+      const defaultWarehouseId = selectDefaultWarehouseId(warehouses, settingsQuery.data);
+      if (defaultWarehouseId) {
+        setWarehouseId(defaultWarehouseId);
+      }
     }
-  }, [customerId, customers, warehouseId, warehouses]);
+  }, [customerId, customers, settingsQuery.data, warehouseId, warehouses]);
 
   const selectedCustomer = customers.find((customer) => customer.id === customerId);
   const activeInventorySearch = inventorySearch.trim();
@@ -167,28 +195,41 @@ export function OutboundPackingPage() {
   ] as const;
   const availableQuery = useQuery({
     queryKey: availableQueryKey,
-    queryFn: () =>
-      outboundApi.availableItems({
+    queryFn: () => {
+      const params = {
         customerId,
         warehouseId,
         page: availablePage,
         pageSize: availablePageSize,
         ...(activeInventorySearch ? { search: activeInventorySearch } : {}),
-      }),
+      };
+      if (activeInventorySearch) {
+        return inventoryApi.items({
+          ...params,
+          sortBy: 'updatedAt',
+          sortOrder: 'desc',
+        });
+      }
+      return outboundApi.availableItems(params);
+    },
     enabled: Boolean(customerId && warehouseId),
   });
-  const available = availableQuery.data as AvailableResult | undefined;
-  const availableItems = useMemo(
-    () =>
-      (available?.items ?? [])
-        .filter((item) => !locallyPackedInventoryIds.has(item.id))
-        .map((item) => toPackingItem(item, selectedCustomer)),
-    [available?.items, locallyPackedInventoryIds, selectedCustomer],
-  );
+  const available = availableQuery.data as InventoryResult | undefined;
+  const availableItems = useMemo(() => {
+    const items = available?.items ?? [];
+    if (activeInventorySearch) {
+      return items.map((item) => toPackingItem(item, selectedCustomer));
+    }
+    return items
+      .filter((item) => !locallyPackedInventoryIds.has(item.id))
+      .map((item) => toPackingItem(item, selectedCustomer));
+  }, [activeInventorySearch, available?.items, locallyPackedInventoryIds, selectedCustomer]);
   const locallyHiddenAvailableCount = (available?.items ?? []).filter((item) =>
     locallyPackedInventoryIds.has(item.id),
   ).length;
-  const availableTotal = Math.max(0, (available?.total ?? 0) - locallyHiddenAvailableCount);
+  const availableTotal = activeInventorySearch
+    ? (available?.total ?? 0)
+    : Math.max(0, (available?.total ?? 0) - locallyHiddenAvailableCount);
 
   const boxesQuery = useQuery({
     queryKey: boxesQueryKey,
@@ -208,16 +249,6 @@ export function OutboundPackingPage() {
     () => (boxes?.items ?? []).map((box) => toPackingBox(box, reworkBoxIds)),
     [boxes?.items, reworkBoxIds],
   );
-  const boxNameExists = (name: string, excludeBoxId?: string) => {
-    const normalizedName = name.trim().toLowerCase();
-    if (!normalizedName) {
-      return false;
-    }
-    return createdBoxes.some(
-      (box) => box.id !== excludeBoxId && box.name.trim().toLowerCase() === normalizedName,
-    );
-  };
-
   const filteredCurrentBoxItems = useMemo(() => {
     const items = currentBox?.items ?? [];
     const query = boxSearch.trim().toLowerCase();
@@ -252,6 +283,72 @@ export function OutboundPackingPage() {
     const data = (await outboundApi.getBox(box.id)) as OutboundBox;
     return updateBoxEverywhere(data);
   };
+  const fetchAvailablePackingItems = async (params?: { search?: string }) => {
+    const collected: AvailableItem[] = [];
+    let page = 1;
+    let total = 0;
+
+    do {
+      const result = (await outboundApi.availableItems({
+        customerId,
+        warehouseId,
+        page,
+        pageSize: 100,
+        ...(params?.search ? { search: params.search } : {}),
+      })) as unknown as InventoryResult;
+      collected.push(...result.items);
+      total = result.total;
+      page += 1;
+    } while (collected.length < total);
+
+    return collected
+      .filter((item) => !locallyPackedInventoryIds.has(item.id))
+      .map((item) => toPackingItem(item, selectedCustomer));
+  };
+  const refreshBatchItems = async () => {
+    if (!customerId || !warehouseId) return;
+    setIsBatchItemsLoading(true);
+    setErrorMessage('');
+    try {
+      const items = await fetchAvailablePackingItems();
+      setBatchItems(items);
+    } catch (error) {
+      setErrorMessage(toUserErrorMessage(error, '读取可装箱库存失败'));
+    } finally {
+      setIsBatchItemsLoading(false);
+    }
+  };
+  const resetDetailedScan = () => {
+    setScanValue('');
+    setScanUpc('');
+    setScanImeiOrSerial('');
+    setScanBlockReason('');
+  };
+  const applyScannedValue = (value: string) => {
+    if (scanBlockReason || scanPackMutation.isPending) {
+      return;
+    }
+    const normalized = value.trim();
+    if (!normalized) {
+      return;
+    }
+    const scanType = classifyOutboundScanValue(normalized);
+    const nextUpc = scanType === 'UPC' ? normalized : scanUpc;
+    const nextImeiOrSerial = scanType === 'IMEI_SERIAL' ? normalized : scanImeiOrSerial;
+    setScanValue('');
+    if (scanType === 'UPC') {
+      setScanUpc(normalized);
+      setMessage('已扫描 UPC，等待 IMEI / Serial');
+    } else {
+      setScanImeiOrSerial(normalized);
+      setMessage('已扫描 IMEI / Serial，等待 UPC');
+    }
+    setErrorMessage('');
+
+    if (nextUpc && nextImeiOrSerial) {
+      scanPackMutation.mutate({ upc: nextUpc, imeiOrSerial: nextImeiOrSerial });
+    }
+  };
 
   useEffect(() => {
     setAvailablePage(1);
@@ -270,8 +367,6 @@ export function OutboundPackingPage() {
 
   useEffect(() => {
     if (!currentBox) return;
-    setBoxNoDraft(currentBox.boxNo);
-    setBoxName(currentBox.name);
     setSizeLabel(currentBox.sizeLabel);
     setManualSize({
       length: currentBox.length,
@@ -290,18 +385,36 @@ export function OutboundPackingPage() {
     }
   }, [highlightedItemId]);
 
+  useEffect(() => {
+    setScanValue('');
+    setScanUpc('');
+    setScanImeiOrSerial('');
+    setScanBlockReason('');
+    setBatchPackingOpen(false);
+    setBatchItems([]);
+  }, [customerId, warehouseId, currentBox?.id]);
+
+  useEffect(() => {
+    const nextCount = Math.max(1, Number(batchBoxCount) || 1);
+    setBatchAllocationCounts((current) =>
+      Array.from({ length: nextCount }, (_, index) => current[index] ?? ''),
+    );
+  }, [batchBoxCount]);
+
+  useEffect(() => {
+    if (batchPackingOpen) {
+      void refreshBatchItems();
+    }
+  }, [batchPackingOpen]);
+
   const createBoxMutation = useMutation({
     mutationFn: () => {
       if (!warehouseId) {
         throw new Error('请先选择仓库。');
       }
-      if (boxNameExists(boxName)) {
-        throw new Error('箱子名称已存在，请换一个名称。');
-      }
       return outboundApi.createBox({
         customerId,
         warehouseId,
-        boxName: boxName.trim() || undefined,
         ...toBackendBoxSize(sizeLabel, manualSize),
         weightLb: toWeightNumber(weight),
         notes: note.trim() || undefined,
@@ -323,11 +436,7 @@ export function OutboundPackingPage() {
   const updateBoxMutation = useMutation({
     mutationFn: () => {
       if (!currentBox) throw new Error('请先选择或新建箱子');
-      if (boxNameExists(boxName, currentBox.id)) {
-        throw new Error('箱子名称已存在，请换一个名称。');
-      }
       return outboundApi.updateBox(currentBox.id, {
-        boxName: boxName.trim() || undefined,
         ...toBackendBoxSize(sizeLabel, manualSize),
         weightLb: toWeightNumber(weight),
         notes: note.trim() || undefined,
@@ -451,6 +560,153 @@ export function OutboundPackingPage() {
     },
   });
 
+  const scanPackMutation = useMutation({
+    mutationFn: async (payload: { upc: string; imeiOrSerial: string }) => {
+      if (!currentBox || !canMutateCurrentBox) {
+        throw new Error('请先选择一个未封箱箱子。');
+      }
+      const searchedItems = await fetchAvailablePackingItems({ search: payload.imeiOrSerial });
+      const candidates = mergePackingItems(availableItems, searchedItems);
+      const exactMatch = candidates.find(
+        (item) =>
+          normalizeScanText(item.upc) === normalizeScanText(payload.upc) &&
+          normalizeScanText(item.imeiOrSerial) === normalizeScanText(payload.imeiOrSerial),
+      );
+      if (!exactMatch) {
+        const sameImei = candidates.find(
+          (item) =>
+            normalizeScanText(item.imeiOrSerial) === normalizeScanText(payload.imeiOrSerial),
+        );
+        if (sameImei) {
+          throw new Error(
+            `UPC 不匹配：该 IMEI / Serial 对应库存 UPC 为 ${sameImei.upc ?? '-'}，请修复后继续。`,
+          );
+        }
+        throw new Error('没有找到同时匹配 UPC 和 IMEI / Serial 的当前客户在库货物。');
+      }
+      if (currentBox.items.some((item) => item.id === exactMatch.id)) {
+        throw new Error('该货物已经在当前箱子中。');
+      }
+      const box = (await outboundApi.addItem(currentBox.id, {
+        inventoryItemId: exactMatch.id,
+      })) as OutboundBox;
+      return { box, item: exactMatch };
+    },
+    onSuccess: ({ box, item }) => {
+      const updatedBox = updateBoxEverywhere(box);
+      const latestItem = updatedBox.items.find((boxItem) => boxItem.id === item.id);
+      setLocallyPackedInventoryIds((current) => new Set(current).add(item.id));
+      setHighlightedItemId(latestItem?.id ?? item.id);
+      setScanUpc('');
+      setScanImeiOrSerial('');
+      setScanBlockReason('');
+      setMessage(`已扫码装箱：${item.imeiOrSerial ?? item.upc ?? item.trackingNumber}`);
+      setErrorMessage('');
+    },
+    onError: (error) => {
+      const messageText = toUserErrorMessage(error, '扫码装箱失败');
+      setScanBlockReason(messageText);
+      setErrorMessage(messageText);
+    },
+  });
+
+  const batchPackingMutation = useMutation({
+    mutationFn: async () => {
+      if (!customerId || !warehouseId) {
+        throw new Error('请先选择客户和仓库。');
+      }
+      const counts = normalizeBatchCounts(batchAllocationCounts);
+      if (counts.length === 0) {
+        throw new Error('请先填写每箱数量。');
+      }
+      const sourceItems = batchItems.length ? batchItems : await fetchAvailablePackingItems();
+      const totalCount = counts.reduce((sum, count) => sum + count, 0);
+      if (sourceItems.length === 0) {
+        throw new Error('当前客户没有可装箱库存。');
+      }
+      if (totalCount !== sourceItems.length) {
+        throw new Error(`每箱数量合计必须等于当前可装箱总数 ${sourceItems.length}。`);
+      }
+
+      const groups = buildRandomBatchGroups(sourceItems, counts);
+      const packedInventoryIds: string[] = [];
+      let latestBox: OutboundBox | null = null;
+      for (const group of groups) {
+        const createdBox = (await outboundApi.createBox({
+          customerId,
+          warehouseId,
+          ...toBackendBoxSize(sizeLabel, manualSize),
+          weightLb: toWeightNumber(weight),
+          notes: note.trim() || undefined,
+        })) as OutboundBox;
+        latestBox = createdBox;
+        for (const item of group) {
+          latestBox = (await outboundApi.addItem(createdBox.id, {
+            inventoryItemId: item.id,
+          })) as OutboundBox;
+          packedInventoryIds.push(item.id);
+        }
+      }
+      return { latestBox, packedInventoryIds, boxCount: groups.length };
+    },
+    onSuccess: ({ latestBox, packedInventoryIds, boxCount }) => {
+      if (latestBox) {
+        const nextBox = updateBoxEverywhere(latestBox);
+        setCurrentBox(nextBox);
+        setDetailBox(nextBox);
+      }
+      setLocallyPackedInventoryIds((current) => {
+        const next = new Set(current);
+        for (const itemId of packedInventoryIds) {
+          next.add(itemId);
+        }
+        return next;
+      });
+      setBatchPackingOpen(false);
+      setSelectedAvailableItemIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ['outbound-available-items'] });
+      queryClient.invalidateQueries({ queryKey: ['outbound-boxes'] });
+      setMessage(`已批量装箱：创建 ${boxCount} 个箱子，共 ${packedInventoryIds.length} 件货物`);
+      setErrorMessage('');
+    },
+    onError: (error) => setErrorMessage(toUserErrorMessage(error, '批量装箱失败')),
+  });
+
+  useEffect(() => {
+    if (scanAutoSubmitTimerRef.current) {
+      window.clearTimeout(scanAutoSubmitTimerRef.current);
+      scanAutoSubmitTimerRef.current = null;
+    }
+    if (
+      packingMode !== 'DETAILED_SCAN' ||
+      scanBlockReason ||
+      scanPackMutation.isPending ||
+      !currentBox ||
+      !canMutateCurrentBox ||
+      !isCompleteOutboundScanValue(scanValue)
+    ) {
+      return;
+    }
+
+    scanAutoSubmitTimerRef.current = window.setTimeout(() => {
+      applyScannedValue(scanValue);
+    }, 160);
+
+    return () => {
+      if (scanAutoSubmitTimerRef.current) {
+        window.clearTimeout(scanAutoSubmitTimerRef.current);
+        scanAutoSubmitTimerRef.current = null;
+      }
+    };
+  }, [
+    canMutateCurrentBox,
+    currentBox,
+    packingMode,
+    scanBlockReason,
+    scanPackMutation.isPending,
+    scanValue,
+  ]);
+
   const removeItemMutation = useMutation({
     mutationFn: (item: PackingItem) => {
       if (!currentBox) throw new Error('请先选择或新建箱子');
@@ -558,6 +814,64 @@ export function OutboundPackingPage() {
   });
 
   const selectedCreatedBoxes = createdBoxes.filter((box) => selectedCreatedBoxIds.has(box.id));
+  const requestSealBox = (box: PackingBox | null) => {
+    if (!box) {
+      setErrorMessage('请先选择或新建箱子');
+      return;
+    }
+    if (box.photos.length === 0) {
+      setErrorMessage('封箱前请先上传箱内照片');
+      return;
+    }
+    setCurrentBox(box);
+    sealMutation.mutate(box.id);
+  };
+
+  const uploadPhotoMutation = useMutation({
+    mutationFn: async ({ box, file }: { box: PackingBox; file: File }) => {
+      setUploadingPhotoBoxId(box.id);
+      return outboundApi.uploadPhoto(box.id, file);
+    },
+    onSuccess: (data) => {
+      updateBoxEverywhere(data as OutboundBox);
+      setMessage('箱子照片已上传');
+      setErrorMessage('');
+    },
+    onError: (error) => setErrorMessage(toUserErrorMessage(error, '上传照片失败')),
+    onSettled: () => setUploadingPhotoBoxId(null),
+  });
+
+  const deletePhotoMutation = useMutation({
+    mutationFn: async ({ box, photoId }: { box: PackingBox; photoId: string }) => {
+      setUploadingPhotoBoxId(box.id);
+      return outboundApi.deletePhoto(box.id, photoId);
+    },
+    onSuccess: (data) => {
+      const result = data as { box: OutboundBox };
+      updateBoxEverywhere(result.box);
+      setMessage('箱子照片已删除');
+      setErrorMessage('');
+    },
+    onError: (error) => setErrorMessage(toUserErrorMessage(error, '删除照片失败')),
+    onSettled: () => setUploadingPhotoBoxId(null),
+  });
+
+  const saveShippingTrackingNoMutation = useMutation({
+    mutationFn: async ({
+      box,
+      shippingTrackingNo,
+    }: {
+      box: PackingBox;
+      shippingTrackingNo: string;
+    }) => outboundApi.updateBox(box.id, { shippingTrackingNo }),
+    onSuccess: (data) => {
+      updateBoxEverywhere(data as OutboundBox);
+      setMessage('箱子单号已保存');
+      setErrorMessage('');
+    },
+    onError: (error) => setErrorMessage(toUserErrorMessage(error, '保存单号失败')),
+  });
+
   const deleteBoxesMutation = useMutation({
     mutationFn: async (boxesToDelete: PackingBox[]) => {
       if (boxesToDelete.length === 0) {
@@ -700,8 +1014,7 @@ export function OutboundPackingPage() {
       />
 
       <BoxQuickEditor
-        boxNo={boxNoDraft}
-        boxName={boxName}
+        boxName={currentBox?.name ?? ''}
         sizeLabel={sizeLabel}
         manualSize={manualSize}
         manualSizeOpen={manualSizeOpen}
@@ -711,8 +1024,6 @@ export function OutboundPackingPage() {
         isSaving={updateBoxMutation.isPending}
         isSealing={sealMutation.isPending}
         isCreating={createBoxMutation.isPending}
-        onBoxNoChange={setBoxNoDraft}
-        onBoxNameChange={setBoxName}
         onSizeLabelChange={(nextSizeLabel) => {
           setSizeLabel(nextSizeLabel);
           const preset = boxSizePresets.find((item) => item.label === nextSizeLabel);
@@ -732,9 +1043,11 @@ export function OutboundPackingPage() {
         onWeightChange={setWeight}
         onNoteChange={setNote}
         onSave={() => updateBoxMutation.mutate()}
-        onSeal={() => sealMutation.mutate(currentBox?.id)}
+        onSeal={() => requestSealBox(currentBox)}
         onCreate={() => createBoxMutation.mutate()}
       />
+
+      <PackingModeSwitch mode={packingMode} onModeChange={setPackingMode} />
 
       {message ? <div className="inline-success">{message}</div> : null}
       {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
@@ -746,10 +1059,22 @@ export function OutboundPackingPage() {
           page={availablePage}
           pageSize={availablePageSize}
           search={inventorySearch}
+          isSearchMode={Boolean(activeInventorySearch)}
           canAdd={Boolean(currentBox && canMutateCurrentBox)}
-          isAdding={addItemMutation.isPending || batchAddItemsMutation.isPending}
+          isAdding={
+            addItemMutation.isPending ||
+            batchAddItemsMutation.isPending ||
+            batchPackingMutation.isPending
+          }
+          canBulkPackAll={Boolean(
+            customerId && warehouseId && !activeInventorySearch && availableTotal > 0,
+          )}
           selectedItemIds={selectedAvailableItemIds}
-          onSearchChange={setInventorySearch}
+          onSearchChange={(value) => {
+            setInventorySearch(value);
+            setAvailablePage(1);
+            setSelectedAvailableItemIds(new Set());
+          }}
           onSelectionChange={setSelectedAvailableItemIds}
           onPageChange={setAvailablePage}
           onPageSizeChange={(nextPageSize) => {
@@ -758,9 +1083,14 @@ export function OutboundPackingPage() {
           }}
           onAdd={(item) => addItemMutation.mutate(item.id)}
           onBatchAdd={(items) => batchAddItemsMutation.mutate(items.map((item) => item.id))}
+          onOpenBulkPacking={() => {
+            setPackingMode('BULK_BOX');
+            setBatchPackingOpen(true);
+          }}
         />
         <CurrentBoxWorkspace
           box={currentBox}
+          packingMode={packingMode}
           items={visibleCurrentBoxItems}
           filteredTotal={filteredCurrentBoxItems.length}
           page={boxItemsPage}
@@ -771,7 +1101,15 @@ export function OutboundPackingPage() {
           highlightedItemId={highlightedItemId}
           removedItemIds={removedItemIds}
           isRemoving={removeItemMutation.isPending || bulkRemoveMutation.isPending}
+          scanValue={scanValue}
+          scanUpc={scanUpc}
+          scanImeiOrSerial={scanImeiOrSerial}
+          scanBlockReason={scanBlockReason}
+          isScanPacking={scanPackMutation.isPending}
           onSearchChange={setBoxSearch}
+          onScanValueChange={setScanValue}
+          onScanSubmit={() => applyScannedValue(scanValue)}
+          onScanClear={resetDetailedScan}
           onSelectionChange={setSelectedBoxItemIds}
           onPageChange={setBoxItemsPage}
           onPageSizeChange={(nextPageSize) => {
@@ -787,6 +1125,7 @@ export function OutboundPackingPage() {
 
       <CreatedBoxList
         boxes={createdBoxes}
+        currentBoxId={currentBox?.id ?? null}
         total={boxes?.total ?? 0}
         page={boxesPage}
         pageSize={boxesPageSize}
@@ -795,22 +1134,34 @@ export function OutboundPackingPage() {
         isSealing={sealMutation.isPending}
         isReopening={reopenMutation.isPending}
         isDeleting={deleteBoxesMutation.isPending}
+        uploadingPhotoBoxId={uploadingPhotoBoxId}
         selectedBoxIds={selectedCreatedBoxIds}
         onRefresh={() => boxesQuery.refetch()}
         onPageChange={setBoxesPage}
         onSelectionChange={setSelectedCreatedBoxIds}
         onRequestDelete={() => setDeleteBoxesConfirmOpen(true)}
         onOpenDetail={openBoxDetail}
+        onSetCurrent={(box) => {
+          void loadFullBox(box)
+            .then((loadedBox) => {
+              setCurrentBox(loadedBox);
+              setMessage(`当前装箱目标已切换为 ${getBoxDisplayName(loadedBox)}`);
+              setErrorMessage('');
+            })
+            .catch((error) => setErrorMessage(toUserErrorMessage(error, '切换当前箱失败')));
+        }}
         onEdit={(box) => {
           void loadFullBox(box)
             .then(setCurrentBox)
             .catch((error) => setErrorMessage(toUserErrorMessage(error, '读取箱子失败')));
         }}
-        onSeal={(box) => {
-          setCurrentBox(box);
-          sealMutation.mutate(box.id);
-        }}
+        onSeal={requestSealBox}
         onReopen={(box) => reopenMutation.mutate(box.id)}
+        onUploadPhoto={(box, file) => uploadPhotoMutation.mutate({ box, file })}
+        onDeletePhoto={(box, photoId) => deletePhotoMutation.mutate({ box, photoId })}
+        onSaveShippingTrackingNo={(box, shippingTrackingNo) =>
+          saveShippingTrackingNoMutation.mutate({ box, shippingTrackingNo })
+        }
       />
 
       <DeleteBoxesConfirmModal
@@ -819,6 +1170,24 @@ export function OutboundPackingPage() {
         isDeleting={deleteBoxesMutation.isPending}
         onClose={() => setDeleteBoxesConfirmOpen(false)}
         onConfirm={() => deleteBoxesMutation.mutate(selectedCreatedBoxes)}
+      />
+
+      <BatchPackingModal
+        open={batchPackingOpen}
+        items={batchItems}
+        boxCount={batchBoxCount}
+        allocationCounts={batchAllocationCounts}
+        isLoadingItems={isBatchItemsLoading}
+        isSubmitting={batchPackingMutation.isPending}
+        onClose={() => setBatchPackingOpen(false)}
+        onRefreshItems={refreshBatchItems}
+        onBoxCountChange={setBatchBoxCount}
+        onAllocationCountChange={(index, value) =>
+          setBatchAllocationCounts((current) =>
+            current.map((item, itemIndex) => (itemIndex === index ? value : item)),
+          )
+        }
+        onSubmit={() => batchPackingMutation.mutate()}
       />
 
       <BoxDetailModal
@@ -877,8 +1246,35 @@ function TrackingSearchBar(props: {
   );
 }
 
+function PackingModeSwitch(props: {
+  mode: OutboundPackingMode;
+  onModeChange: (mode: OutboundPackingMode) => void;
+}) {
+  return (
+    <section className="outbound-mode-switch" role="group" aria-label="装箱模式">
+      <button
+        type="button"
+        className={props.mode === 'DETAILED_SCAN' ? 'active' : ''}
+        onClick={() => props.onModeChange('DETAILED_SCAN')}
+      >
+        <ScanLine size={16} />
+        <strong>细致装箱</strong>
+        <span>随机扫码 UPC 和 IMEI，匹配后自动加入当前箱</span>
+      </button>
+      <button
+        type="button"
+        className={props.mode === 'BULK_BOX' ? 'active' : ''}
+        onClick={() => props.onModeChange('BULK_BOX')}
+      >
+        <ClipboardList size={16} />
+        <strong>批量装箱</strong>
+        <span>按总库存拆分多箱，系统自动随机分配</span>
+      </button>
+    </section>
+  );
+}
+
 function BoxQuickEditor(props: {
-  boxNo: string;
   boxName: string;
   sizeLabel: string;
   manualSize: { length: number; width: number; height: number };
@@ -889,8 +1285,6 @@ function BoxQuickEditor(props: {
   isSaving: boolean;
   isSealing: boolean;
   isCreating: boolean;
-  onBoxNoChange: (value: string) => void;
-  onBoxNameChange: (value: string) => void;
   onSizeLabelChange: (value: string) => void;
   onManualSizeOpenChange: (value: boolean) => void;
   onManualSizeChange: (value: { length: number; width: number; height: number }) => void;
@@ -908,22 +1302,10 @@ function BoxQuickEditor(props: {
         <StatusBadge status={props.currentBox?.status ?? 'draft'} />
       </div>
       <div className="outbound-quick-fields">
-        <label className="outbound-control compact">
-          <span>Box 编号</span>
-          <input
-            value={props.boxNo}
-            onChange={(event) => props.onBoxNoChange(event.target.value)}
-          />
-        </label>
-        <label className="outbound-control wide">
+        <div className="outbound-control wide outbound-readonly-control">
           <span>箱子名称</span>
-          <input
-            value={props.boxName}
-            onChange={(event) => props.onBoxNameChange(event.target.value)}
-            placeholder="Apex Trading - 第四箱"
-            disabled={!canEdit}
-          />
-        </label>
+          <strong>{props.boxName || '创建后由系统自动生成'}</strong>
+        </div>
         <label className="outbound-control medium">
           <span>尺寸预设</span>
           <select
@@ -1026,7 +1408,9 @@ function InventoryPackingTable(props: {
   page: number;
   pageSize: number;
   search: string;
+  isSearchMode: boolean;
   canAdd: boolean;
+  canBulkPackAll: boolean;
   isAdding: boolean;
   selectedItemIds: Set<string>;
   onSearchChange: (value: string) => void;
@@ -1035,17 +1419,20 @@ function InventoryPackingTable(props: {
   onPageSizeChange: (pageSize: number) => void;
   onAdd: (item: PackingItem) => void;
   onBatchAdd: (items: PackingItem[]) => void;
+  onOpenBulkPacking: () => void;
 }) {
-  const selectedItems = props.items.filter((item) => props.selectedItemIds.has(item.id));
+  const selectableItems = props.items.filter(isPackingItemSelectable);
+  const selectedItems = selectableItems.filter((item) => props.selectedItemIds.has(item.id));
   const allVisibleSelected =
-    props.items.length > 0 && props.items.every((item) => props.selectedItemIds.has(item.id));
+    selectableItems.length > 0 &&
+    selectableItems.every((item) => props.selectedItemIds.has(item.id));
   const toggleVisibleSelection = (checked: boolean) => {
     props.onSelectionChange(
       checked
-        ? new Set([...Array.from(props.selectedItemIds), ...props.items.map((item) => item.id)])
+        ? new Set([...Array.from(props.selectedItemIds), ...selectableItems.map((item) => item.id)])
         : new Set(
             Array.from(props.selectedItemIds).filter(
-              (id) => !props.items.some((item) => item.id === id),
+              (id) => !selectableItems.some((item) => item.id === id),
             ),
           ),
     );
@@ -1066,7 +1453,7 @@ function InventoryPackingTable(props: {
         <div>
           <h2>客户库存 / 可装箱货物</h2>
           <span>
-            当前客户可装箱货物
+            {props.isSearchMode ? '搜索结果包含待装箱和已装箱货物' : '当前客户可装箱货物'}
             {selectedItems.length ? ` · 已选 ${selectedItems.length} 件` : ''}
           </span>
         </div>
@@ -1080,6 +1467,15 @@ function InventoryPackingTable(props: {
         </label>
       </div>
       <div className="outbound-box-footer compact">
+        <button
+          type="button"
+          className="outbound-btn outbound-btn-outline"
+          disabled={!props.canBulkPackAll || props.isAdding}
+          onClick={props.onOpenBulkPacking}
+        >
+          <Shuffle size={16} />
+          全部装箱 {props.total ? `${props.total} 件` : ''}
+        </button>
         <button
           type="button"
           className="outbound-btn outbound-btn-primary"
@@ -1099,7 +1495,7 @@ function InventoryPackingTable(props: {
                   type="checkbox"
                   aria-label="选择当前页可装箱货物"
                   checked={allVisibleSelected}
-                  disabled={props.items.length === 0}
+                  disabled={selectableItems.length === 0}
                   onChange={(event) => toggleVisibleSelection(event.target.checked)}
                 />
               </th>
@@ -1111,44 +1507,57 @@ function InventoryPackingTable(props: {
             </tr>
           </thead>
           <tbody>
-            {props.items.map((item) => (
-              <tr key={item.id}>
-                <td>
-                  <input
-                    type="checkbox"
-                    aria-label={`选择 ${item.imeiOrSerial ?? item.trackingNumber}`}
-                    checked={props.selectedItemIds.has(item.id)}
-                    onChange={(event) => toggleItemSelection(item.id, event.target.checked)}
-                  />
-                </td>
-                <td>
-                  <strong className="mono">{item.trackingNumber || '-'}</strong>
-                  <span>{item.carrier}</span>
-                </td>
-                <td>
-                  <strong>{item.productName ?? '-'}</strong>
-                  <span>UPC {item.upc ?? '-'}</span>
-                </td>
-                <td className="mono">{item.imeiOrSerial ?? '-'}</td>
-                <td>
-                  <ItemStatusBadge status={item.status} />
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    className="outbound-table-btn"
-                    disabled={!props.canAdd || props.isAdding}
-                    onClick={() => props.onAdd(item)}
-                  >
-                    <PackagePlus size={15} />
-                    加入箱子
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {props.items.map((item) => {
+              const selectable = isPackingItemSelectable(item);
+              const boxLabel = getLatestOutboundBoxLabel(item);
+              return (
+                <tr key={item.id} className={selectable ? undefined : 'row-muted'}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`选择 ${item.imeiOrSerial ?? item.trackingNumber}`}
+                      checked={selectable && props.selectedItemIds.has(item.id)}
+                      disabled={!selectable}
+                      onChange={(event) => toggleItemSelection(item.id, event.target.checked)}
+                    />
+                  </td>
+                  <td>
+                    <strong className="mono">{item.trackingNumber || '-'}</strong>
+                    <span>{item.carrier}</span>
+                  </td>
+                  <td>
+                    <strong>{item.productName ?? '-'}</strong>
+                    <span>UPC {item.upc ?? '-'}</span>
+                  </td>
+                  <td className="mono">{item.imeiOrSerial ?? '-'}</td>
+                  <td>
+                    <ItemStatusBadge status={item.status} />
+                    {boxLabel ? (
+                      <span className="outbound-status-note">所在箱：{boxLabel}</span>
+                    ) : null}
+                    {item.latestOutboundBox?.sealedAt ? (
+                      <span className="outbound-status-note">箱状态：已封箱</span>
+                    ) : null}
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="outbound-table-btn"
+                      disabled={!props.canAdd || props.isAdding || !selectable}
+                      onClick={() => props.onAdd(item)}
+                    >
+                      <PackagePlus size={15} />
+                      {selectable ? '加入箱子' : item.status === 'packed' ? '已在箱中' : '不可装箱'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
             {props.items.length === 0 ? (
               <tr>
-                <td colSpan={6}>没有匹配的可装箱货物</td>
+                <td colSpan={6}>
+                  {props.isSearchMode ? '没有匹配的客户库存货物' : '没有匹配的可装箱货物'}
+                </td>
               </tr>
             ) : null}
           </tbody>
@@ -1168,6 +1577,7 @@ function InventoryPackingTable(props: {
 
 function CurrentBoxWorkspace(props: {
   box: PackingBox | null;
+  packingMode: OutboundPackingMode;
   items: PackingItem[];
   filteredTotal: number;
   page: number;
@@ -1178,7 +1588,15 @@ function CurrentBoxWorkspace(props: {
   highlightedItemId: string | null;
   removedItemIds: Set<string>;
   isRemoving: boolean;
+  scanValue: string;
+  scanUpc: string;
+  scanImeiOrSerial: string;
+  scanBlockReason: string;
+  isScanPacking: boolean;
   onSearchChange: (value: string) => void;
+  onScanValueChange: (value: string) => void;
+  onScanSubmit: () => void;
+  onScanClear: () => void;
   onSelectionChange: (value: Set<string>) => void;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
@@ -1216,7 +1634,7 @@ function CurrentBoxWorkspace(props: {
       <div className="outbound-section-heading">
         <div>
           <h2>当前箱子工作区</h2>
-          <span>{props.box ? props.box.boxNo : '尚未选择箱子'}</span>
+          <span>{props.box ? getBoxDisplayName(props.box) : '尚未选择箱子'}</span>
         </div>
         <label className="outbound-mini-search">
           <Search size={15} />
@@ -1236,6 +1654,20 @@ function CurrentBoxWorkspace(props: {
           className="status"
         />
       </div>
+      {props.packingMode === 'DETAILED_SCAN' ? (
+        <DetailedScanPackingPanel
+          box={props.box}
+          canMutate={props.canMutate}
+          scanValue={props.scanValue}
+          scanUpc={props.scanUpc}
+          scanImeiOrSerial={props.scanImeiOrSerial}
+          blockReason={props.scanBlockReason}
+          isPacking={props.isScanPacking}
+          onScanValueChange={props.onScanValueChange}
+          onScanSubmit={props.onScanSubmit}
+          onClear={props.onScanClear}
+        />
+      ) : null}
       <div className="outbound-table-wrap">
         <table className="outbound-table">
           <thead>
@@ -1347,12 +1779,88 @@ function CurrentBoxWorkspace(props: {
   );
 }
 
+function DetailedScanPackingPanel(props: {
+  box: PackingBox | null;
+  canMutate: boolean;
+  scanValue: string;
+  scanUpc: string;
+  scanImeiOrSerial: string;
+  blockReason: string;
+  isPacking: boolean;
+  onScanValueChange: (value: string) => void;
+  onScanSubmit: () => void;
+  onClear: () => void;
+}) {
+  const disabled = !props.box || !props.canMutate || !!props.blockReason || props.isPacking;
+  return (
+    <div className={`outbound-scan-pack-panel ${props.blockReason ? 'blocked' : ''}`}>
+      <div className="outbound-scan-pack-head">
+        <div>
+          <strong>细致扫码装箱</strong>
+          <span>
+            当前装箱目标：
+            {props.box ? getBoxDisplayName(props.box) : '未选择箱子'}。扫完自动录入，异常时暂停
+          </span>
+        </div>
+        <button type="button" className="outbound-btn outbound-btn-outline" onClick={props.onClear}>
+          <RefreshCw size={15} />
+          清空扫码
+        </button>
+      </div>
+      <div className="outbound-scan-pack-grid">
+        <label className="outbound-control outbound-scan-pack-input">
+          <span>自动扫码口</span>
+          <input
+            value={props.scanValue}
+            disabled={disabled}
+            autoComplete="off"
+            autoFocus
+            placeholder={props.box ? '直接扫描 UPC 或 IMEI / Serial' : '请先选择或新建箱子'}
+            onChange={(event) => props.onScanValueChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                props.onScanSubmit();
+              }
+            }}
+          />
+        </label>
+        <div className="outbound-scan-token">
+          <span>UPC</span>
+          <strong>{props.scanUpc || '等待扫描'}</strong>
+        </div>
+        <div className="outbound-scan-token">
+          <span>IMEI / Serial</span>
+          <strong>{props.scanImeiOrSerial || '等待扫描'}</strong>
+        </div>
+        <button
+          type="button"
+          className="outbound-btn outbound-btn-primary"
+          disabled={disabled || !props.scanValue.trim()}
+          onClick={props.onScanSubmit}
+        >
+          <ScanLine size={16} />
+          自动录入
+        </button>
+      </div>
+      {props.blockReason ? (
+        <div className="outbound-scan-block">
+          <ShieldCheck size={16} />
+          <span>{props.blockReason}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CreatedBoxList(props: {
   boxes: PackingBox[];
+  currentBoxId: string | null;
   total: number;
   page: number;
   pageSize: number;
   bouncingBoxId: string | null;
+  uploadingPhotoBoxId: string | null;
   isRefreshing: boolean;
   isSealing: boolean;
   isReopening: boolean;
@@ -1363,9 +1871,13 @@ function CreatedBoxList(props: {
   onSelectionChange: (value: Set<string>) => void;
   onRequestDelete: () => void;
   onOpenDetail: (box: PackingBox) => void;
+  onSetCurrent: (box: PackingBox) => void;
   onEdit: (box: PackingBox) => void;
   onSeal: (box: PackingBox) => void;
   onReopen: (box: PackingBox) => void;
+  onUploadPhoto: (box: PackingBox, file: File) => void;
+  onDeletePhoto: (box: PackingBox, photoId: string) => void;
+  onSaveShippingTrackingNo: (box: PackingBox, shippingTrackingNo: string) => void;
 }) {
   const selectedCount = props.selectedBoxIds.size;
   const toggleBoxSelection = (boxId: string) => {
@@ -1383,7 +1895,7 @@ function CreatedBoxList(props: {
         <div>
           <h2>已创建箱子</h2>
           <span>
-            点击卡片选中箱子
+            勾选只用于删除，扫码只会进入当前装箱目标
             {selectedCount ? ` · 已选 ${selectedCount} 个` : ''}
           </span>
         </div>
@@ -1413,15 +1925,23 @@ function CreatedBoxList(props: {
           <CreatedBoxCard
             key={box.id}
             box={box}
+            isCurrent={props.currentBoxId === box.id}
             isSelected={props.selectedBoxIds.has(box.id)}
             isBouncing={props.bouncingBoxId === box.id}
             isSealing={props.isSealing}
             isReopening={props.isReopening}
+            isUploadingPhoto={props.uploadingPhotoBoxId === box.id}
             onToggleSelected={() => toggleBoxSelection(box.id)}
             onOpenDetail={() => props.onOpenDetail(box)}
+            onSetCurrent={() => props.onSetCurrent(box)}
             onEdit={() => props.onEdit(box)}
             onSeal={() => props.onSeal(box)}
             onReopen={() => props.onReopen(box)}
+            onUploadPhoto={(file) => props.onUploadPhoto(box, file)}
+            onDeletePhoto={(photoId) => props.onDeletePhoto(box, photoId)}
+            onSaveShippingTrackingNo={(shippingTrackingNo) =>
+              props.onSaveShippingTrackingNo(box, shippingTrackingNo)
+            }
           />
         ))}
         {props.boxes.length === 0 ? <div className="created-box-empty">暂无已创建箱子</div> : null}
@@ -1439,31 +1959,52 @@ function CreatedBoxList(props: {
 
 function CreatedBoxCard(props: {
   box: PackingBox;
+  isCurrent: boolean;
   isSelected: boolean;
   isBouncing: boolean;
   isSealing: boolean;
   isReopening: boolean;
+  isUploadingPhoto: boolean;
   onToggleSelected: () => void;
   onOpenDetail: () => void;
+  onSetCurrent: () => void;
   onEdit: () => void;
   onSeal: () => void;
   onReopen: () => void;
+  onUploadPhoto: (file: File) => void;
+  onDeletePhoto: (photoId: string) => void;
+  onSaveShippingTrackingNo: (shippingTrackingNo: string) => void;
 }) {
   const imeiCount = props.box.items.filter((item) => item.imeiOrSerial).length;
+  const canChangePhotos = props.box.status !== 'sealed';
+  const [trackingEditorOpen, setTrackingEditorOpen] = useState(false);
+  const [shippingTrackingDraft, setShippingTrackingDraft] = useState(
+    props.box.shippingTrackingNo ?? '',
+  );
+  const firstPhoto = props.box.photos[0];
+  useEffect(() => {
+    setShippingTrackingDraft(props.box.shippingTrackingNo ?? '');
+  }, [props.box.shippingTrackingNo]);
   return (
     <article
-      className={`created-box-card ${props.isSelected ? 'selected' : ''}`}
+      className={[
+        'created-box-card',
+        props.isSelected ? 'selected' : '',
+        props.isCurrent ? 'current-target' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       onClick={props.onToggleSelected}
     >
       <div className="created-box-select-indicator">
         <input
           type="checkbox"
-          aria-label={`选择 ${props.box.boxNo}`}
+          aria-label={`选择 ${getBoxDisplayName(props.box)}`}
           checked={props.isSelected}
           onChange={props.onToggleSelected}
           onClick={(event) => event.stopPropagation()}
         />
-        <span>{props.isSelected ? '已选中' : '点击选中'}</span>
+        <span>{props.isCurrent ? '当前装箱' : props.isSelected ? '已选中' : '勾选删除'}</span>
       </div>
       <button
         type="button"
@@ -1472,14 +2013,17 @@ function CreatedBoxCard(props: {
           event.stopPropagation();
           props.onOpenDetail();
         }}
-        aria-label={`查看 ${props.box.boxNo} 明细`}
+        aria-label={`查看 ${getBoxDisplayName(props.box)} 明细`}
       >
         <Archive size={24} />
       </button>
       <div className="created-box-card-head">
-        <strong>{props.box.boxNo}</strong>
+        <strong>{getBoxDisplayName(props.box)}</strong>
         <StatusBadge status={props.box.status} />
       </div>
+      {props.isCurrent ? (
+        <div className="created-box-current-target">扫码录入会进入这个箱子</div>
+      ) : null}
       <div className="created-box-meta">
         <span>尺寸：{props.box.sizeLabel}</span>
         <span>
@@ -1487,14 +2031,145 @@ function CreatedBoxCard(props: {
         </span>
       </div>
       <div className="created-box-copy">
-        <strong>箱子名称：{props.box.name || '-'}</strong>
         <span>备注：{props.box.note || '-'}</span>
       </div>
       <div className="created-box-stats">
         <span>货物数量：{props.box.itemCount}</span>
         <span>IMEI / Serial：{imeiCount}</span>
       </div>
+      <div
+        className={`created-box-photo ${firstPhoto ? 'has-photo' : ''}`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {firstPhoto ? (
+          <EvidencePreview
+            evidence={firstPhoto}
+            label={`${getBoxDisplayName(props.box)} 装箱凭证`}
+          />
+        ) : (
+          <div className="created-box-photo-empty">
+            <Camera size={18} />
+            <span>封箱前需上传照片或视频</span>
+          </div>
+        )}
+        <div className="created-box-photo-footer">
+          <span>{props.box.photos.length ? `${props.box.photos.length} 个凭证` : '暂无凭证'}</span>
+          {canChangePhotos ? (
+            <div className="created-box-photo-actions">
+              <label
+                className={`created-box-photo-action primary ${props.isUploadingPhoto ? 'disabled' : ''}`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <input
+                  type="file"
+                  accept="image/*,video/mp4,video/quicktime,video/webm"
+                  disabled={props.isUploadingPhoto}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = '';
+                    if (file) {
+                      props.onUploadPhoto(file);
+                    }
+                  }}
+                />
+                <ImagePlus size={14} />
+                {props.isUploadingPhoto ? '上传中' : '相册/视频'}
+              </label>
+              <label
+                className={`created-box-photo-action primary ${props.isUploadingPhoto ? 'disabled' : ''}`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <input
+                  type="file"
+                  accept="image/*,video/*"
+                  capture="environment"
+                  disabled={props.isUploadingPhoto}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = '';
+                    if (file) {
+                      props.onUploadPhoto(file);
+                    }
+                  }}
+                />
+                <Camera size={14} />
+                拍照/录像
+              </label>
+              {firstPhoto ? (
+                <button
+                  type="button"
+                  className="created-box-photo-action danger"
+                  disabled={props.isUploadingPhoto}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    props.onDeletePhoto(firstPhoto.id);
+                  }}
+                >
+                  删除
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="created-box-photo-action secondary"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setTrackingEditorOpen(true);
+                }}
+              >
+                <Send size={14} />
+                {props.box.shippingTrackingNo ? '改单号' : '上传单号'}
+              </button>
+            </div>
+          ) : null}
+        </div>
+        {trackingEditorOpen ? (
+          <div className="created-box-tracking-editor">
+            <input
+              value={shippingTrackingDraft}
+              placeholder="输入单号"
+              maxLength={80}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => setShippingTrackingDraft(event.currentTarget.value)}
+            />
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onSaveShippingTrackingNo(shippingTrackingDraft);
+                setTrackingEditorOpen(false);
+              }}
+            >
+              保存
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setShippingTrackingDraft(props.box.shippingTrackingNo ?? '');
+                setTrackingEditorOpen(false);
+              }}
+            >
+              取消
+            </button>
+          </div>
+        ) : (
+          <span className="created-box-tracking-display">
+            单号：{props.box.shippingTrackingNo || '-'}
+          </span>
+        )}
+      </div>
       <div className="created-box-actions">
+        <button
+          type="button"
+          className={props.isCurrent ? 'is-current' : ''}
+          disabled={props.isCurrent || props.box.status === 'sealed'}
+          onClick={(event) => {
+            event.stopPropagation();
+            props.onSetCurrent();
+          }}
+        >
+          {props.isCurrent ? '当前箱' : '设为当前箱'}
+        </button>
         <button
           type="button"
           onClick={(event) => {
@@ -1622,8 +2297,8 @@ function DeleteBoxesConfirmModal(props: {
           <ul>
             {props.boxes.map((box) => (
               <li key={box.id}>
-                <strong>{box.boxNo}</strong>
-                <span>{box.name || '-'}</span>
+                <strong>{getBoxDisplayName(box)}</strong>
+                <span>{box.itemCount} 件货物</span>
                 <StatusBadge status={box.status} />
               </li>
             ))}
@@ -1645,6 +2320,124 @@ function DeleteBoxesConfirmModal(props: {
           >
             <Trash2 size={16} />
             {sealedCount ? '请先返工' : '确认删除'}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function BatchPackingModal(props: {
+  open: boolean;
+  items: PackingItem[];
+  boxCount: string;
+  allocationCounts: string[];
+  isLoadingItems: boolean;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onRefreshItems: () => void;
+  onBoxCountChange: (value: string) => void;
+  onAllocationCountChange: (index: number, value: string) => void;
+  onSubmit: () => void;
+}) {
+  if (!props.open) {
+    return null;
+  }
+  const counts = normalizeBatchCounts(props.allocationCounts);
+  const allocationTotal = props.allocationCounts.reduce(
+    (sum, value) => sum + Math.max(0, Number(value) || 0),
+    0,
+  );
+  const canSubmit =
+    props.items.length > 0 &&
+    counts.length === props.allocationCounts.length &&
+    allocationTotal === props.items.length;
+
+  return (
+    <div className="outbound-modal-backdrop" role="presentation" onClick={props.onClose}>
+      <section
+        className="outbound-detail-modal outbound-batch-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="批量装箱"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="outbound-modal-head">
+          <div>
+            <p>Bulk Packing</p>
+            <h2>全部库存批量装箱</h2>
+          </div>
+          <button type="button" className="outbound-modal-close" onClick={props.onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="outbound-batch-summary">
+          <SummaryTile
+            label="可装箱总数"
+            value={props.isLoadingItems ? '读取中' : props.items.length}
+          />
+          <SummaryTile label="分配合计" value={allocationTotal} />
+          <SummaryTile label="分箱数量" value={props.allocationCounts.length} />
+        </div>
+        <div className="outbound-batch-controls">
+          <label className="outbound-control compact">
+            <span>需要几箱</span>
+            <input
+              type="number"
+              min="1"
+              max="20"
+              value={props.boxCount}
+              onChange={(event) => props.onBoxCountChange(event.target.value)}
+            />
+          </label>
+          <div className="outbound-batch-random-note">
+            <Shuffle size={16} />
+            <span>确认后系统会按每箱数量随机分配库存货物</span>
+          </div>
+          <button
+            type="button"
+            className="outbound-btn outbound-btn-outline"
+            disabled={props.isLoadingItems}
+            onClick={props.onRefreshItems}
+          >
+            <RefreshCw size={15} />
+            刷新库存
+          </button>
+        </div>
+        <div className="outbound-batch-count-grid">
+          {props.allocationCounts.map((count, index) => (
+            <label key={index} className="outbound-control compact">
+              <span>箱 {index + 1}</span>
+              <input
+                type="number"
+                min="0"
+                value={count}
+                onChange={(event) => props.onAllocationCountChange(index, event.target.value)}
+              />
+            </label>
+          ))}
+        </div>
+        {allocationTotal !== props.items.length ? (
+          <div className="outbound-confirm-warning">
+            每箱数量合计必须等于当前可装箱总数 {props.items.length}。
+          </div>
+        ) : null}
+        <div className="outbound-confirm-actions">
+          <button
+            type="button"
+            className="outbound-btn outbound-btn-outline"
+            onClick={props.onClose}
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            className="outbound-btn outbound-btn-primary"
+            disabled={!canSubmit || props.isSubmitting || props.isLoadingItems}
+            onClick={props.onSubmit}
+          >
+            <PackagePlus size={16} />
+            确认批量装箱
           </button>
         </div>
       </section>
@@ -1678,112 +2471,159 @@ function BoxDetailModal(props: {
         className="outbound-detail-modal"
         role="dialog"
         aria-modal="true"
-        aria-label={`${props.box.boxNo} 明细`}
+        aria-label={`${getBoxDisplayName(props.box)} 明细`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="outbound-modal-head">
           <div>
             <p>Box Detail</p>
-            <h2>{props.box.boxNo} 明细</h2>
+            <h2>{getBoxDisplayName(props.box)} 明细</h2>
           </div>
           <button type="button" className="outbound-modal-close" onClick={props.onClose}>
             <X size={18} />
           </button>
         </div>
-        <div className="outbound-detail-summary">
-          <span>箱子名称：{props.box.name || '-'}</span>
-          <span>
-            状态：
-            <StatusBadge status={props.box.status} />
-          </span>
-          <span>尺寸：{props.box.sizeLabel}</span>
-          <span>
-            重量：{props.box.weight} {props.box.weightUnit}
-          </span>
-          <span>备注：{props.box.note || '-'}</span>
-          <span>总货物数量：{props.box.itemCount}</span>
-          <span>总 IMEI / Serial 数量：{imeiCount}</span>
-          <span>UPS 数量：{carrierCounts.UPS}</span>
-          <span>FedEx 数量：{carrierCounts.FedEx}</span>
-          <span>USPS 数量：{carrierCounts.USPS}</span>
-        </div>
-        <div className="outbound-product-summary">
-          <div className="outbound-product-summary-head">
-            <h3>UPC 货物汇总</h3>
-            <span>所有明细汇总统一按 UPC 统计</span>
+        <div className="outbound-detail-body">
+          <div className="outbound-detail-summary">
+            <span>箱子名称：{getBoxDisplayName(props.box)}</span>
+            <span>
+              状态：
+              <StatusBadge status={props.box.status} />
+            </span>
+            <span>尺寸：{props.box.sizeLabel}</span>
+            <span>
+              重量：{props.box.weight} {props.box.weightUnit}
+            </span>
+            <span>备注：{props.box.note || '-'}</span>
+            <span>总货物数量：{props.box.itemCount}</span>
+            <span>总 IMEI / Serial 数量：{imeiCount}</span>
+            <span>UPS 数量：{carrierCounts.UPS}</span>
+            <span>FedEx 数量：{carrierCounts.FedEx}</span>
+            <span>USPS 数量：{carrierCounts.USPS}</span>
           </div>
-          <div className="outbound-product-summary-grid">
-            {upcSummaries.map((summary) => (
-              <article key={summary.key} className="outbound-product-summary-card">
-                <strong>{summary.productName}</strong>
-                <span className="mono">UPC {summary.upc}</span>
-                <div>
-                  <span>箱内数量 {summary.packedCount}</span>
-                  <span>剩余可装箱 {summary.availableCount}</span>
-                  <span>IMEI / Serial {summary.imeiCount}</span>
-                </div>
-                <small>
-                  UPS {summary.carriers.UPS} · FedEx {summary.carriers.FedEx} · USPS{' '}
-                  {summary.carriers.USPS}
-                </small>
-              </article>
-            ))}
-            {upcSummaries.length === 0 ? (
-              <div className="outbound-product-summary-empty">暂无可汇总货物</div>
-            ) : null}
+          <div className="outbound-detail-section">
+            <div className="outbound-product-summary-head">
+              <h3>箱内货物明细</h3>
+              <span>共 {props.box.items.length} 件</span>
+            </div>
+            <div className="outbound-table-wrap modal-table">
+              <table className="outbound-table">
+                <thead>
+                  <tr>
+                    <th>物流类型</th>
+                    <th>物流单号</th>
+                    <th>UPC</th>
+                    <th>商品名称</th>
+                    <th>IMEI / Serial</th>
+                    <th>客户</th>
+                    <th>加入时间</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {props.box.items.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.carrier}</td>
+                      <td className="mono">{item.trackingNumber || '-'}</td>
+                      <td className="mono">{item.upc ?? '-'}</td>
+                      <td>{item.productName ?? '-'}</td>
+                      <td className="mono">{item.imeiOrSerial ?? '-'}</td>
+                      <td>{item.customerName}</td>
+                      <td>{formatShortDateTime(item.addedAt)}</td>
+                      <td>
+                        <ItemStatusBadge status={item.status} />
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="outbound-table-btn danger"
+                          disabled={!props.canMutate || props.isRemoving}
+                          onClick={() => props.onRemove(item)}
+                        >
+                          删除
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {props.box.items.length === 0 ? (
+                    <tr>
+                      <td colSpan={9}>箱子里暂无货物</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-        <div className="outbound-table-wrap modal-table">
-          <table className="outbound-table">
-            <thead>
-              <tr>
-                <th>物流类型</th>
-                <th>物流单号</th>
-                <th>UPC</th>
-                <th>商品名称</th>
-                <th>IMEI / Serial</th>
-                <th>客户</th>
-                <th>加入时间</th>
-                <th>状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {props.box.items.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.carrier}</td>
-                  <td className="mono">{item.trackingNumber || '-'}</td>
-                  <td className="mono">{item.upc ?? '-'}</td>
-                  <td>{item.productName ?? '-'}</td>
-                  <td className="mono">{item.imeiOrSerial ?? '-'}</td>
-                  <td>{item.customerName}</td>
-                  <td>{formatShortDateTime(item.addedAt)}</td>
-                  <td>
-                    <ItemStatusBadge status={item.status} />
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="outbound-table-btn danger"
-                      disabled={!props.canMutate || props.isRemoving}
-                      onClick={() => props.onRemove(item)}
-                    >
-                      删除
-                    </button>
-                  </td>
-                </tr>
+          <div className="outbound-product-summary">
+            <div className="outbound-product-summary-head">
+              <h3>UPC 货物汇总</h3>
+              <span>所有明细汇总统一按 UPC 统计</span>
+            </div>
+            <div className="outbound-product-summary-grid">
+              {upcSummaries.map((summary) => (
+                <article key={summary.key} className="outbound-product-summary-card">
+                  <strong>{summary.productName}</strong>
+                  <span className="mono">UPC {summary.upc}</span>
+                  <div>
+                    <span>箱内数量 {summary.packedCount}</span>
+                    <span>剩余可装箱 {summary.availableCount}</span>
+                    <span>IMEI / Serial {summary.imeiCount}</span>
+                  </div>
+                  <small>
+                    UPS {summary.carriers.UPS} · FedEx {summary.carriers.FedEx} · USPS{' '}
+                    {summary.carriers.USPS}
+                  </small>
+                </article>
               ))}
-              {props.box.items.length === 0 ? (
-                <tr>
-                  <td colSpan={9}>箱子里暂无货物</td>
-                </tr>
+              {upcSummaries.length === 0 ? (
+                <div className="outbound-product-summary-empty">暂无可汇总货物</div>
               ) : null}
-            </tbody>
-          </table>
+            </div>
+          </div>
+          <div className="outbound-detail-evidence">
+            <div className="outbound-detail-evidence-head">
+              <h3>装箱凭证</h3>
+              <span>单号：{props.box.shippingTrackingNo || '-'}</span>
+            </div>
+            {props.box.photos.length ? (
+              <div className="outbound-detail-photo-grid">
+                {props.box.photos.map((photo) => (
+                  <a
+                    key={photo.id}
+                    href={toApiAssetUrl(photo.fileUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="outbound-detail-photo"
+                  >
+                    <EvidencePreview evidence={photo} label={photo.originalName} />
+                    <span>{photo.originalName}</span>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <div className="outbound-detail-photo-empty compact">
+                <Camera size={18} />
+                <span>暂无装箱凭证</span>
+              </div>
+            )}
+          </div>
         </div>
       </section>
     </div>
   );
+}
+
+function EvidencePreview(props: { evidence: OutboundBoxPhoto; label: string }) {
+  const url = toApiAssetUrl(props.evidence.fileUrl);
+  if (props.evidence.mimeType.startsWith('video/')) {
+    return (
+      <video controls playsInline preload="metadata" aria-label={props.label}>
+        <source src={url} type={props.evidence.mimeType} />
+      </video>
+    );
+  }
+  return <img src={url} alt={props.label} />;
 }
 
 function WorkbenchPagination(props: {
@@ -1857,7 +2697,9 @@ function ItemStatusBadge({ status }: { status: ItemStatus }) {
   const labelMap: Record<ItemStatus, string> = {
     available: '待装箱',
     packed: '已装箱',
+    outbound: '已出库',
     exception: '异常',
+    voided: '已作废',
   };
   return <span className={`outbound-item-status ${status}`}>{labelMap[status]}</span>;
 }
@@ -1886,18 +2728,33 @@ function NumberField(props: { label: string; value: number; onChange: (value: nu
 }
 
 type CustomerOption = { id: string; label: string };
-type AvailableResult = { items: AvailableItem[]; total: number; page: number; pageSize: number };
+type InventoryResult = {
+  items: InventorySearchItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
 type BoxListResult = { items: OutboundBox[]; total: number; page: number; pageSize: number };
-type AvailableItem = {
+type LatestOutboundBox = {
+  id: string;
+  boxNo: string;
+  boxName?: string | null;
+  status?: string;
+  sealedAt?: string | null;
+};
+type InventorySearchItem = {
   id: string;
   upc: string;
   upsTrackingNo: string | null;
   imei: string | null;
   serial: string | null;
   status: string;
+  availableForOutbound?: boolean;
+  latestOutboundBox?: LatestOutboundBox | null;
   customer?: { id: string; name: string };
   product: { name: string };
 };
+type AvailableItem = InventorySearchItem;
 type OutboundBox = {
   id: string;
   boxNo: string;
@@ -1905,6 +2762,7 @@ type OutboundBox = {
   sizePreset?: string | null;
   customSize?: string | null;
   weightLb?: number | null;
+  shippingTrackingNo?: string | null;
   status: string;
   itemCount: number;
   notes?: string | null;
@@ -1912,6 +2770,7 @@ type OutboundBox = {
   updatedAt?: string;
   sealedAt?: string | null;
   customer?: { id: string; code?: string; name: string };
+  photos: OutboundBoxPhoto[];
   items: Array<{
     id: string;
     inventoryItemId?: string;
@@ -1927,6 +2786,17 @@ type OutboundBox = {
       product: { name: string };
     };
   }>;
+};
+
+type OutboundBoxPhoto = {
+  id: string;
+  fileName: string;
+  originalName: string;
+  mimeType: string;
+  fileSize: number;
+  fileUrl: string;
+  createdAt: string;
+  uploadedBy?: { id: string; email: string; name: string };
 };
 
 function upsertBoxListResult(
@@ -1976,6 +2846,8 @@ function toPackingItem(item: AvailableItem, selectedCustomer?: CustomerOption): 
     customerId: item.customer?.id ?? selectedCustomer?.id ?? '',
     customerName: item.customer?.name ?? selectedCustomer?.label ?? '-',
     status: toItemStatus(item.status),
+    availableForOutbound: item.availableForOutbound ?? item.status === 'IN_STOCK',
+    latestOutboundBox: item.latestOutboundBox ?? null,
     raw: item,
   };
 }
@@ -1995,7 +2867,9 @@ function toPackingBox(box: OutboundBox, reworkBoxIds: Set<string>): PackingBox {
     weight: box.weightLb ?? defaultBoxWeight,
     weightUnit: 'lb',
     note: box.notes ?? undefined,
+    shippingTrackingNo: box.shippingTrackingNo ?? undefined,
     itemCount: box.itemCount,
+    photos: box.photos ?? [],
     items: box.items.map((item) => ({
       id: item.inventoryItem.id,
       boxItemId: item.id,
@@ -2017,6 +2891,10 @@ function toPackingBox(box: OutboundBox, reworkBoxIds: Set<string>): PackingBox {
   };
 }
 
+function getBoxDisplayName(box: PackingBox) {
+  return box.name || box.boxNo;
+}
+
 function toBoxStatus(box: OutboundBox, reworkBoxIds: Set<string>): BoxStatus {
   if (box.status === 'SEALED') {
     return 'sealed';
@@ -2027,6 +2905,12 @@ function toBoxStatus(box: OutboundBox, reworkBoxIds: Set<string>): BoxStatus {
   return 'draft';
 }
 
+function toApiAssetUrl(fileUrl: string) {
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api/v1';
+  const apiOrigin = new URL(apiBaseUrl, window.location.origin).origin;
+  return new URL(fileUrl, apiOrigin).toString();
+}
+
 function toItemStatus(status: string): ItemStatus {
   if (status === 'EXCEPTION') {
     return 'exception';
@@ -2034,7 +2918,25 @@ function toItemStatus(status: string): ItemStatus {
   if (status === 'PACKED') {
     return 'packed';
   }
+  if (status === 'OUTBOUND') {
+    return 'outbound';
+  }
+  if (status === 'VOIDED') {
+    return 'voided';
+  }
   return 'available';
+}
+
+function isPackingItemSelectable(item: PackingItem) {
+  return item.status === 'available' && item.availableForOutbound !== false;
+}
+
+function getLatestOutboundBoxLabel(item: PackingItem) {
+  const box = item.latestOutboundBox;
+  if (!box) {
+    return '';
+  }
+  return box.boxName || box.boxNo || '';
 }
 
 function detectCarrier(value?: string | null): Carrier {
@@ -2139,6 +3041,67 @@ function summarizeByUpc(boxItems: PackingItem[], availableItems: PackingItem[]) 
   }
 
   return Array.from(summaries.values()).sort((a, b) => b.packedCount - a.packedCount);
+}
+
+function classifyOutboundScanValue(value: string): 'UPC' | 'IMEI_SERIAL' {
+  const normalized = value.trim();
+  if (/^\d{8,14}$/.test(normalized)) {
+    return 'UPC';
+  }
+  return 'IMEI_SERIAL';
+}
+
+function isCompleteOutboundScanValue(value: string) {
+  const normalized = value.trim();
+  if (!normalized) {
+    return false;
+  }
+  if (/^\d+$/.test(normalized)) {
+    return normalized.length >= 8;
+  }
+  return normalized.length >= 6;
+}
+
+function normalizeScanText(value?: string | null) {
+  return value?.trim().toUpperCase() ?? '';
+}
+
+function mergePackingItems(...groups: PackingItem[][]) {
+  const byId = new Map<string, PackingItem>();
+  for (const group of groups) {
+    for (const item of group) {
+      byId.set(item.id, item);
+    }
+  }
+  return Array.from(byId.values());
+}
+
+function normalizeBatchCounts(values: string[]) {
+  const counts = values.map((value) => Number(value));
+  if (counts.some((value) => !Number.isInteger(value) || value < 0)) {
+    return [];
+  }
+  return counts;
+}
+
+function buildRandomBatchGroups(items: PackingItem[], counts: number[]) {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const currentItem = shuffled[index];
+    const swapItem = shuffled[swapIndex];
+    if (!currentItem || !swapItem) {
+      continue;
+    }
+    shuffled[index] = swapItem;
+    shuffled[swapIndex] = currentItem;
+  }
+  let cursor = 0;
+  return counts.map((count) => {
+    const group = shuffled.slice(cursor, cursor + count);
+    cursor += count;
+    return group;
+  });
 }
 
 function toWeightNumber(value: string) {

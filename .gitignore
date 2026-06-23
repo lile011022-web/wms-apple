@@ -5,6 +5,9 @@ dist
 build
 coverage
 backups
+uploads
+apps/api/uploads
+outputs
 .DS_Store
 logs
 

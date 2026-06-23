@@ -1,9 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileDown, PackageCheck, Plus, ScanLine, Trash2, Upload } from 'lucide-react';
+import {
+  Check,
+  FileDown,
+  PackageCheck,
+  Pencil,
+  Plus,
+  ScanLine,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
 import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { listWarehouses } from '../../api/settings';
+import { getSystemSettings, listWarehouses } from '../../api/settings';
 import { customersApi, inboundApi } from '../../api/workflow';
 import { PaginationControls } from '../../components/pagination-controls';
+import { selectDefaultWarehouseId } from '../../utils/default-warehouse';
 
 const inboundLockStorageKey = 'wms_scan_inbound_lock';
 const inboundImportTemplateHeaders = ['单号', 'upc', 'imei'];
@@ -26,6 +37,16 @@ const inboundImportTemplateRows = [
   ['1Z999AA10123456784', '194253149189', '356789012345678'],
   ['9400111899223857000000', '194253149196', '356789012345679'],
 ];
+const inboundScanModes = {
+  STANDARD: {
+    label: '一版模式',
+    helper: '物流单号、UPC、IMEI 都扫入后自动加入当前入库单。',
+  },
+  TRACKING_UPC: {
+    label: '物流+UPC 模式',
+    helper: '只需要物流单号和 UPC，系统自动加入当前入库单。',
+  },
+} as const;
 
 let inboundScanInputCache = {
   upsTrackingNo: '',
@@ -45,11 +66,17 @@ export function InboundScanPage() {
   const [upsTrackingNo, setUpsTrackingNo] = useState(inboundScanInputCache.upsTrackingNo);
   const [upc, setUpc] = useState(inboundScanInputCache.upc);
   const [imei, setImei] = useState(inboundScanInputCache.imei);
+  const [scanMode, setScanMode] = useState<InboundScanMode>('STANDARD');
+  const [lastInboundItem, setLastInboundItem] = useState<InboundDraftItem | null>(null);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [trackingWarning, setTrackingWarning] = useState<TrackingWarning | null>(null);
   const [importRows, setImportRows] = useState<ImportInboundItemRow[]>([]);
   const [importFileName, setImportFileName] = useState('');
   const [importFailedRows, setImportFailedRows] = useState<ImportFailedRow[]>([]);
+  const trackingInputRef = useRef<HTMLInputElement | null>(null);
+  const upcInputRef = useRef<HTMLInputElement | null>(null);
+  const imeiInputRef = useRef<HTMLInputElement | null>(null);
   const lastAutoAddKeyRef = useRef('');
 
   const customersQuery = useQuery({
@@ -60,6 +87,10 @@ export function InboundScanPage() {
     queryKey: ['warehouses', 'active'],
     queryFn: () => listWarehouses({ isActive: true }),
   });
+  const settingsQuery = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: getSystemSettings,
+  });
   const customers = (customersQuery.data as CustomerOption[] | undefined) ?? [];
   const warehouses = warehousesQuery.data ?? [];
 
@@ -67,10 +98,13 @@ export function InboundScanPage() {
     if (!customerId && customers[0]) {
       setCustomerId(customers[0].id);
     }
-    if (!warehouseId && warehouses[0]) {
-      setWarehouseId(warehouses[0].id);
+    if (!warehouseId) {
+      const defaultWarehouseId = selectDefaultWarehouseId(warehouses, settingsQuery.data);
+      if (defaultWarehouseId) {
+        setWarehouseId(defaultWarehouseId);
+      }
     }
-  }, [customerId, customers, warehouseId, warehouses]);
+  }, [customerId, customers, settingsQuery.data, warehouseId, warehouses]);
 
   useEffect(() => {
     if (!lockedContext?.draftId || draft) {
@@ -109,8 +143,21 @@ export function InboundScanPage() {
     lockedContext.customerId === customerId &&
     lockedContext.warehouseId === warehouseId;
   const isDraftOpen = draft?.status === 'DRAFT';
+  const latestDraftItem = draft?.items.at(-1);
+  const blockingExceptionItem =
+    isDraftOpen && latestDraftItem?.status === 'EXCEPTION' ? latestDraftItem : null;
+  const normalizedTrackingInput = normalizeTrackingInput(upsTrackingNo);
+  const activeTrackingWarning =
+    trackingWarning?.trackingNo === normalizedTrackingInput ? trackingWarning : null;
+  const isTrackingWarningConfirmed = !!activeTrackingWarning?.confirmed;
+  const isTrackingWarningBlocking = !!activeTrackingWarning && !activeTrackingWarning.confirmed;
   const canAddCurrentScan =
-    isCurrentSelectionLocked && !!upsTrackingNo.trim() && !!upc.trim() && !!imei.trim();
+    isCurrentSelectionLocked &&
+    !blockingExceptionItem &&
+    !isTrackingWarningBlocking &&
+    !!upsTrackingNo.trim() &&
+    !!upc.trim() &&
+    (scanMode === 'TRACKING_UPC' || !!imei.trim());
 
   const persistLockedContext = (context: InboundLockContext) => {
     setLockedContext(context);
@@ -136,10 +183,22 @@ export function InboundScanPage() {
       upc: '',
       imei: '',
     };
-    lastAutoAddKeyRef.current = '';
+    setTrackingWarning(null);
     setUpsTrackingNo('');
     setUpc('');
     setImei('');
+  };
+
+  const updateScanMode = (nextScanMode: InboundScanMode) => {
+    setScanMode(nextScanMode);
+    lastAutoAddKeyRef.current = '';
+    if (nextScanMode === 'TRACKING_UPC') {
+      setImei('');
+      updateScanInputCache({ imei: '' });
+      upcInputRef.current?.focus();
+    } else {
+      imeiInputRef.current?.focus();
+    }
   };
 
   const ensureDraft = async () => {
@@ -178,24 +237,35 @@ export function InboundScanPage() {
   });
   const addItemMutation = useMutation({
     mutationFn: async () => {
+      if (blockingExceptionItem) {
+        throw new Error('上一条入库明细仍为异常，请先在当前入库单中修正该异常后再继续入库。');
+      }
       const activeDraft = await ensureDraft();
-      await inboundApi.addItem(activeDraft.id, {
+      const item = (await inboundApi.addItem(activeDraft.id, {
         upsTrackingNo: upsTrackingNo.trim() || undefined,
         upc: upc.trim(),
-        imei: imei.trim(),
-      });
-      return inboundApi.getDraft(activeDraft.id);
+        imei: scanMode === 'STANDARD' ? imei.trim() : undefined,
+        scanMode,
+        trackingExceptionConfirmed: isTrackingWarningConfirmed || undefined,
+      })) as InboundDraftItem;
+      const nextDraft = (await inboundApi.getDraft(activeDraft.id)) as InboundDraft;
+      return { draft: nextDraft, item };
     },
     onMutate: () => {
       setMessage('');
       setErrorMessage('');
     },
     onSuccess: (data) => {
-      const updated = data as InboundDraft;
+      const updated = data.draft;
       setDraft(updated);
       persistLockedContext({ customerId, warehouseId, draftId: updated.id });
+      setLastInboundItem(data.item);
       clearScanInputs();
-      setMessage('已添加入库明细');
+      setMessage(
+        data.item.status === 'EXCEPTION'
+          ? '已加入异常明细，请点击下方异常定位查看'
+          : '已自动加入当前入库单',
+      );
     },
     onError: (error) => {
       setErrorMessage(toUserErrorMessage(error, '添加入库明细失败'));
@@ -204,6 +274,9 @@ export function InboundScanPage() {
   const confirmMutation = useMutation({
     mutationFn: () => {
       if (!draft) throw new Error('请先创建入库草稿');
+      if (blockingExceptionItem) {
+        throw new Error('上一条入库明细仍为异常，请先在当前入库单中修正该异常后再确认入库。');
+      }
       return inboundApi.confirmDraft(draft.id);
     },
     onMutate: () => {
@@ -244,8 +317,43 @@ export function InboundScanPage() {
       setErrorMessage(toUserErrorMessage(error, '删除入库明细失败'));
     },
   });
+  const updateItemMutation = useMutation({
+    mutationFn: async ({ itemId, values }: { itemId: string; values: EditInboundItemValues }) => {
+      if (!draft) throw new Error('请先创建入库草稿');
+      const imeiValue = values.imei.trim();
+      const updatedItem = (await inboundApi.updateItem(draft.id, itemId, {
+        upsTrackingNo: values.upsTrackingNo.trim() || undefined,
+        upc: values.upc.trim(),
+        imei: imeiValue || undefined,
+        scanMode: imeiValue ? 'STANDARD' : 'TRACKING_UPC',
+        trackingExceptionConfirmed: true,
+      })) as InboundDraftItem;
+      const updatedDraft = (await inboundApi.getDraft(draft.id)) as InboundDraft;
+      return { draft: updatedDraft, item: updatedItem };
+    },
+    onMutate: () => {
+      setMessage('');
+      setErrorMessage('');
+    },
+    onSuccess: (data) => {
+      setDraft(data.draft);
+      persistLockedContext({ customerId, warehouseId, draftId: data.draft.id });
+      setLastInboundItem(data.item);
+      setMessage(
+        data.item.status === 'EXCEPTION'
+          ? '已覆盖原明细，当前仍为异常'
+          : '已覆盖原明细，异常已修正',
+      );
+    },
+    onError: (error) => {
+      setErrorMessage(toUserErrorMessage(error, '修正入库明细失败'));
+    },
+  });
   const importItemsMutation = useMutation({
     mutationFn: async () => {
+      if (blockingExceptionItem) {
+        throw new Error('上一条入库明细仍为异常，请先在当前入库单中修正该异常后再继续入库。');
+      }
       const activeDraft = await ensureDraft();
       return inboundApi.importItems(activeDraft.id, { items: importRows });
     },
@@ -274,6 +382,53 @@ export function InboundScanPage() {
       setErrorMessage(toUserErrorMessage(error, '文件导入失败'));
     },
   });
+
+  useEffect(() => {
+    const normalized = normalizeTrackingInput(upsTrackingNo);
+    if (
+      !normalized ||
+      normalized.length < 8 ||
+      !isCurrentSelectionLocked ||
+      blockingExceptionItem
+    ) {
+      if (trackingWarning && trackingWarning.trackingNo !== normalized) {
+        setTrackingWarning(null);
+      }
+      return;
+    }
+    if (trackingWarning?.trackingNo === normalized) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      ensureDraft()
+        .then((activeDraft) =>
+          inboundApi.scanUps(activeDraft.id, { upsTrackingNo: upsTrackingNo.trim() }),
+        )
+        .then((result) => {
+          const scanResult = result as TrackingScanResult;
+          const reasons = buildTrackingWarningReasons(scanResult);
+          if (reasons.length === 0) {
+            setTrackingWarning(null);
+            return;
+          }
+          setTrackingWarning({
+            trackingNo: scanResult.upsTrackingNo,
+            reasons,
+            confirmed: false,
+          });
+        })
+        .catch((error) => {
+          setTrackingWarning({
+            trackingNo: normalized,
+            reasons: [toUserErrorMessage(error, '物流单号检查失败')],
+            confirmed: false,
+          });
+        });
+    }, 450);
+
+    return () => window.clearTimeout(timer);
+  }, [blockingExceptionItem, isCurrentSelectionLocked, trackingWarning, upsTrackingNo]);
 
   const handleCreateDraft = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -311,7 +466,7 @@ export function InboundScanPage() {
       return;
     }
 
-    const scanKey = [upsTrackingNo.trim(), upc.trim(), imei.trim()].join('|');
+    const scanKey = [scanMode, upsTrackingNo.trim(), upc.trim(), imei.trim()].join('|');
     if (lastAutoAddKeyRef.current === scanKey) {
       return;
     }
@@ -322,7 +477,7 @@ export function InboundScanPage() {
     }, 350);
 
     return () => window.clearTimeout(timer);
-  }, [addItemMutation, canAddCurrentScan, imei, upc, upsTrackingNo]);
+  }, [addItemMutation.isPending, canAddCurrentScan, imei, scanMode, upc, upsTrackingNo]);
 
   return (
     <section className="page-frame">
@@ -331,10 +486,40 @@ export function InboundScanPage() {
           <p>Inbound</p>
           <h1>扫码入库</h1>
         </div>
-        <button type="button" className="btn secondary" onClick={handleTemplateDownload}>
-          <FileDown size={16} />
-          下载入库模板
-        </button>
+        <div className="heading-import-form">
+          <label>
+            <span>批量入库文件</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              disabled={!!blockingExceptionItem}
+              onChange={handleImportFileChange}
+            />
+          </label>
+          <button type="button" onClick={handleTemplateDownload}>
+            <FileDown size={16} />
+            下载入库模板
+          </button>
+          <button
+            type="button"
+            disabled={
+              !isCurrentSelectionLocked ||
+              importRows.length === 0 ||
+              importItemsMutation.isPending ||
+              !!blockingExceptionItem
+            }
+            onClick={() => importItemsMutation.mutate()}
+          >
+            <Upload size={16} />
+            {importItemsMutation.isPending ? '导入中' : '导入到当前单'}
+          </button>
+          {importRows.length > 0 ? (
+            <strong>
+              {importFileName} / {importRows.length} 行
+            </strong>
+          ) : null}
+        </div>
       </div>
 
       <form className="panel workflow-form" onSubmit={handleCreateDraft}>
@@ -381,83 +566,130 @@ export function InboundScanPage() {
         </button>
       </form>
 
-      <section className="panel workflow-form">
-        <label>
-          <span>物流单号</span>
-          <input
-            value={upsTrackingNo}
-            placeholder="UPS / USPS / FedEx"
-            onChange={(event) => {
-              setUpsTrackingNo(event.target.value);
-              updateScanInputCache({ upsTrackingNo: event.target.value });
-            }}
-          />
-        </label>
-        <label>
-          <span>UPC</span>
-          <input
-            value={upc}
-            onChange={(event) => {
-              setUpc(event.target.value);
-              updateScanInputCache({ upc: event.target.value });
-            }}
-          />
-        </label>
-        <label>
-          <span>IMEI</span>
-          <input
-            value={imei}
-            onChange={(event) => {
-              setImei(event.target.value);
-              updateScanInputCache({ imei: event.target.value });
-            }}
-          />
-        </label>
-        <button
-          type="button"
-          disabled={!canAddCurrentScan || addItemMutation.isPending}
-          onClick={() => addItemMutation.mutate()}
-          title="三项填写完整后会自动加入明细，也可手动点击补提交"
-        >
-          <Plus size={16} />
-          {addItemMutation.isPending ? '添加中' : '加入明细'}
-        </button>
-        <button
-          type="button"
-          disabled={!isDraftOpen || confirmMutation.isPending}
-          onClick={() => confirmMutation.mutate()}
-        >
-          <PackageCheck size={16} />
-          {confirmMutation.isPending ? '确认中' : '确认入库'}
-        </button>
+      <section className="panel inbound-entry-panel">
+        <div className="workflow-form">
+          <div className="inbound-mode-switch" role="group" aria-label="入库模式">
+            {Object.entries(inboundScanModes).map(([mode, option]) => (
+              <button
+                key={mode}
+                type="button"
+                className={scanMode === mode ? 'active' : ''}
+                disabled={!!blockingExceptionItem}
+                onClick={() => updateScanMode(mode as InboundScanMode)}
+              >
+                <strong>{option.label}</strong>
+                <span>{option.helper}</span>
+              </button>
+            ))}
+          </div>
+          <label>
+            <span>物流单号</span>
+            <input
+              ref={trackingInputRef}
+              value={upsTrackingNo}
+              placeholder="UPS / USPS / FedEx"
+              disabled={!!blockingExceptionItem}
+              onChange={(event) => {
+                setUpsTrackingNo(event.target.value);
+                updateScanInputCache({ upsTrackingNo: event.target.value });
+              }}
+            />
+          </label>
+          <label>
+            <span>UPC</span>
+            <input
+              ref={upcInputRef}
+              value={upc}
+              disabled={!!blockingExceptionItem}
+              onChange={(event) => {
+                setUpc(event.target.value);
+                updateScanInputCache({ upc: event.target.value });
+              }}
+            />
+          </label>
+          <label>
+            <span>IMEI</span>
+            <input
+              ref={imeiInputRef}
+              disabled={!!blockingExceptionItem || scanMode === 'TRACKING_UPC'}
+              placeholder={scanMode === 'TRACKING_UPC' ? '当前模式不需要 IMEI' : undefined}
+              value={imei}
+              onChange={(event) => {
+                setImei(event.target.value);
+                updateScanInputCache({ imei: event.target.value });
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={!canAddCurrentScan || addItemMutation.isPending}
+            onClick={() => addItemMutation.mutate()}
+            title="当前模式所需字段填写完整后会自动加入明细，也可手动点击补提交"
+          >
+            <Plus size={16} />
+            {addItemMutation.isPending ? '添加中' : '加入明细'}
+          </button>
+          <button
+            type="button"
+            disabled={!isDraftOpen || !!blockingExceptionItem || confirmMutation.isPending}
+            onClick={() => confirmMutation.mutate()}
+          >
+            <PackageCheck size={16} />
+            {confirmMutation.isPending ? '确认中' : '确认入库'}
+          </button>
+        </div>
+        {activeTrackingWarning ? (
+          <div
+            className={`tracking-warning-bar ${activeTrackingWarning.confirmed ? 'confirmed' : ''}`}
+          >
+            <div>
+              <strong>物流单号异常</strong>
+              <span>{activeTrackingWarning.reasons.join('，')}</span>
+            </div>
+            {activeTrackingWarning.confirmed ? (
+              <strong>已确认继续入库</strong>
+            ) : (
+              <div>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    setTrackingWarning(null);
+                    setUpsTrackingNo('');
+                    updateScanInputCache({ upsTrackingNo: '' });
+                    trackingInputRef.current?.focus();
+                  }}
+                >
+                  修改单号
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setTrackingWarning((current) =>
+                      current?.trackingNo === activeTrackingWarning.trackingNo
+                        ? { ...current, confirmed: true }
+                        : current,
+                    )
+                  }
+                >
+                  继续入库
+                </button>
+              </div>
+            )}
+          </div>
+        ) : null}
+        <LastInboundNotice
+          item={lastInboundItem ?? latestDraftItem ?? null}
+          isUpdating={updateItemMutation.isPending}
+          onUpdateItem={(itemId, values) => updateItemMutation.mutateAsync({ itemId, values })}
+        />
       </section>
 
-      <section className="panel workflow-form">
-        <label>
-          <span>批量入库文件</span>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            onChange={handleImportFileChange}
-          />
-        </label>
-        <button
-          type="button"
-          disabled={
-            !isCurrentSelectionLocked || importRows.length === 0 || importItemsMutation.isPending
-          }
-          onClick={() => importItemsMutation.mutate()}
-        >
-          <Upload size={16} />
-          {importItemsMutation.isPending ? '导入中' : '导入到当前单'}
-        </button>
-        {importRows.length > 0 ? (
-          <strong>
-            {importFileName} / {importRows.length} 行
-          </strong>
-        ) : null}
-      </section>
+      {blockingExceptionItem ? (
+        <div className="inline-error">
+          上一条入库明细是异常，已暂停继续入库。请先在下方最后一条异常行点击“修正”并保存。
+        </div>
+      ) : null}
 
       {message ? <div className="inline-success">{message}</div> : null}
       {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
@@ -475,7 +707,12 @@ export function InboundScanPage() {
       ) : null}
       <DraftPanel
         draft={draft}
+        blockingExceptionItemId={blockingExceptionItem?.id}
         removingItemId={removeItemMutation.isPending ? removeItemMutation.variables : undefined}
+        updatingItemId={
+          updateItemMutation.isPending ? updateItemMutation.variables?.itemId : undefined
+        }
+        onUpdateItem={(itemId, values) => updateItemMutation.mutateAsync({ itemId, values })}
         onRemoveItem={(itemId) => removeItemMutation.mutate(itemId)}
       />
     </section>
@@ -488,6 +725,21 @@ type InboundLockContext = {
   warehouseId: string;
   draftId?: string;
 };
+type InboundScanMode = keyof typeof inboundScanModes;
+type InboundDraftItem = {
+  id: string;
+  upsTrackingNo: string | null;
+  upc: string;
+  imei: string | null;
+  serial?: string | null;
+  status: string;
+  product?: { name: string } | null;
+};
+type EditInboundItemValues = {
+  upsTrackingNo: string;
+  upc: string;
+  imei: string;
+};
 type InboundDraft = {
   id: string;
   batchNo: string;
@@ -498,15 +750,7 @@ type InboundDraft = {
     confirmedItems: number;
     exceptionItems: number;
   };
-  items: Array<{
-    id: string;
-    upsTrackingNo: string | null;
-    upc: string;
-    imei: string | null;
-    serial?: string | null;
-    status: string;
-    product?: { name: string } | null;
-  }>;
+  items: InboundDraftItem[];
 };
 type ImportInboundItemRow = {
   upsTrackingNo?: string;
@@ -528,26 +772,96 @@ type ImportInboundResult = {
   failedRows: ImportFailedRow[];
   draft: InboundDraft;
 };
+type TrackingWarning = {
+  trackingNo: string;
+  reasons: string[];
+  confirmed: boolean;
+};
+type TrackingScanResult = {
+  upsTrackingNo: string;
+  valid: boolean;
+  duplicate: boolean;
+  duplicateCount: number;
+};
 
 function DraftPanel({
   draft,
+  blockingExceptionItemId,
   removingItemId,
+  updatingItemId,
+  onUpdateItem,
   onRemoveItem,
 }: {
   draft: InboundDraft | null;
+  blockingExceptionItemId?: string;
   removingItemId?: string;
+  updatingItemId?: string;
+  onUpdateItem: (itemId: string, values: EditInboundItemValues) => Promise<unknown>;
   onRemoveItem: (itemId: string) => void;
 }) {
   const canRemoveItems = draft?.status === 'DRAFT';
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [activeExceptionItemId, setActiveExceptionItemId] = useState('');
+  const [editingItemId, setEditingItemId] = useState('');
+  const [editValues, setEditValues] = useState<EditInboundItemValues>({
+    upsTrackingNo: '',
+    upc: '',
+    imei: '',
+  });
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
   const reviewSummary = useMemo(() => buildInboundReviewSummary(draft), [draft]);
   const items = draft?.items ?? [];
   const paginatedItems = paginateItems(items, page, pageSize);
+  const blockingExceptionItem = blockingExceptionItemId
+    ? items.find((item) => item.id === blockingExceptionItemId)
+    : undefined;
+  const firstExceptionItem =
+    blockingExceptionItem ?? items.find((item) => item.status === 'EXCEPTION');
 
   useEffect(() => {
     setPage(1);
+    setActiveExceptionItemId('');
+    setEditingItemId('');
   }, [draft?.id, items.length]);
+
+  const focusExceptionItem = (item: InboundDraftItem) => {
+    const itemIndex = items.findIndex((candidate) => candidate.id === item.id);
+    if (itemIndex >= 0) {
+      setPage(Math.floor(itemIndex / pageSize) + 1);
+    }
+    setActiveExceptionItemId(item.id);
+    startEditingItem(item);
+    window.setTimeout(() => {
+      rowRefs.current[item.id]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 0);
+  };
+
+  const startEditingItem = (item: InboundDraftItem) => {
+    setEditingItemId(item.id);
+    setEditValues({
+      upsTrackingNo: item.upsTrackingNo ?? '',
+      upc: item.upc,
+      imei: item.imei ?? item.serial ?? '',
+    });
+    setActiveExceptionItemId(item.id);
+  };
+
+  const updateEditValue = (field: keyof EditInboundItemValues, value: string) => {
+    setEditValues((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const saveEditingItem = async (itemId: string) => {
+    try {
+      await onUpdateItem(itemId, editValues);
+      setEditingItemId('');
+    } catch {
+      // Keep the row in edit mode so the operator can fix the values and save again.
+    }
+  };
 
   return (
     <section className="panel data-panel">
@@ -561,7 +875,13 @@ function DraftPanel({
         <SummaryMetric label="商品款数" value={reviewSummary.productCount} />
         <SummaryMetric label="物流单号" value={reviewSummary.trackingCount} />
         <SummaryMetric label="待确认" value={draft?.summary.pendingItems ?? 0} />
-        <SummaryMetric label="异常" value={draft?.summary.exceptionItems ?? 0} tone="warning" />
+        <SummaryMetric
+          label="异常"
+          value={draft?.summary.exceptionItems ?? 0}
+          tone="warning"
+          disabled={!firstExceptionItem}
+          onClick={firstExceptionItem ? () => focusExceptionItem(firstExceptionItem) : undefined}
+        />
       </div>
       <div className="upc-review-list">
         <div className="upc-review-heading">
@@ -604,28 +924,112 @@ function DraftPanel({
         <tbody>
           {paginatedItems.map((item) => {
             const isRemoving = removingItemId === item.id;
+            const isUpdating = updatingItemId === item.id;
+            const isEditing = editingItemId === item.id;
+            const isBlockingException = blockingExceptionItemId === item.id;
             const canRemoveItem = canRemoveItems && item.status !== 'CONFIRMED';
+            const canSaveEdit =
+              !!editValues.upsTrackingNo.trim() && !!editValues.upc.trim() && !isUpdating;
 
             return (
-              <tr key={item.id}>
-                <td className="mono">{item.upsTrackingNo ?? '-'}</td>
-                <td>{item.upc}</td>
-                <td>{item.imei ?? item.serial ?? '-'}</td>
+              <tr
+                key={item.id}
+                ref={(element) => {
+                  rowRefs.current[item.id] = element;
+                }}
+                className={
+                  [
+                    activeExceptionItemId === item.id ? 'active-exception-row' : '',
+                    isBlockingException ? 'blocking-exception-row' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ') || undefined
+                }
+              >
+                <td className="mono">
+                  {isEditing ? (
+                    <input
+                      className="table-inline-input"
+                      value={editValues.upsTrackingNo}
+                      placeholder="UPS / USPS / FedEx"
+                      onChange={(event) => updateEditValue('upsTrackingNo', event.target.value)}
+                    />
+                  ) : (
+                    (item.upsTrackingNo ?? '-')
+                  )}
+                </td>
+                <td>
+                  {isEditing ? (
+                    <input
+                      className="table-inline-input"
+                      value={editValues.upc}
+                      onChange={(event) => updateEditValue('upc', event.target.value)}
+                    />
+                  ) : (
+                    item.upc
+                  )}
+                </td>
+                <td>
+                  {isEditing ? (
+                    <input
+                      className="table-inline-input"
+                      value={editValues.imei}
+                      placeholder="可留空"
+                      onChange={(event) => updateEditValue('imei', event.target.value)}
+                    />
+                  ) : (
+                    (item.imei ?? item.serial ?? '-')
+                  )}
+                </td>
                 <td>{item.product?.name ?? '-'}</td>
                 <td>{item.status}</td>
                 <td>
-                  {canRemoveItem ? (
+                  {isEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        className="table-action"
+                        title="覆盖保存当前明细"
+                        disabled={!canSaveEdit}
+                        onClick={() => void saveEditingItem(item.id)}
+                      >
+                        <Check size={14} />
+                        {isUpdating ? '保存中' : '保存'}
+                      </button>
+                      <button
+                        type="button"
+                        className="table-action secondary"
+                        title="取消修正"
+                        disabled={isUpdating}
+                        onClick={() => setEditingItemId('')}
+                      >
+                        <X size={14} />
+                        取消
+                      </button>
+                    </>
+                  ) : item.status === 'EXCEPTION' ? (
+                    <button
+                      type="button"
+                      className="table-action"
+                      title="在当前行修正并覆盖原明细"
+                      onClick={() => startEditingItem(item)}
+                    >
+                      <Pencil size={14} />
+                      修正
+                    </button>
+                  ) : null}
+                  {!isEditing && canRemoveItem ? (
                     <button
                       type="button"
                       className="table-action danger"
                       title="删除明细"
-                      disabled={!!removingItemId}
+                      disabled={!!removingItemId || isEditing}
                       onClick={() => onRemoveItem(item.id)}
                     >
                       <Trash2 size={14} />
                       {isRemoving ? '删除中' : '删除'}
                     </button>
-                  ) : (
+                  ) : item.status === 'EXCEPTION' ? null : (
                     '-'
                   )}
                 </td>
@@ -647,16 +1051,139 @@ function SummaryMetric({
   label,
   value,
   tone = 'default',
+  disabled = false,
+  onClick,
 }: {
   label: string;
   value: number;
   tone?: 'default' | 'warning';
+  disabled?: boolean;
+  onClick?: () => void;
 }) {
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={`summary-metric metric-button ${tone === 'warning' ? 'warning' : ''}`}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </button>
+    );
+  }
+
   return (
     <div className={`summary-metric ${tone === 'warning' ? 'warning' : ''}`}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function LastInboundNotice({
+  item,
+  isUpdating,
+  onUpdateItem,
+}: {
+  item: InboundDraftItem | null;
+  isUpdating: boolean;
+  onUpdateItem: (itemId: string, values: EditInboundItemValues) => Promise<unknown>;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [values, setValues] = useState<EditInboundItemValues>({
+    upsTrackingNo: '',
+    upc: '',
+    imei: '',
+  });
+
+  useEffect(() => {
+    setIsEditing(false);
+    setValues({
+      upsTrackingNo: item?.upsTrackingNo ?? '',
+      upc: item?.upc ?? '',
+      imei: item?.imei ?? item?.serial ?? '',
+    });
+  }, [item?.id, item?.upsTrackingNo, item?.upc, item?.imei, item?.serial]);
+
+  if (!item) {
+    return null;
+  }
+
+  const canEdit = item.status === 'PENDING' || item.status === 'EXCEPTION';
+  const canSave = !!values.upsTrackingNo.trim() && !!values.upc.trim() && !isUpdating;
+  const updateValue = (field: keyof EditInboundItemValues, value: string) => {
+    setValues((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+  const cancelEdit = () => {
+    setIsEditing(false);
+    setValues({
+      upsTrackingNo: item.upsTrackingNo ?? '',
+      upc: item.upc,
+      imei: item.imei ?? item.serial ?? '',
+    });
+  };
+  const saveEdit = async () => {
+    try {
+      await onUpdateItem(item.id, values);
+      setIsEditing(false);
+    } catch {
+      // Keep editing so the operator can fix the values and save again.
+    }
+  };
+
+  return (
+    <section
+      className={`workflow-form last-inbound-form ${item.status === 'EXCEPTION' ? 'warning' : ''}`}
+    >
+      <label>
+        <span>物流单号</span>
+        <input
+          className="mono"
+          value={values.upsTrackingNo}
+          placeholder="UPS / USPS / FedEx"
+          disabled={!isEditing || isUpdating}
+          onChange={(event) => updateValue('upsTrackingNo', event.target.value)}
+        />
+      </label>
+      <label>
+        <span>UPC</span>
+        <input
+          value={values.upc}
+          disabled={!isEditing || isUpdating}
+          onChange={(event) => updateValue('upc', event.target.value)}
+        />
+      </label>
+      <label>
+        <span>IMEI</span>
+        <input
+          value={values.imei}
+          disabled={!isEditing || isUpdating}
+          onChange={(event) => updateValue('imei', event.target.value)}
+        />
+      </label>
+      {isEditing ? (
+        <>
+          <button type="button" disabled={!canSave} onClick={() => void saveEdit()}>
+            <Check size={16} />
+            {isUpdating ? '保存中' : '保存'}
+          </button>
+          <button type="button" className="secondary" disabled={isUpdating} onClick={cancelEdit}>
+            <X size={16} />
+            取消
+          </button>
+        </>
+      ) : (
+        <button type="button" disabled={!canEdit || isUpdating} onClick={() => setIsEditing(true)}>
+          <Pencil size={16} />
+          编辑
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -693,6 +1220,21 @@ function buildInboundReviewSummary(draft: InboundDraft | null) {
     trackingCount: trackingNumbers.size,
     upcRows: Array.from(upcRows.values()).sort((left, right) => left.upc.localeCompare(right.upc)),
   };
+}
+
+function normalizeTrackingInput(value: string) {
+  return value.trim().replace(/\s+/g, '').toUpperCase();
+}
+
+function buildTrackingWarningReasons(result: TrackingScanResult) {
+  const reasons: string[] = [];
+  if (!result.valid) {
+    reasons.push('单号规则不存在');
+  }
+  if (result.duplicate) {
+    reasons.push(`该物流单号已有 ${result.duplicateCount} 条确认入库记录`);
+  }
+  return reasons;
 }
 
 function toUserErrorMessage(error: unknown, fallback: string) {

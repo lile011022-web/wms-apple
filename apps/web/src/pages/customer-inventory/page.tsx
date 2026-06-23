@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { listWarehouses } from '../../api/settings';
+import { getSystemSettings, listWarehouses } from '../../api/settings';
 import { customersApi, inventoryApi } from '../../api/workflow';
 import { PaginationControls } from '../../components/pagination-controls';
+import { selectDefaultWarehouseId } from '../../utils/default-warehouse';
 
 export function CustomerInventoryPage() {
   const [customerId, setCustomerId] = useState('');
@@ -20,6 +21,10 @@ export function CustomerInventoryPage() {
     queryKey: ['warehouses', 'active'],
     queryFn: () => listWarehouses({ isActive: true }),
   });
+  const settingsQuery = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: getSystemSettings,
+  });
   const customers = (customersQuery.data as CustomerOption[] | undefined) ?? [];
   const warehouses = warehousesQuery.data ?? [];
 
@@ -27,10 +32,13 @@ export function CustomerInventoryPage() {
     if (!customerId && customers[0]) {
       setCustomerId(customers[0].id);
     }
-    if (!warehouseId && warehouses[0]) {
-      setWarehouseId(warehouses[0].id);
+    if (!warehouseId) {
+      const defaultWarehouseId = selectDefaultWarehouseId(warehouses, settingsQuery.data);
+      if (defaultWarehouseId) {
+        setWarehouseId(defaultWarehouseId);
+      }
     }
-  }, [customerId, customers, warehouseId, warehouses]);
+  }, [customerId, customers, settingsQuery.data, warehouseId, warehouses]);
 
   const customerSummaryQuery = useQuery({
     queryKey: ['inventory-customer-summary', customerId, warehouseId],

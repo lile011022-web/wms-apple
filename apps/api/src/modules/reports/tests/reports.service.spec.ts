@@ -78,6 +78,23 @@ const outboundRow = {
   packedAt: now,
 };
 
+const inboundRow = {
+  inboundBatch: {
+    id: 'batch-1',
+    batchNo: 'INB-20260622-001',
+    warehouse: { code: 'US-LAX-01' },
+  },
+  customer: { code: 'CUST-001', name: 'Apple Reseller' },
+  product: { sku: 'IPHONE-16-PRO-256-NAT', name: 'iPhone 16 Pro' },
+  inventoryItem: { status: 'IN_STOCK' },
+  upc: '194253149189',
+  imei: '356789012345678',
+  serial: null,
+  upsTrackingNo: '1Z999AA10123456784',
+  status: 'CONFIRMED',
+  scannedAt: now,
+};
+
 function createService(
   repositoryOverrides: Partial<Record<keyof ReportsRepository, jest.Mock>> = {},
 ) {
@@ -104,6 +121,10 @@ function createService(
     ),
     listExports: jest.fn().mockResolvedValue([1, [completedExport]]),
     findExportById: jest.fn().mockResolvedValue(completedExport),
+    findInboundBatchOptions: jest.fn().mockResolvedValue([0, []]),
+    findInboundBatchById: jest
+      .fn()
+      .mockResolvedValue({ id: 'batch-1', batchNo: 'INB-20260622-001' }),
     createAuditLog: jest.fn().mockResolvedValue({ id: 'audit-1' }),
     ...repositoryOverrides,
   } as unknown as jest.Mocked<ReportsRepository>;
@@ -201,6 +222,24 @@ describe('ReportsService', () => {
           imei: 'SH9LRL91YFC',
         },
       ],
+    });
+  });
+
+  it('names inbound detail export files with the selected batch number', async () => {
+    const { service } = createService({ findRows: jest.fn().mockResolvedValue([inboundRow]) });
+
+    await expect(
+      service.createExport(
+        {
+          reportType: ReportType.INBOUND_DETAIL,
+          format: ReportExportFormat.CSV,
+          filters: { batchId: 'batch-1' },
+          fields: ['batchNo', 'imei'],
+        },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      fileName: 'inbound_detail-INB-20260622-001-export-1.csv',
     });
   });
 

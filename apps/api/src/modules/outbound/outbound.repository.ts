@@ -28,6 +28,18 @@ const outboundBoxInclude = {
       },
     },
   },
+  photos: {
+    orderBy: { createdAt: 'asc' as const },
+    include: {
+      uploadedBy: {
+        select: {
+          id: true,
+          email: true,
+          name: true,
+        },
+      },
+    },
+  },
 };
 
 const outboundBoxListInclude = {
@@ -43,6 +55,18 @@ const outboundBoxListInclude = {
   _count: {
     select: {
       items: true,
+    },
+  },
+  photos: {
+    orderBy: { createdAt: 'asc' as const },
+    include: {
+      uploadedBy: {
+        select: {
+          id: true,
+          email: true,
+          name: true,
+        },
+      },
     },
   },
 };
@@ -448,6 +472,104 @@ export class OutboundRepository {
     });
   }
 
+  async addPhotoToBox(input: {
+    boxId: string;
+    operatorId: string;
+    fileName: string;
+    originalName: string;
+    mimeType: string;
+    fileSize: number;
+    storagePath: string;
+    fileUrl: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const before = await tx.outboundBox.findUniqueOrThrow({
+        where: { id: input.boxId },
+        include: outboundBoxInclude,
+      });
+      const photo = await tx.outboundBoxPhoto.create({
+        data: {
+          outboundBoxId: input.boxId,
+          uploadedById: input.operatorId,
+          fileName: input.fileName,
+          originalName: input.originalName,
+          mimeType: input.mimeType,
+          fileSize: input.fileSize,
+          storagePath: input.storagePath,
+          fileUrl: input.fileUrl,
+        },
+      });
+      const box = await tx.outboundBox.findUniqueOrThrow({
+        where: { id: input.boxId },
+        include: outboundBoxInclude,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: AuditAction.OUTBOUND_BOX_PHOTO_ADD,
+          resourceType: 'outbound-box',
+          resourceId: input.boxId,
+          operatorId: input.operatorId,
+          beforeSnapshot: this.toBoxAuditSnapshot(before),
+          afterSnapshot: this.toBoxAuditSnapshot(box),
+          metadata: {
+            photoId: photo.id,
+            fileName: photo.fileName,
+            originalName: photo.originalName,
+            fileSize: photo.fileSize,
+            customerId: box.customerId,
+            warehouseId: box.warehouseId,
+          },
+        },
+      });
+
+      return box;
+    });
+  }
+
+  async removePhotoFromBox(input: { boxId: string; photoId: string; operatorId: string }) {
+    return this.prisma.$transaction(async (tx) => {
+      const before = await tx.outboundBox.findUniqueOrThrow({
+        where: { id: input.boxId },
+        include: outboundBoxInclude,
+      });
+      const photo = await tx.outboundBoxPhoto.delete({
+        where: { id: input.photoId },
+      });
+      const box = await tx.outboundBox.findUniqueOrThrow({
+        where: { id: input.boxId },
+        include: outboundBoxInclude,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: AuditAction.OUTBOUND_BOX_PHOTO_DELETE,
+          resourceType: 'outbound-box',
+          resourceId: input.boxId,
+          operatorId: input.operatorId,
+          beforeSnapshot: this.toBoxAuditSnapshot(before),
+          afterSnapshot: this.toBoxAuditSnapshot(box),
+          metadata: {
+            photoId: photo.id,
+            fileName: photo.fileName,
+            originalName: photo.originalName,
+            fileSize: photo.fileSize,
+            customerId: box.customerId,
+            warehouseId: box.warehouseId,
+          },
+        },
+      });
+
+      return { photo, box };
+    });
+  }
+
+  findPhotoById(boxId: string, photoId: string) {
+    return this.prisma.outboundBoxPhoto.findFirst({
+      where: { id: photoId, outboundBoxId: boxId },
+    });
+  }
+
   async reopenBox(input: { boxId: string; operatorId: string }) {
     return this.prisma.$transaction(async (tx) => {
       const box = await tx.outboundBox.findUniqueOrThrow({
@@ -545,9 +667,11 @@ export class OutboundRepository {
       sizePreset: box.sizePreset,
       customSize: box.customSize,
       weightLb: box.weightLb,
+      shippingTrackingNo: box.shippingTrackingNo,
       status: box.status,
       sealedAt: box.sealedAt,
       itemIds: box.items.map((item) => item.inventoryItemId),
+      photoIds: box.photos.map((photo) => photo.id),
       notes: box.notes,
     };
   }

@@ -1,6 +1,8 @@
 /* global jest */
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { CustomerStatus, InventoryStatus, OutboundBoxStatus, ProductStatus } from '@prisma/client';
+import { unlink } from 'node:fs/promises';
+import path from 'node:path';
 import { InventoryService } from '../../inventory/inventory.service';
 import { OutboundRepository } from '../outbound.repository';
 import { OutboundService } from '../outbound.service';
@@ -75,6 +77,11 @@ const inventoryItem = {
 const emptyBox = {
   id: 'box-1',
   boxNo: 'BOX-001',
+  boxName: null,
+  sizePreset: '12*12*12',
+  customSize: null,
+  weightLb: 45,
+  shippingTrackingNo: null,
   customerId: customer.id,
   warehouseId: warehouse.id,
   createdById: user.id,
@@ -91,6 +98,25 @@ const emptyBox = {
     name: user.name,
   },
   items: [],
+  photos: [],
+};
+
+const boxPhoto = {
+  id: 'photo-1',
+  outboundBoxId: emptyBox.id,
+  uploadedById: user.id,
+  fileName: 'BOX-001-photo.jpg',
+  originalName: 'packing-photo.jpg',
+  mimeType: 'image/jpeg',
+  fileSize: 1024,
+  storagePath: 'uploads/outbound-box-photos/BOX-001-photo.jpg',
+  fileUrl: '/uploads/outbound-box-photos/BOX-001-photo.jpg',
+  createdAt: now,
+  uploadedBy: {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+  },
 };
 
 const boxItem = {
@@ -133,9 +159,16 @@ function createService(
       status: OutboundBoxStatus.SEALED,
       sealedAt: now,
       items: [boxItem],
+      photos: [boxPhoto],
     }),
     reopenBox: jest.fn().mockResolvedValue({ ...emptyBox, items: [boxItem] }),
     voidBox: jest.fn().mockResolvedValue({ ...emptyBox, status: OutboundBoxStatus.VOIDED }),
+    addPhotoToBox: jest.fn().mockResolvedValue({ ...emptyBox, photos: [boxPhoto] }),
+    removePhotoFromBox: jest.fn().mockResolvedValue({
+      photo: boxPhoto,
+      box: emptyBox,
+    }),
+    findPhotoById: jest.fn().mockResolvedValue(boxPhoto),
     ...repositoryOverrides,
   } as unknown as jest.Mocked<OutboundRepository>;
   const inventoryService = {
@@ -161,55 +194,84 @@ describe('OutboundService', () => {
   });
 
   it('creates an open box for an active customer and warehouse', async () => {
-    const { repository, service } = createService();
+    jest.useFakeTimers().setSystemTime(now);
+    try {
+      const generatedBox = {
+        ...emptyBox,
+        boxNo: 'BOX-CUST-001-20260617-001',
+        boxName: 'Apple Reseller20260617箱1',
+      };
+      const { repository, service } = createService({
+        createBoxWithAudit: jest.fn().mockResolvedValue(generatedBox),
+      });
 
-    await expect(
-      service.createBox(
-        {
-          customerId: customer.id,
-          warehouseId: warehouse.id,
-          boxNo: ' box-001 ',
-        },
-        user,
-      ),
-    ).resolves.toMatchObject({
-      id: 'box-1',
-      boxNo: 'BOX-001',
-      status: OutboundBoxStatus.OPEN,
-      customer: { id: customer.id },
-      warehouse: { id: warehouse.id },
-    });
-    expect(repository.findBoxByNo).toHaveBeenCalledWith(warehouse.id, 'BOX-001');
+      await expect(
+        service.createBox(
+          {
+            customerId: customer.id,
+            warehouseId: warehouse.id,
+          },
+          user,
+        ),
+      ).resolves.toMatchObject({
+        id: 'box-1',
+        boxNo: 'BOX-CUST-001-20260617-001',
+        boxName: 'Apple Reseller20260617箱1',
+        status: OutboundBoxStatus.OPEN,
+        customer: { id: customer.id },
+        warehouse: { id: warehouse.id },
+      });
+      expect(repository.findBoxByNo).toHaveBeenCalledWith(
+        warehouse.id,
+        'BOX-CUST-001-20260617-001',
+      );
+      expect(repository.createBoxWithAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          boxNo: 'BOX-CUST-001-20260617-001',
+          boxName: 'Apple Reseller20260617箱1',
+        }),
+        user.id,
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
-  it('blocks duplicate box names inside the same warehouse', async () => {
+  it('blocks duplicate generated box names inside the same warehouse', async () => {
+    jest.useFakeTimers().setSystemTime(now);
     const { repository, service } = createService({
-      findBoxByName: jest.fn().mockResolvedValue({ ...emptyBox, boxName: 'Apex Trading - 第一箱' }),
+      findBoxByName: jest
+        .fn()
+        .mockResolvedValue({ ...emptyBox, boxName: 'Apple Reseller20260617箱1' }),
     });
 
-    await expect(
-      service.createBox(
-        {
-          customerId: customer.id,
-          warehouseId: warehouse.id,
-          boxName: 'Apex Trading - 第一箱',
-        },
-        user,
-      ),
-    ).rejects.toThrow(ConflictException);
-    expect(repository.findBoxByName).toHaveBeenCalledWith(
-      warehouse.id,
-      'Apex Trading - 第一箱',
-      undefined,
-    );
+    try {
+      await expect(
+        service.createBox(
+          {
+            customerId: customer.id,
+            warehouseId: warehouse.id,
+          },
+          user,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(repository.findBoxByName).toHaveBeenCalledWith(
+        warehouse.id,
+        'Apple Reseller20260617箱1',
+        undefined,
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
-  it('generates deterministic customer-linked box numbers when no box number is provided', async () => {
+  it('increments customer-date box numbers and names from the latest created box', async () => {
     jest.useFakeTimers().setSystemTime(now);
     try {
       const generatedBox = {
         ...emptyBox,
         boxNo: 'BOX-CUST-001-20260617-006',
+        boxName: 'Apple Reseller20260617箱6',
       };
       const { repository, service } = createService({
         findLatestBoxByPrefix: jest.fn().mockResolvedValue({
@@ -229,6 +291,7 @@ describe('OutboundService', () => {
         ),
       ).resolves.toMatchObject({
         boxNo: 'BOX-CUST-001-20260617-006',
+        boxName: 'Apple Reseller20260617箱6',
       });
       expect(repository.findLatestBoxByPrefix).toHaveBeenCalledWith(
         warehouse.id,
@@ -241,6 +304,7 @@ describe('OutboundService', () => {
       expect(repository.createBoxWithAudit).toHaveBeenCalledWith(
         expect.objectContaining({
           boxNo: 'BOX-CUST-001-20260617-006',
+          boxName: 'Apple Reseller20260617箱6',
         }),
         user.id,
       );
@@ -333,13 +397,24 @@ describe('OutboundService', () => {
     );
   });
 
-  it('requires at least one item before sealing and then records the seal transaction', async () => {
+  it('requires at least one item and one photo before sealing', async () => {
     const { service } = createService();
 
     await expect(service.sealBox(emptyBox.id, user)).rejects.toThrow(BadRequestException);
 
-    const ready = createService({
+    const withItemsOnly = createService({
       findBoxById: jest.fn().mockResolvedValue({ ...emptyBox, items: [boxItem] }),
+    });
+    await expect(withItemsOnly.service.sealBox(emptyBox.id, user)).rejects.toThrow(
+      BadRequestException,
+    );
+
+    const ready = createService({
+      findBoxById: jest.fn().mockResolvedValue({
+        ...emptyBox,
+        items: [boxItem],
+        photos: [boxPhoto],
+      }),
     });
     await expect(ready.service.sealBox(emptyBox.id, user)).resolves.toMatchObject({
       id: emptyBox.id,
@@ -350,6 +425,34 @@ describe('OutboundService', () => {
       boxId: emptyBox.id,
       operatorId: user.id,
     });
+  });
+
+  it('accepts mobile video evidence before sealing', async () => {
+    const { repository, service } = createService();
+
+    await expect(
+      service.uploadPhoto(
+        emptyBox.id,
+        {
+          originalname: 'packing-video.mov',
+          mimetype: 'video/quicktime',
+          size: 2048,
+          buffer: Buffer.from('video'),
+        },
+        user,
+      ),
+    ).resolves.toMatchObject({ id: emptyBox.id });
+
+    const payload = repository.addPhotoToBox.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({
+      boxId: emptyBox.id,
+      originalName: 'packing-video.mov',
+      mimeType: 'video/quicktime',
+      fileSize: 2048,
+    });
+    if (payload?.storagePath) {
+      await unlink(path.join(process.cwd(), payload.storagePath)).catch(() => undefined);
+    }
   });
 
   it('deletes an open box by voiding it and returning the refreshed box', async () => {

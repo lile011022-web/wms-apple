@@ -16,6 +16,8 @@ Reports provide traceable downloads for operational review, customer reconciliat
 - Download is allowed only for the user who created the export.
 - Only completed exports can be downloaded.
 - Every successful export must create a `REPORT_EXPORT` audit log.
+- 入库明细导出必须支持按已确认入库批次筛选下载，避免多天、多批次扫描后只能靠日期或搜索词定位。
+- 当入库明细按批次导出时，下载文件名必须包含批次号，方便操作员从浏览器下载记录和导出历史里辨认文件。
 
 ## Supported Report Types
 
@@ -31,7 +33,7 @@ Reports provide traceable downloads for operational review, customer reconciliat
 The detail-download page should:
 
 1. Select a report type.
-2. Apply filters.
+2. Apply filters, including optional start and end time.
 3. Select fields from the allowed field list.
 4. Preview estimated row count.
 5. Review a small sample table of the rows and selected columns that will be exported.
@@ -40,3 +42,7 @@ The detail-download page should:
 8. Download completed exports or re-create an export from history.
 
 For 装箱明细, the default page workflow should offer `仅已封箱` so customer-facing downloads do not include open boxes still being edited.
+
+For 入库明细, the page should offer an 入库批次 selector. Operators can download all inbound detail rows or restrict the export to one confirmed batch; selected-batch downloads should be named by batch number.
+
+The page time filter should send `dateFrom` and `dateTo` as ISO datetimes and require a fresh preview after the operator changes the time range. End time must not be earlier than start time.

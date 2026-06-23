@@ -75,6 +75,7 @@ enum AuditAction {
   LOGIN
   LOGOUT
   INBOUND_CONFIRM
+  INBOUND_FORCE_CONFIRM
   OUTBOUND_BOX_CREATE
   OUTBOUND_BOX_UPDATE
   OUTBOUND_BOX_ITEM_ADD
@@ -83,6 +84,8 @@ enum AuditAction {
   OUTBOUND_BOX_SEAL
   OUTBOUND_BOX_REOPEN
   OUTBOUND_BOX_DELETE
+  OUTBOUND_BOX_PHOTO_ADD
+  OUTBOUND_BOX_PHOTO_DELETE
   EXCEPTION_HANDLE
   CUSTOMER_BATCH_CHANGE
   UPC_PRODUCT_CHANGE
@@ -114,6 +117,7 @@ model User {
   roles              UserRoleAssignment[]
   inboundBatches     InboundBatch[]       @relation("InboundBatchOperator")
   outboundBoxes      OutboundBox[]        @relation("OutboundBoxCreator")
+  outboundBoxPhotos  OutboundBoxPhoto[]   @relation("OutboundBoxPhotoUploader")
   customerChangeLogs CustomerChangeLog[]  @relation("CustomerChangeOperator")
   reportExports      ReportExport[]       @relation("ReportExportRequester")
   auditLogs          AuditLog[]           @relation("AuditLogOperator")
@@ -282,6 +286,10 @@ model InboundItem {
   imei            String?
   serial          String?
   status          InboundItemStatus @default(CONFIRMED)
+  forcedInbound   Boolean           @default(false)
+  forceReason     String?
+  forcedAt        DateTime?
+  forcedById      String?
   scannedAt       DateTime          @default(now())
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
@@ -344,6 +352,7 @@ model OutboundBox {
   sizePreset  String?
   customSize  String?
   weightLb    Float?
+  shippingTrackingNo String?
   customerId  String
   warehouseId String
   createdById String
@@ -357,12 +366,32 @@ model OutboundBox {
   warehouse Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
   createdBy User              @relation("OutboundBoxCreator", fields: [createdById], references: [id], onDelete: Restrict)
   items     OutboundBoxItem[]
+  photos    OutboundBoxPhoto[]
 
   @@unique([warehouseId, boxNo])
   @@index([customerId, status])
   @@index([warehouseId, status, createdAt])
   @@index([customerId, warehouseId, status, createdAt])
   @@map("outbound_boxes")
+}
+
+model OutboundBoxPhoto {
+  id            String   @id @default(cuid())
+  outboundBoxId String
+  uploadedById  String
+  fileName      String
+  originalName  String
+  mimeType      String
+  fileSize      Int
+  storagePath   String
+  fileUrl       String
+  createdAt     DateTime @default(now())
+
+  outboundBox OutboundBox @relation(fields: [outboundBoxId], references: [id], onDelete: Restrict)
+  uploadedBy  User        @relation("OutboundBoxPhotoUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([outboundBoxId, createdAt])
+  @@map("outbound_box_photos")
 }
 
 model OutboundBoxItem {

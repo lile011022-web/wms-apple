@@ -35,6 +35,22 @@ Permission: `reports.export`
 
 The response returns estimated row count, selected fields, available field whitelist, normalized filters, up to 10 formatted `sampleRows`, and whether the export should run as a background job. The frontend uses `sampleRows` to show a partial table before creating the export.
 
+`filters.dateFrom` and `filters.dateTo` are optional ISO datetimes. They filter the report's primary business time: inbound `scannedAt`, outbound `packedAt`, inventory `receivedAt`, exception `createdAt`, customer-change log `createdAt`, and audit log `createdAt`.
+
+For inbound detail downloads, pass `filters.batchId` to download one confirmed inbound batch. When a batch is selected, generated files use the batch number in the file name, for example `inbound_detail-INB-20260622-001-export_01H.csv`.
+
+## Inbound Batch Options
+
+`GET /reports/inbound-batches`
+
+Query parameters:
+
+- `customerId`: optional customer filter.
+- `search`: optional batch number, customer code, or customer name search.
+- standard pagination.
+
+Returns confirmed inbound batches for the detail-download batch selector. Each row includes `id`, `batchNo`, `label`, customer, warehouse, item count, and confirmation time.
+
 ## Create Export
 
 `POST /reports/exports`

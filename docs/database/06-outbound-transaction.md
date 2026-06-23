@@ -4,6 +4,7 @@ Outbound packing uses existing inventory rows and outbound box tables:
 
 - `outbound_boxes`
 - `outbound_box_items`
+- `outbound_box_photos`
 - `inventory_items`
 - `audit_logs`
 
@@ -65,13 +66,15 @@ Editing open-box settings is transactional.
 The transaction:
 
 1. Reads the outbound box before snapshot.
-2. Updates box name, size preset, custom size, weight in pounds, or notes.
+2. Updates size preset, custom size, weight in pounds, outbound shipment number, or notes.
 3. Writes an `OUTBOUND_BOX_UPDATE` audit log.
 4. Returns the refreshed outbound box.
 
 ## Seal Box Transaction
 
 Sealing is the critical phase-ten transaction boundary.
+
+Before the transaction starts, the service verifies that the open box contains at least one item and at least one packing photo or video evidence file.
 
 The transaction:
 
@@ -99,6 +102,27 @@ The transaction:
 6. Returns the refreshed open box.
 
 After reopening, operators can add items, remove items, clear the box, edit settings, and seal again. Each follow-up operation writes its own audit log with the current operator.
+
+## Packing Evidence Transactions
+
+Packing photo and video changes are audited against the outbound box.
+
+Uploading an evidence file:
+
+1. Validates that the box is `OPEN`.
+2. Validates the file is JPG, PNG, WebP, MP4, MOV, or WebM and 100 MB or smaller.
+3. Stores the file under the API upload directory.
+4. Creates one `outbound_box_photos` row.
+5. Writes an `OUTBOUND_BOX_PHOTO_ADD` audit log with the file metadata.
+6. Returns the refreshed outbound box.
+
+Deleting an evidence file:
+
+1. Validates that the box is `OPEN`.
+2. Deletes the `outbound_box_photos` row.
+3. Writes an `OUTBOUND_BOX_PHOTO_DELETE` audit log.
+4. Removes the stored file if it still exists.
+5. Returns the refreshed outbound box.
 
 ## Current State Choice
 

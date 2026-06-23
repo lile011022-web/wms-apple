@@ -11,7 +11,7 @@ export function isValidUspsTracking(value: string): boolean {
 
 export function isValidFedexTracking(value: string): boolean {
   const normalized = value.trim().replace(/\s+/g, '');
-  return /^(?:[0-9]{12}|[0-9]{15}|[0-9]{20}|[0-9]{22})$/.test(normalized);
+  return /^(?:[0-9]{12}|[0-9]{15}|[0-9]{20}|[0-9]{22}|96[0-9]{20,32})$/.test(normalized);
 }
 
 export function normalizePackageTracking(value: string): string {
