@@ -178,16 +178,18 @@ Confirmation runs inside one database transaction:
 - Rejects confirmation if the latest non-voided preview item is still `EXCEPTION`, so the operator
   must correct or remove the latest abnormal row before inventory can be confirmed.
 - Rejects same-draft duplicate IMEI or Serial values before inventory writes.
-- Rechecks duplicate IMEI, Serial, and package tracking values.
+- Rejects IMEI or Serial values that already exist in inventory before inventory writes.
+- Rechecks duplicate package tracking values.
 - Creates `inventory_items` for confirmable preview rows.
 - Links each confirmed inbound row to its inventory item.
-- Marks duplicate rows as `EXCEPTION`.
+- Marks duplicate package-tracking rows as `EXCEPTION`.
 - Marks the batch `CONFIRMED`.
 - Writes an `INBOUND_CONFIRM` audit log.
 
 Drafts with no confirmable rows are rejected. Drafts with repeated IMEI or Serial values inside
 the same active preview are rejected with a business error so the operator can delete or fix the
-duplicate row before confirming.
+duplicate row before confirming. Drafts with IMEI or Serial values already present in inventory
+are also rejected with a business error and remain open for correction.
 
 ## List Records
 

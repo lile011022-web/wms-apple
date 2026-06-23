@@ -24,7 +24,9 @@ The customer must be locked before scan data becomes operational inventory. Pack
 - Products with `requiresImei = true` must provide a valid IMEI value. The validator accepts classic 15-digit numeric IMEI values and Apple tablet alphanumeric identifiers such as `SH9LRL91YFC`.
 - Products with `requiresImei = false` can use Serial or IMEI in the current phase.
 - A preview item cannot provide both IMEI and Serial.
-- Duplicate IMEI or Serial values are exception conditions and must not create normal inventory.
+- Duplicate IMEI or Serial values are blocking conditions and must not create normal inventory.
+- If an IMEI or Serial already exists in inventory, confirmation of the draft is rejected until
+  the operator fixes or deletes the duplicate preview row.
 
 ## Package Tracking
 

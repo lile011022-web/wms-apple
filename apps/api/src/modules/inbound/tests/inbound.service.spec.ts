@@ -730,6 +730,21 @@ describe('InboundService', () => {
     expect(repository.confirmDraft).not.toHaveBeenCalled();
   });
 
+  it('rejects IMEI values that already exist in inventory before confirmation', async () => {
+    const { repository, service } = createService({
+      findDraftById: jest.fn().mockResolvedValue({ ...draft, inboundItems: [pendingItem] }),
+      findInventoryByImei: jest.fn().mockResolvedValue({
+        id: 'inventory-existing',
+        imei: pendingItem.imei,
+      }),
+    });
+
+    await expect(service.confirmDraft('draft-1', operator)).rejects.toThrow(
+      'IMEI 已存在库存记录，不能重复入库: 356789012345678。请修正或删除重复明细后再确认入库。',
+    );
+    expect(repository.confirmDraft).not.toHaveBeenCalled();
+  });
+
   it('passes combined inbound record filters to the repository', async () => {
     const { repository, service } = createService({});
 

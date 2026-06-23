@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   AuditAction,
   ExceptionStatus,
@@ -228,50 +228,22 @@ export class InboundRepository {
       );
 
       const duplicateItemIds = new Set<string>();
+      const duplicateImeis = new Set<string>();
+      const duplicateSerials = new Set<string>();
       for (const item of confirmableItems) {
         if (item.imei) {
           const existing = await tx.inventoryItem.findUnique({ where: { imei: item.imei } });
           if (existing) {
+            duplicateImeis.add(item.imei);
             duplicateItemIds.add(item.id);
-            if (input.duplicateImeiExceptionEnabled) {
-              await tx.exceptionRecord.create({
-                data: {
-                  type: ExceptionType.IMEI_DUPLICATED,
-                  customerId: draft.customerId,
-                  warehouseId: draft.warehouseId,
-                  productId: item.productId,
-                  inboundItemId: item.id,
-                  inventoryItemId: existing.id,
-                  rawValue: item.imei,
-                  upsTrackingNo: item.upsTrackingNo,
-                  upc: item.upc,
-                  imei: item.imei,
-                },
-              });
-            }
           }
         }
 
         if (item.serial) {
           const existing = await tx.inventoryItem.findUnique({ where: { serial: item.serial } });
           if (existing) {
+            duplicateSerials.add(item.serial);
             duplicateItemIds.add(item.id);
-            if (input.duplicateImeiExceptionEnabled) {
-              await tx.exceptionRecord.create({
-                data: {
-                  type: ExceptionType.IMEI_DUPLICATED,
-                  customerId: draft.customerId,
-                  warehouseId: draft.warehouseId,
-                  productId: item.productId,
-                  inboundItemId: item.id,
-                  inventoryItemId: existing.id,
-                  rawValue: item.serial,
-                  upsTrackingNo: item.upsTrackingNo,
-                  upc: item.upc,
-                  serial: item.serial,
-                },
-              });
-            }
           }
         }
 
@@ -302,6 +274,18 @@ export class InboundRepository {
             }
           }
         }
+      }
+
+      if (duplicateImeis.size > 0) {
+        throw new BadRequestException(
+          `IMEI 已存在库存记录，不能重复入库: ${[...duplicateImeis].join(', ')}。请修正或删除重复明细后再确认入库。`,
+        );
+      }
+
+      if (duplicateSerials.size > 0) {
+        throw new BadRequestException(
+          `Serial 已存在库存记录，不能重复入库: ${[...duplicateSerials].join(', ')}。请修正或删除重复明细后再确认入库。`,
+        );
       }
 
       const confirmedItemIds: string[] = [];

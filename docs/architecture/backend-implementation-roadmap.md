@@ -420,7 +420,7 @@ apps/api/src/modules/<module-name>/
 - <strong><font color="red">🔴 已完成：清空本次草稿。</font></strong>
 - <strong><font color="red">🔴 已完成：确认入库。</font></strong>
 - <strong><font color="red">🔴 已完成：确认入库时写库存、入库记录、审计日志。</font></strong>
-- <strong><font color="red">🔴 已完成：UPC 未匹配、IMEI 重复、UPS 重复等异常写入异常池。</font></strong>
+- <strong><font color="red">🔴 已完成：UPC 未匹配、UPS 重复等异常写入异常池；IMEI/Serial 已存在库存时确认入库会整单阻断，必须修正或删除后再继续。</font></strong>
 
 建议接口标题：
 

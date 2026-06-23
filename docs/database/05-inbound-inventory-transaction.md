@@ -29,12 +29,12 @@ Preview rows use:
 1. Load the draft and preview rows.
 2. Select `PENDING` rows with matched products.
 3. Reject duplicate IMEI or Serial values inside the same draft before inventory writes.
-4. Recheck duplicate IMEI and Serial against `inventory_items`.
+4. Reject IMEI or Serial values already present in `inventory_items`.
 5. Recheck duplicate UPS against prior confirmed inbound rows.
 6. Create exception records for duplicate rows when configured.
 7. Create inventory rows for valid rows.
 8. Update confirmed inbound rows with `inventoryItemId`.
-9. Mark duplicate rows `EXCEPTION`.
+9. Mark duplicate package-tracking rows `EXCEPTION`.
 10. Mark the batch `CONFIRMED` and set `confirmedAt`.
 11. Write an `INBOUND_CONFIRM` audit log.
 
@@ -48,7 +48,8 @@ Outbound phases later move inventory to `PACKED` and `OUTBOUND`.
 
 ## Duplicate Handling
 
-Duplicate IMEI and Serial values do not create inventory.
+Duplicate IMEI and Serial values stop confirmation and do not create inventory. The draft stays
+open so the operator can correct or delete the duplicate row before confirming again.
 
 Duplicate UPS values from prior confirmed inbound records do not create inventory in the current phase. Multiple rows in the same draft may still share one UPS value because one package can contain multiple units.
 

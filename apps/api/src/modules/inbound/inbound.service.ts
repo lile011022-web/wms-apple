@@ -216,6 +216,7 @@ export class InboundService {
       throw new BadRequestException('Inbound draft has no confirmable items.');
     }
     this.assertNoDuplicateDraftIdentity(confirmableItems);
+    await this.assertNoExistingInventoryIdentity(confirmableItems);
 
     const settings = await this.settingsService.getSettings();
     const confirmed = await this.inboundRepository.confirmDraft({
@@ -521,6 +522,34 @@ export class InboundService {
     }
 
     return [...counts.entries()].filter(([, count]) => count > 1).map(([value]) => value);
+  }
+
+  private async assertNoExistingInventoryIdentity(
+    items: Array<Pick<InboundDraftRecord['inboundItems'][number], 'imei' | 'serial'>>,
+  ) {
+    const duplicateImeis = new Set<string>();
+    const duplicateSerials = new Set<string>();
+
+    for (const item of items) {
+      if (item.imei && (await this.inboundRepository.findInventoryByImei(item.imei))) {
+        duplicateImeis.add(item.imei);
+      }
+      if (item.serial && (await this.inboundRepository.findInventoryBySerial(item.serial))) {
+        duplicateSerials.add(item.serial);
+      }
+    }
+
+    if (duplicateImeis.size > 0) {
+      throw new BadRequestException(
+        `IMEI 已存在库存记录，不能重复入库: ${[...duplicateImeis].join(', ')}。请修正或删除重复明细后再确认入库。`,
+      );
+    }
+
+    if (duplicateSerials.size > 0) {
+      throw new BadRequestException(
+        `Serial 已存在库存记录，不能重复入库: ${[...duplicateSerials].join(', ')}。请修正或删除重复明细后再确认入库。`,
+      );
+    }
   }
 
   private normalizeRecordQuery(query: ListInboundRecordsQueryDto) {
