@@ -602,6 +602,30 @@ textarea {
   grid-column: 1 / -1;
 }
 
+.scan-flow-option {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  width: fit-content;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 0 10px;
+}
+
+.scan-flow-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--blue-600);
+}
+
 .inbound-entry-panel > .workflow-form > label,
 .last-inbound-form > label {
   min-width: 0;

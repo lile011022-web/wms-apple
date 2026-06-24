@@ -106,6 +106,7 @@ export class OutboundRepository {
       where: {
         warehouseId,
         boxName: { equals: boxName, mode: 'insensitive' },
+        status: { not: OutboundBoxStatus.VOIDED },
         id: excludeBoxId ? { not: excludeBoxId } : undefined,
       },
       include: outboundBoxInclude,

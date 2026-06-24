@@ -78,6 +78,27 @@ const outboundRow = {
   packedAt: now,
 };
 
+const outboundRowSecondBox = {
+  outboundBox: {
+    boxNo: 'BOX-20260621-002',
+    boxName: 'Apex Trading - Silver iPad',
+    notes: '第二箱备注',
+    status: 'SEALED',
+    customer: { code: 'CUST-001', name: 'Apple Reseller' },
+    warehouse: { code: 'US-LAX-01' },
+    sealedAt: now,
+  },
+  inventoryItem: {
+    product: { sku: 'IPAD-WIFI-128-BLUE-RFB', name: 'iPad WI-FI 128GB Blue (Refurbished)' },
+    upc: '194253149189',
+    upsTrackingNo: '1Z999AA10123456785',
+    imei: '356789012345679',
+    serial: 'SN-002',
+    status: 'PACKED',
+  },
+  packedAt: new Date('2026-06-17T00:01:00Z'),
+};
+
 const inboundRow = {
   inboundBatch: {
     id: 'batch-1',
@@ -223,6 +244,48 @@ describe('ReportsService', () => {
         },
       ],
     });
+  });
+
+  it('formats outbound detail Excel like the packing workbook template', async () => {
+    const { repository, service } = createService({
+      findRows: jest.fn().mockResolvedValue([outboundRowSecondBox, outboundRow]),
+    });
+
+    await expect(
+      service.createExport(
+        {
+          reportType: ReportType.OUTBOUND_DETAIL,
+          format: ReportExportFormat.EXCEL,
+          filters: { outboundStatus: 'SEALED' },
+          fields: ['boxNo', 'imei'],
+        },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      fileName: 'outbound_detail-export-1.xls',
+      rowCount: 2,
+    });
+
+    const completedCall = repository.updateExport.mock.calls[0];
+    expect(completedCall).toBeDefined();
+    const completedPayload = completedCall![0].filters as {
+      contentType: string;
+      metadata: { fileContent: string };
+    };
+
+    expect(completedPayload.contentType).toBe('application/vnd.ms-excel; charset=utf-8');
+    expect(completedPayload.metadata.fileContent).toContain('<Worksheet ss:Name="出库信息">');
+    expect(completedPayload.metadata.fileContent).toContain('<Worksheet ss:Name="SN&amp;IMEI">');
+    expect(completedPayload.metadata.fileContent).toContain('<Worksheet ss:Name="各箱型号汇总">');
+    expect(completedPayload.metadata.fileContent).toContain('<Worksheet ss:Name="出库详情">');
+    expect(completedPayload.metadata.fileContent).toContain('第 1 箱  （1 件）');
+    expect(completedPayload.metadata.fileContent).toContain('第 2 箱  （1 件）');
+    expect(completedPayload.metadata.fileContent).toContain('SN-002');
+    expect(completedPayload.metadata.fileContent).toContain('356789012345679');
+    expect(completedPayload.metadata.fileContent).toContain('实际扫描总数：');
+    expect(completedPayload.metadata.fileContent).toContain(
+      '<Cell ss:StyleID="Total"><Data ss:Type="Number">2</Data></Cell>',
+    );
   });
 
   it('names inbound detail export files with the selected batch number', async () => {

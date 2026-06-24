@@ -4,6 +4,12 @@ import { IsIn, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class
 import { outboundBoxSizePresets } from './create-outbound-box.dto';
 
 export class UpdateOutboundBoxDto {
+  @ApiPropertyOptional({ example: 'Apple Reseller20260618箱1-A' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  boxName?: string;
+
   @ApiPropertyOptional({ enum: outboundBoxSizePresets, example: '14*14*14' })
   @IsOptional()
   @IsIn(outboundBoxSizePresets)

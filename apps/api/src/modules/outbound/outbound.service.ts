@@ -160,6 +160,14 @@ export class OutboundService {
     const box = await this.findOpenBox(id);
     const data: Prisma.OutboundBoxUpdateInput = {};
 
+    if (dto.boxName !== undefined) {
+      const boxName = this.trimOptional(dto.boxName);
+      if (!boxName) {
+        throw new BadRequestException('boxName cannot be empty.');
+      }
+      await this.assertUniqueBoxName(box.warehouseId, boxName, box.id);
+      data.boxName = boxName;
+    }
     if (dto.sizePreset !== undefined) {
       data.sizePreset = this.normalizeSizePreset(dto.sizePreset);
       data.customSize = this.normalizeCustomSize(dto.sizePreset, dto.customSize) ?? null;
@@ -501,7 +509,7 @@ export class OutboundService {
       excludeBoxId,
     );
     if (existing) {
-      throw new ConflictException('Outbound box name already exists in this warehouse.');
+      throw new ConflictException('当前仓库已存在同名箱子，请修改箱子名称后再保存。');
     }
   }
 

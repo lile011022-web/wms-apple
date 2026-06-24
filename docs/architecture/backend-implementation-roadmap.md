@@ -411,6 +411,7 @@ apps/api/src/modules/<module-name>/
 - <strong><font color="red">🔴 已完成：CSV 文件批量导入当前入库草稿明细。</font></strong>
 - <strong><font color="red">🔴 已完成：本次入库预览。</font></strong>
 - <strong><font color="red">🔴 已完成：入库扫码支持一版模式和物流+UPC 简化模式，并显示上一条入库明细。</font></strong>
+- <strong><font color="red">🔴 已完成：入库扫码支持连续扫码焦点回到下一输入框，并可在同一物流单下连续扫 UPC/IMEI。</font></strong>
 - <strong><font color="red">🔴 已完成：物流单号输入时检查规则和重复异常，操作员确认后可继续入库。</font></strong>
 - <strong><font color="red">🔴 已完成：入库扫码异常汇总可定位到异常明细并带回输入区修正。</font></strong>
 - <strong><font color="red">🔴 已完成：入库扫码异常明细支持行内覆盖修正，修正后复用原明细行并重新校验。</font></strong>
@@ -579,11 +580,12 @@ apps/api/src/modules/<module-name>/
 - <strong><font color="red">🔴 已完成：出库装箱搜索通过统一物流字段支持 UPS、USPS、FedEx、UPC、IMEI、Serial、SKU 和商品名。</font></strong>
 - <strong><font color="red">🔴 已完成：可装箱库存、最近箱子和箱内明细展示分页。</font></strong>
 - <strong><font color="red">🔴 已完成：建箱前可填写固定尺寸、自定义尺寸、重量 lb 和备注，箱子名称由系统自动生成。</font></strong>
-- <strong><font color="red">🔴 已完成：开放箱可编辑尺寸、重量和备注，箱子名称保持系统生成值。</font></strong>
+- <strong><font color="red">🔴 已完成：开放箱可编辑箱子名称、尺寸、重量和备注；内部箱号保持系统生成值。</font></strong>
 - <strong><font color="red">🔴 已完成：已创建箱子支持封箱前上传装箱照片，封箱必须至少保留一张照片。</font></strong>
 - <strong><font color="red">🔴 已完成：已创建箱子照片操作旁支持录入出库单号。</font></strong>
 - <strong><font color="red">🔴 已完成：加入当前箱。</font></strong>
 - <strong><font color="red">🔴 已完成：当前箱子工作区支持细致扫码装箱，随机扫描 UPC 和 IMEI/Serial 后自动匹配并加入当前箱。</font></strong>
+- <strong><font color="red">🔴 已完成：细致扫码装箱支持扫码口自动回焦点，UPC 和 IMEI/Serial 核对值在成功装箱后再清空。</font></strong>
 - <strong><font color="red">🔴 已完成：客户可装箱库存支持全部批量装箱，按箱数和每箱数量随机或手动分配库存。</font></strong>
 - <strong><font color="red">🔴 已完成：从当前箱移除。</font></strong>
 - <strong><font color="red">🔴 已完成：清空当前箱。</font></strong>
@@ -790,6 +792,7 @@ apps/api/src/modules/customers/customer-change/
 - <strong><font color="red">🔴 已完成：字段选择和字段白名单校验。</font></strong>
 - <strong><font color="red">🔴 已完成：CSV 导出。</font></strong>
 - <strong><font color="red">🔴 已完成：Excel XML 导出。</font></strong>
+- <strong><font color="red">🔴 已完成：装箱明细 Excel 按客户核对样表输出四个工作表：`出库信息`、`SN&IMEI`、`各箱型号汇总`、`出库详情`。</font></strong>
 - <strong><font color="red">🔴 已完成：导出预览统计。</font></strong>
 - <strong><font color="red">🔴 已完成：下载历史。</font></strong>
 - <strong><font color="red">🔴 已完成：基于历史导出的重新下载。</font></strong>

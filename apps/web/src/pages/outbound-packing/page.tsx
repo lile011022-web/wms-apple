@@ -18,8 +18,8 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode, RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSystemSettings, listWarehouses } from '../../api/settings';
 import { customersApi, inventoryApi, outboundApi } from '../../api/workflow';
 import { selectDefaultWarehouseId } from '../../utils/default-warehouse';
@@ -112,7 +112,9 @@ export function OutboundPackingPage() {
   const [scanImeiOrSerial, setScanImeiOrSerial] = useState('');
   const [scanBlockReason, setScanBlockReason] = useState('');
   const scanAutoSubmitTimerRef = useRef<number | null>(null);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
   const [sizeLabel, setSizeLabel] = useState(defaultSizePreset.label);
+  const [boxNameDraft, setBoxNameDraft] = useState('');
   const [manualSizeOpen, setManualSizeOpen] = useState(false);
   const [manualSize, setManualSize] = useState({
     length: defaultSizePreset.length,
@@ -318,11 +320,24 @@ export function OutboundPackingPage() {
       setIsBatchItemsLoading(false);
     }
   };
+  const focusDetailedScanInput = useCallback(() => {
+    window.setTimeout(() => {
+      scanInputRef.current?.focus();
+      scanInputRef.current?.select();
+    }, 0);
+  }, []);
   const resetDetailedScan = () => {
+    if (scanAutoSubmitTimerRef.current) {
+      window.clearTimeout(scanAutoSubmitTimerRef.current);
+      scanAutoSubmitTimerRef.current = null;
+    }
     setScanValue('');
     setScanUpc('');
     setScanImeiOrSerial('');
     setScanBlockReason('');
+    setMessage('已清空扫码');
+    setErrorMessage('');
+    focusDetailedScanInput();
   };
   const applyScannedValue = (value: string) => {
     if (scanBlockReason || scanPackMutation.isPending) {
@@ -344,6 +359,7 @@ export function OutboundPackingPage() {
       setMessage('已扫描 IMEI / Serial，等待 UPC');
     }
     setErrorMessage('');
+    focusDetailedScanInput();
 
     if (nextUpc && nextImeiOrSerial) {
       scanPackMutation.mutate({ upc: nextUpc, imeiOrSerial: nextImeiOrSerial });
@@ -368,6 +384,7 @@ export function OutboundPackingPage() {
   useEffect(() => {
     if (!currentBox) return;
     setSizeLabel(currentBox.sizeLabel);
+    setBoxNameDraft(getBoxDisplayName(currentBox));
     setManualSize({
       length: currentBox.length,
       width: currentBox.width,
@@ -436,7 +453,12 @@ export function OutboundPackingPage() {
   const updateBoxMutation = useMutation({
     mutationFn: () => {
       if (!currentBox) throw new Error('请先选择或新建箱子');
+      const nextBoxName = boxNameDraft.trim();
+      if (!nextBoxName) {
+        throw new Error('请输入箱子名称');
+      }
       return outboundApi.updateBox(currentBox.id, {
+        boxName: nextBoxName,
         ...toBackendBoxSize(sizeLabel, manualSize),
         weightLb: toWeightNumber(weight),
         notes: note.trim() || undefined,
@@ -444,10 +466,10 @@ export function OutboundPackingPage() {
     },
     onSuccess: (data) => {
       updateBoxEverywhere(data as OutboundBox);
-      setMessage('已暂存箱子设置');
+      setMessage('已保存箱子设置');
       setErrorMessage('');
     },
-    onError: (error) => setErrorMessage(toUserErrorMessage(error, '暂存失败')),
+    onError: (error) => setErrorMessage(toUserErrorMessage(error, '保存失败')),
   });
 
   const addItemMutation = useMutation({
@@ -602,6 +624,7 @@ export function OutboundPackingPage() {
       setScanBlockReason('');
       setMessage(`已扫码装箱：${item.imeiOrSerial ?? item.upc ?? item.trackingNumber}`);
       setErrorMessage('');
+      focusDetailedScanInput();
     },
     onError: (error) => {
       const messageText = toUserErrorMessage(error, '扫码装箱失败');
@@ -689,6 +712,7 @@ export function OutboundPackingPage() {
     }
 
     scanAutoSubmitTimerRef.current = window.setTimeout(() => {
+      scanAutoSubmitTimerRef.current = null;
       applyScannedValue(scanValue);
     }, 160);
 
@@ -705,6 +729,26 @@ export function OutboundPackingPage() {
     scanBlockReason,
     scanPackMutation.isPending,
     scanValue,
+  ]);
+
+  useEffect(() => {
+    if (
+      packingMode !== 'DETAILED_SCAN' ||
+      !currentBox ||
+      !canMutateCurrentBox ||
+      scanBlockReason ||
+      scanPackMutation.isPending
+    ) {
+      return;
+    }
+    focusDetailedScanInput();
+  }, [
+    canMutateCurrentBox,
+    currentBox?.id,
+    focusDetailedScanInput,
+    packingMode,
+    scanBlockReason,
+    scanPackMutation.isPending,
   ]);
 
   const removeItemMutation = useMutation({
@@ -1014,7 +1058,7 @@ export function OutboundPackingPage() {
       />
 
       <BoxQuickEditor
-        boxName={currentBox?.name ?? ''}
+        boxName={currentBox ? boxNameDraft : ''}
         sizeLabel={sizeLabel}
         manualSize={manualSize}
         manualSizeOpen={manualSizeOpen}
@@ -1038,6 +1082,7 @@ export function OutboundPackingPage() {
             setManualSizeOpen(true);
           }
         }}
+        onBoxNameChange={setBoxNameDraft}
         onManualSizeOpenChange={setManualSizeOpen}
         onManualSizeChange={setManualSize}
         onWeightChange={setWeight}
@@ -1106,6 +1151,7 @@ export function OutboundPackingPage() {
           scanImeiOrSerial={scanImeiOrSerial}
           scanBlockReason={scanBlockReason}
           isScanPacking={scanPackMutation.isPending}
+          scanInputRef={scanInputRef}
           onSearchChange={setBoxSearch}
           onScanValueChange={setScanValue}
           onScanSubmit={() => applyScannedValue(scanValue)}
@@ -1285,6 +1331,7 @@ function BoxQuickEditor(props: {
   isSaving: boolean;
   isSealing: boolean;
   isCreating: boolean;
+  onBoxNameChange: (value: string) => void;
   onSizeLabelChange: (value: string) => void;
   onManualSizeOpenChange: (value: boolean) => void;
   onManualSizeChange: (value: { length: number; width: number; height: number }) => void;
@@ -1302,10 +1349,15 @@ function BoxQuickEditor(props: {
         <StatusBadge status={props.currentBox?.status ?? 'draft'} />
       </div>
       <div className="outbound-quick-fields">
-        <div className="outbound-control wide outbound-readonly-control">
+        <label className="outbound-control wide">
           <span>箱子名称</span>
-          <strong>{props.boxName || '创建后由系统自动生成'}</strong>
-        </div>
+          <input
+            value={props.boxName}
+            onChange={(event) => props.onBoxNameChange(event.target.value)}
+            placeholder="创建后由系统自动生成"
+            disabled={!props.currentBox || !canEdit}
+          />
+        </label>
         <label className="outbound-control medium">
           <span>尺寸预设</span>
           <select
@@ -1376,7 +1428,7 @@ function BoxQuickEditor(props: {
             onClick={props.onSave}
           >
             <Save size={16} />
-            暂存
+            保存
           </button>
           <button
             type="button"
@@ -1593,6 +1645,7 @@ function CurrentBoxWorkspace(props: {
   scanImeiOrSerial: string;
   scanBlockReason: string;
   isScanPacking: boolean;
+  scanInputRef: RefObject<HTMLInputElement | null>;
   onSearchChange: (value: string) => void;
   onScanValueChange: (value: string) => void;
   onScanSubmit: () => void;
@@ -1663,6 +1716,7 @@ function CurrentBoxWorkspace(props: {
           scanImeiOrSerial={props.scanImeiOrSerial}
           blockReason={props.scanBlockReason}
           isPacking={props.isScanPacking}
+          scanInputRef={props.scanInputRef}
           onScanValueChange={props.onScanValueChange}
           onScanSubmit={props.onScanSubmit}
           onClear={props.onScanClear}
@@ -1787,6 +1841,7 @@ function DetailedScanPackingPanel(props: {
   scanImeiOrSerial: string;
   blockReason: string;
   isPacking: boolean;
+  scanInputRef: RefObject<HTMLInputElement | null>;
   onScanValueChange: (value: string) => void;
   onScanSubmit: () => void;
   onClear: () => void;
@@ -1811,6 +1866,7 @@ function DetailedScanPackingPanel(props: {
         <label className="outbound-control outbound-scan-pack-input">
           <span>自动扫码口</span>
           <input
+            ref={props.scanInputRef}
             value={props.scanValue}
             disabled={disabled}
             autoComplete="off"

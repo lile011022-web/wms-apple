@@ -50,6 +50,11 @@ Rules:
 - `SEQUENCE` is a three-digit daily sequence for that customer code and warehouse.
 - The generated box number must not contain random suffixes.
 - Operators should identify the active box by the generated box name before packing or sealing.
+- Operators can rename an open box after it is created. Manual box names must not be empty and must
+  remain unique inside the same warehouse. The internal box number does not change when the visible
+  box name is edited.
+- Voided boxes release their visible box names. A name used by a `VOIDED` box can be reused by a new
+  or open box in the same warehouse.
 
 ## Available Inventory
 
@@ -78,7 +83,13 @@ Detailed scan packing:
 
 - The operator works against the current open box.
 - The scan input accepts either UPC or IMEI / Serial in any order.
+- The scan input should keep focus while an open current box is available, so the operator can keep
+  using the scanner without clicking the field again.
+- After the first value is scanned, the scan input clears and refocuses, but the visible UPC or
+  IMEI / Serial review value remains on screen for checking.
 - The item is added to the current box only after UPC and IMEI / Serial identify the same `IN_STOCK` inventory row for the selected customer and warehouse.
+- UPC and IMEI / Serial review values are cleared only after both values are scanned and the item is
+  successfully added to the current box.
 - If the UPC and IMEI / Serial do not match, or the item is missing, already packed, or otherwise unavailable, scanning stops until the operator clears or fixes the scan values.
 - Successful detailed scans immediately add the item to the current box and refresh the box detail.
 
@@ -97,7 +108,7 @@ An outbound box starts as `OPEN`.
 
 Allowed operations for an open box:
 
-- Edit size, weight, and notes.
+- Edit box name, size, weight, and notes.
 - Add or edit the outbound shipment or label number.
 - Add one inventory row.
 - Batch add selected available inventory rows from the outbound packing customer inventory panel.

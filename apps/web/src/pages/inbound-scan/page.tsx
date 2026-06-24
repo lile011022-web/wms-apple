@@ -10,7 +10,16 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ChangeEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { getSystemSettings, listWarehouses } from '../../api/settings';
 import { customersApi, inboundApi } from '../../api/workflow';
 import { PaginationControls } from '../../components/pagination-controls';
@@ -67,6 +76,7 @@ export function InboundScanPage() {
   const [upc, setUpc] = useState(inboundScanInputCache.upc);
   const [imei, setImei] = useState(inboundScanInputCache.imei);
   const [scanMode, setScanMode] = useState<InboundScanMode>('STANDARD');
+  const [reuseTrackingNo, setReuseTrackingNo] = useState(false);
   const [lastInboundItem, setLastInboundItem] = useState<InboundDraftItem | null>(null);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -78,6 +88,7 @@ export function InboundScanPage() {
   const upcInputRef = useRef<HTMLInputElement | null>(null);
   const imeiInputRef = useRef<HTMLInputElement | null>(null);
   const lastAutoAddKeyRef = useRef('');
+  const hasFocusedLockedDraftRef = useRef(false);
 
   const customersQuery = useQuery({
     queryKey: ['customer-options'],
@@ -177,14 +188,34 @@ export function InboundScanPage() {
     };
   };
 
-  const clearScanInputs = () => {
+  const focusScanInput = useCallback((field: InboundScanField) => {
+    window.setTimeout(() => {
+      const input =
+        field === 'tracking'
+          ? trackingInputRef.current
+          : field === 'upc'
+            ? upcInputRef.current
+            : imeiInputRef.current;
+      input?.focus();
+      input?.select();
+    }, 0);
+  }, []);
+
+  const focusNextScanStart = useCallback(() => {
+    focusScanInput(reuseTrackingNo ? 'upc' : 'tracking');
+  }, [focusScanInput, reuseTrackingNo]);
+
+  const clearScanInputs = (options?: { keepTrackingNo?: boolean }) => {
+    const nextTrackingNo = options?.keepTrackingNo ? upsTrackingNo : '';
     inboundScanInputCache = {
-      upsTrackingNo: '',
+      upsTrackingNo: nextTrackingNo,
       upc: '',
       imei: '',
     };
-    setTrackingWarning(null);
-    setUpsTrackingNo('');
+    if (!options?.keepTrackingNo) {
+      setTrackingWarning(null);
+    }
+    setUpsTrackingNo(nextTrackingNo);
     setUpc('');
     setImei('');
   };
@@ -195,9 +226,11 @@ export function InboundScanPage() {
     if (nextScanMode === 'TRACKING_UPC') {
       setImei('');
       updateScanInputCache({ imei: '' });
-      upcInputRef.current?.focus();
+      focusScanInput(upc ? 'upc' : reuseTrackingNo && upsTrackingNo.trim() ? 'upc' : 'tracking');
     } else {
-      imeiInputRef.current?.focus();
+      focusScanInput(
+        upc.trim() ? 'imei' : reuseTrackingNo && upsTrackingNo.trim() ? 'upc' : 'tracking',
+      );
     }
   };
 
@@ -230,6 +263,8 @@ export function InboundScanPage() {
       setDraft(nextDraft);
       persistLockedContext({ customerId, warehouseId, draftId: nextDraft.id });
       setMessage('已锁定客户并创建入库草稿');
+      hasFocusedLockedDraftRef.current = true;
+      focusNextScanStart();
     },
     onError: (error) => {
       setErrorMessage(toUserErrorMessage(error, '创建入库草稿失败'));
@@ -260,7 +295,10 @@ export function InboundScanPage() {
       setDraft(updated);
       persistLockedContext({ customerId, warehouseId, draftId: updated.id });
       setLastInboundItem(data.item);
-      clearScanInputs();
+      const keepTrackingNo = reuseTrackingNo && data.item.status !== 'EXCEPTION';
+      clearScanInputs({ keepTrackingNo });
+      lastAutoAddKeyRef.current = '';
+      focusScanInput(keepTrackingNo ? 'upc' : 'tracking');
       setMessage(
         data.item.status === 'EXCEPTION'
           ? '已加入异常明细，请点击下方异常定位查看'
@@ -292,6 +330,7 @@ export function InboundScanPage() {
       queryClient.invalidateQueries({ queryKey: ['inventory-products'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
+      focusScanInput('tracking');
     },
     onError: (error) => {
       setErrorMessage(toUserErrorMessage(error, '确认入库失败'));
@@ -312,6 +351,9 @@ export function InboundScanPage() {
       setDraft(updated);
       persistLockedContext({ customerId, warehouseId, draftId: updated.id });
       setMessage('已删除入库明细');
+      if (updated.status === 'DRAFT' && updated.items.at(-1)?.status !== 'EXCEPTION') {
+        focusNextScanStart();
+      }
     },
     onError: (error) => {
       setErrorMessage(toUserErrorMessage(error, '删除入库明细失败'));
@@ -344,6 +386,9 @@ export function InboundScanPage() {
           ? '已覆盖原明细，当前仍为异常'
           : '已覆盖原明细，异常已修正',
       );
+      if (data.item.status !== 'EXCEPTION') {
+        focusNextScanStart();
+      }
     },
     onError: (error) => {
       setErrorMessage(toUserErrorMessage(error, '修正入库明细失败'));
@@ -440,6 +485,25 @@ export function InboundScanPage() {
     downloadTextFile('inbound-items-import-template.csv', content, 'text/csv; charset=utf-8');
   };
 
+  const handleScanKeyDown = (event: KeyboardEvent<HTMLInputElement>, field: InboundScanField) => {
+    if (event.key !== 'Enter') {
+      return;
+    }
+
+    event.preventDefault();
+    if (field === 'tracking') {
+      focusScanInput('upc');
+      return;
+    }
+    if (field === 'upc' && scanMode === 'STANDARD') {
+      focusScanInput('imei');
+      return;
+    }
+    if (canAddCurrentScan && !addItemMutation.isPending) {
+      addItemMutation.mutate();
+    }
+  };
+
   const handleImportFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -478,6 +542,30 @@ export function InboundScanPage() {
 
     return () => window.clearTimeout(timer);
   }, [addItemMutation.isPending, canAddCurrentScan, imei, scanMode, upc, upsTrackingNo]);
+
+  useEffect(() => {
+    hasFocusedLockedDraftRef.current = false;
+  }, [lockedContext?.draftId]);
+
+  useEffect(() => {
+    if (
+      !isCurrentSelectionLocked ||
+      blockingExceptionItem ||
+      activeTrackingWarning ||
+      hasFocusedLockedDraftRef.current
+    ) {
+      return;
+    }
+
+    hasFocusedLockedDraftRef.current = true;
+    focusNextScanStart();
+  }, [
+    activeTrackingWarning,
+    blockingExceptionItem,
+    focusNextScanStart,
+    isCurrentSelectionLocked,
+    lockedContext?.draftId,
+  ]);
 
   return (
     <section className="page-frame">
@@ -582,6 +670,22 @@ export function InboundScanPage() {
               </button>
             ))}
           </div>
+          <label className="scan-flow-option">
+            <input
+              type="checkbox"
+              checked={reuseTrackingNo}
+              disabled={!!blockingExceptionItem}
+              onChange={(event) => {
+                setReuseTrackingNo(event.target.checked);
+                if (event.target.checked && upsTrackingNo.trim()) {
+                  focusScanInput('upc');
+                } else {
+                  focusScanInput('tracking');
+                }
+              }}
+            />
+            <span>同一物流单连续扫</span>
+          </label>
           <label>
             <span>物流单号</span>
             <input
@@ -589,6 +693,7 @@ export function InboundScanPage() {
               value={upsTrackingNo}
               placeholder="UPS / USPS / FedEx"
               disabled={!!blockingExceptionItem}
+              onKeyDown={(event) => handleScanKeyDown(event, 'tracking')}
               onChange={(event) => {
                 setUpsTrackingNo(event.target.value);
                 updateScanInputCache({ upsTrackingNo: event.target.value });
@@ -601,6 +706,7 @@ export function InboundScanPage() {
               ref={upcInputRef}
               value={upc}
               disabled={!!blockingExceptionItem}
+              onKeyDown={(event) => handleScanKeyDown(event, 'upc')}
               onChange={(event) => {
                 setUpc(event.target.value);
                 updateScanInputCache({ upc: event.target.value });
@@ -614,6 +720,7 @@ export function InboundScanPage() {
               disabled={!!blockingExceptionItem || scanMode === 'TRACKING_UPC'}
               placeholder={scanMode === 'TRACKING_UPC' ? '当前模式不需要 IMEI' : undefined}
               value={imei}
+              onKeyDown={(event) => handleScanKeyDown(event, 'imei')}
               onChange={(event) => {
                 setImei(event.target.value);
                 updateScanInputCache({ imei: event.target.value });
@@ -657,20 +764,21 @@ export function InboundScanPage() {
                     setTrackingWarning(null);
                     setUpsTrackingNo('');
                     updateScanInputCache({ upsTrackingNo: '' });
-                    trackingInputRef.current?.focus();
+                    focusScanInput('tracking');
                   }}
                 >
                   修改单号
                 </button>
                 <button
                   type="button"
-                  onClick={() =>
+                  onClick={() => {
                     setTrackingWarning((current) =>
                       current?.trackingNo === activeTrackingWarning.trackingNo
                         ? { ...current, confirmed: true }
                         : current,
-                    )
-                  }
+                    );
+                    focusScanInput(upc.trim() ? (scanMode === 'STANDARD' ? 'imei' : 'upc') : 'upc');
+                  }}
                 >
                   继续入库
                 </button>
@@ -726,6 +834,7 @@ type InboundLockContext = {
   draftId?: string;
 };
 type InboundScanMode = keyof typeof inboundScanModes;
+type InboundScanField = 'tracking' | 'upc' | 'imei';
 type InboundDraftItem = {
   id: string;
   upsTrackingNo: string | null;

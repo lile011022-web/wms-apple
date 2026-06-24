@@ -313,6 +313,90 @@ describe('OutboundService', () => {
     }
   });
 
+  it('updates an open box name after checking warehouse uniqueness', async () => {
+    const renamedBox = {
+      ...emptyBox,
+      boxName: 'Apple Reseller Custom Box',
+      sizePreset: '14*14*14',
+      weightLb: 42,
+    };
+    const { repository, service } = createService({
+      updateBoxWithAudit: jest.fn().mockResolvedValue(renamedBox),
+    });
+
+    await expect(
+      service.updateBox(
+        emptyBox.id,
+        {
+          boxName: '  Apple Reseller Custom Box  ',
+          sizePreset: '14*14*14',
+          weightLb: 42,
+        },
+        user,
+      ),
+    ).resolves.toMatchObject({
+      id: emptyBox.id,
+      boxName: 'Apple Reseller Custom Box',
+      weightLb: 42,
+    });
+    expect(repository.findBoxByName).toHaveBeenCalledWith(
+      warehouse.id,
+      'Apple Reseller Custom Box',
+      emptyBox.id,
+    );
+    expect(repository.updateBoxWithAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        boxId: emptyBox.id,
+        operatorId: user.id,
+        data: expect.objectContaining({
+          boxName: 'Apple Reseller Custom Box',
+          sizePreset: '14*14*14',
+          weightLb: 42,
+        }),
+      }),
+    );
+  });
+
+  it('rejects empty or duplicate manual box names', async () => {
+    const emptyName = createService();
+    await expect(
+      emptyName.service.updateBox(emptyBox.id, { boxName: '   ' }, user),
+    ).rejects.toThrow(BadRequestException);
+    expect(emptyName.repository.updateBoxWithAudit).not.toHaveBeenCalled();
+
+    const duplicateName = createService({
+      findBoxByName: jest.fn().mockResolvedValue({ ...emptyBox, id: 'box-2' }),
+    });
+    await expect(
+      duplicateName.service.updateBox(emptyBox.id, { boxName: 'Apple Reseller Custom Box' }, user),
+    ).rejects.toThrow('当前仓库已存在同名箱子，请修改箱子名称后再保存。');
+    expect(duplicateName.repository.updateBoxWithAudit).not.toHaveBeenCalled();
+  });
+
+  it('allows reusing a box name after the previous box is voided', async () => {
+    const reusedNameBox = {
+      ...emptyBox,
+      boxName: 'Apple Reseller Custom Box',
+    };
+    const { repository, service } = createService({
+      findBoxByName: jest.fn().mockResolvedValue(null),
+      updateBoxWithAudit: jest.fn().mockResolvedValue(reusedNameBox),
+    });
+
+    await expect(
+      service.updateBox(emptyBox.id, { boxName: 'Apple Reseller Custom Box' }, user),
+    ).resolves.toMatchObject({
+      id: emptyBox.id,
+      boxName: 'Apple Reseller Custom Box',
+    });
+    expect(repository.findBoxByName).toHaveBeenCalledWith(
+      warehouse.id,
+      'Apple Reseller Custom Box',
+      emptyBox.id,
+    );
+    expect(repository.updateBoxWithAudit).toHaveBeenCalled();
+  });
+
   it('delegates outbound availability to inventory with a forced customer and in-stock status', async () => {
     const { inventoryService, service } = createService();
 

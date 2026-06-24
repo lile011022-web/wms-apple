@@ -32,6 +32,32 @@ type ExportMetadata = {
   generatedAt: string;
 };
 
+type OutboundDetailExportRow = {
+  boxNo: string;
+  boxName: string;
+  customerCode: string;
+  customerName: string;
+  warehouseCode: string;
+  productName: string;
+  upc: string;
+  imei: string;
+  serial: string;
+  packedAt: Date | null;
+  sealedAt: Date | null;
+};
+
+type OutboundBoxExportGroup = {
+  boxNo: string;
+  boxName: string;
+  rows: OutboundDetailExportRow[];
+};
+
+type ProductSummary = {
+  upc: string;
+  productName: string;
+  count: number;
+};
+
 const MAX_SYNC_EXPORT_ROWS = 5000;
 
 @Injectable()
@@ -227,7 +253,9 @@ export class ReportsService {
     const content =
       input.format === ReportExportFormat.CSV
         ? this.toCsv(columns, input.rows)
-        : this.toExcelXml(columns, input.rows);
+        : input.reportType === ReportType.OUTBOUND_DETAIL
+          ? this.toOutboundDetailExcelXml(input.rows, input.exportId)
+          : this.toExcelXml(columns, input.rows);
     const extension = input.format === ReportExportFormat.CSV ? 'csv' : 'xls';
     const contentType =
       input.format === ReportExportFormat.CSV
@@ -285,6 +313,406 @@ export class ReportsService {
   </Table>
  </Worksheet>
 </Workbook>`;
+  }
+
+  private toOutboundDetailExcelXml(rows: unknown[], exportId: string) {
+    const detailRows = this.toOutboundDetailRows(rows);
+    const boxGroups = this.groupOutboundRowsByBox(detailRows);
+    const outboundDate = this.resolveOutboundDate(detailRows);
+    const outboundId = `OUT-${outboundDate.replace(/-/g, '')}-${detailRows.length}`;
+    const customerName = this.joinUnique(
+      detailRows.map((row) => row.customerName || row.customerCode).filter(Boolean),
+    );
+    const productSummaries = this.summarizeProducts(detailRows);
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ ${this.outboundWorkbookStyles()}
+ ${this.outboundInfoWorksheet({
+   outboundId,
+   customerName,
+   outboundDate,
+   totalCount: detailRows.length,
+   productSummaries,
+ })}
+ ${this.outboundSnImeiWorksheet({ outboundId, boxGroups })}
+ ${this.outboundBoxSummaryWorksheet(boxGroups)}
+ ${this.outboundScannedSummaryWorksheet({
+   outboundId,
+   customerName,
+   outboundDate,
+   boxCount: boxGroups.length,
+   totalCount: detailRows.length,
+   productSummaries,
+ })}
+ <Worksheet ss:Name="_metadata">
+  <Table>
+   <Row>${this.excelCell('Export ID', 'Header')}</Row>
+   <Row>${this.excelCell(exportId)}</Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <Visible>SheetHidden</Visible>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+  }
+
+  private outboundWorkbookStyles() {
+    return `<Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="11"/>
+  </Style>
+  <Style ss:ID="Title">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="16" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#1D4ED8" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="SheetTitle">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="14" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#1D4ED8" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="InfoLabel">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>
+   <Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/>
+   <Borders>${this.thinBorders()}</Borders>
+  </Style>
+  <Style ss:ID="InfoValue">
+   <Alignment ss:Vertical="Center"/>
+   <Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/>
+   <Borders>${this.thinBorders()}</Borders>
+  </Style>
+  <Style ss:ID="BoxTitle">
+   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="12" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#1E3A5F" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>
+   <Interior ss:Color="#BFDBFE" ss:Pattern="Solid"/>
+   <Borders>${this.thinBorders()}</Borders>
+  </Style>
+  <Style ss:ID="Cell">
+   <Alignment ss:Vertical="Center"/>
+   <Borders>${this.thinBorders()}</Borders>
+  </Style>
+  <Style ss:ID="CenterCell">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>${this.thinBorders()}</Borders>
+  </Style>
+  <Style ss:ID="Total">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>
+   <Interior ss:Color="#E0F2FE" ss:Pattern="Solid"/>
+   <Borders>${this.thinBorders()}</Borders>
+  </Style>
+ </Styles>`;
+  }
+
+  private outboundInfoWorksheet(input: {
+    outboundId: string;
+    customerName: string;
+    outboundDate: string;
+    totalCount: number;
+    productSummaries: ProductSummary[];
+  }) {
+    const rows = [
+      this.excelRow([this.excelCell('出库记录详情', 'Title', { mergeAcross: 3 })], 28),
+      this.infoRow('出库ID：', input.outboundId, 2),
+      this.infoRow('销售客户：', input.customerName, 2),
+      this.infoRow('目的地：', '', 2),
+      this.infoRow('出库日期：', input.outboundDate, 2),
+      this.infoRow('出库总数量：', input.totalCount, 2),
+      this.excelRow([]),
+      this.excelRow([
+        this.excelCell('UPC', 'Header'),
+        this.excelCell('型号', 'Header'),
+        this.excelCell('数量', 'Header'),
+      ]),
+      ...input.productSummaries.map((item) =>
+        this.excelRow([
+          this.excelCell(item.upc, 'Cell'),
+          this.excelCell(item.productName, 'Cell'),
+          this.excelCell(item.count, 'CenterCell', { type: 'Number' }),
+        ]),
+      ),
+      this.excelRow([
+        this.excelCell('合计', 'Total', { mergeAcross: 1 }),
+        this.excelCell(input.totalCount, 'Total', { type: 'Number' }),
+      ]),
+    ];
+
+    return `<Worksheet ss:Name="出库信息">
+  <Table>
+   <Column ss:Width="117"/>
+   <Column ss:Width="243"/>
+   <Column ss:Width="145"/>
+   <Column ss:Width="75"/>
+   ${rows.join('\n   ')}
+  </Table>
+ </Worksheet>`;
+  }
+
+  private outboundSnImeiWorksheet(input: {
+    outboundId: string;
+    boxGroups: OutboundBoxExportGroup[];
+  }) {
+    const rows = [
+      this.excelRow(
+        [
+          this.excelCell(`SN & IMEI 明细  -  ${input.outboundId}`, 'SheetTitle', {
+            mergeAcross: 3,
+          }),
+        ],
+        25,
+      ),
+    ];
+
+    input.boxGroups.forEach((box, boxIndex) => {
+      if (boxIndex > 0) {
+        rows.push(this.excelRow([]));
+      }
+      rows.push(
+        this.excelRow(
+          [
+            this.excelCell(`第 ${boxIndex + 1} 箱  （${box.rows.length} 件）`, 'BoxTitle', {
+              mergeAcross: 3,
+            }),
+          ],
+          22,
+        ),
+      );
+      rows.push(
+        this.excelRow([
+          this.excelCell('序号', 'Header'),
+          this.excelCell('UPC', 'Header'),
+          this.excelCell('SN', 'Header'),
+          this.excelCell('IMEI', 'Header'),
+        ]),
+      );
+      box.rows.forEach((row, rowIndex) => {
+        rows.push(
+          this.excelRow([
+            this.excelCell(rowIndex + 1, 'CenterCell', { type: 'Number' }),
+            this.excelCell(row.upc, 'Cell'),
+            this.excelCell(row.serial, 'Cell'),
+            this.excelCell(row.imei, 'Cell'),
+          ]),
+        );
+      });
+    });
+
+    return `<Worksheet ss:Name="SN&amp;IMEI">
+  <Table>
+   <Column ss:Width="54"/>
+   <Column ss:Width="145"/>
+   <Column ss:Width="159"/>
+   <Column ss:Width="159"/>
+   ${rows.join('\n   ')}
+  </Table>
+ </Worksheet>`;
+  }
+
+  private outboundBoxSummaryWorksheet(boxGroups: OutboundBoxExportGroup[]) {
+    const rows = [
+      this.excelRow([this.excelCell('各箱型号汇总', 'SheetTitle', { mergeAcross: 2 })], 25),
+    ];
+
+    boxGroups.forEach((box, boxIndex) => {
+      if (boxIndex > 0) {
+        rows.push(this.excelRow([]), this.excelRow([]));
+      }
+      rows.push(
+        this.excelRow(
+          [this.excelCell(`第 ${boxIndex + 1} 箱`, 'BoxTitle', { mergeAcross: 2 })],
+          22,
+        ),
+      );
+      rows.push(
+        this.excelRow([
+          this.excelCell('UPC', 'Header'),
+          this.excelCell('型号', 'Header'),
+          this.excelCell('数量', 'Header'),
+        ]),
+      );
+      const summaries = this.summarizeProducts(box.rows);
+      summaries.forEach((item) => {
+        rows.push(
+          this.excelRow([
+            this.excelCell(item.upc, 'Cell'),
+            this.excelCell(item.productName, 'Cell'),
+            this.excelCell(item.count, 'CenterCell', { type: 'Number' }),
+          ]),
+        );
+      });
+      rows.push(
+        this.excelRow([
+          this.excelCell(`第 ${boxIndex + 1} 箱  合计`, 'Total', { mergeAcross: 1 }),
+          this.excelCell(box.rows.length, 'Total', { type: 'Number' }),
+        ]),
+      );
+    });
+
+    return `<Worksheet ss:Name="各箱型号汇总">
+  <Table>
+   <Column ss:Width="117"/>
+   <Column ss:Width="243"/>
+   <Column ss:Width="75"/>
+   ${rows.join('\n   ')}
+  </Table>
+ </Worksheet>`;
+  }
+
+  private outboundScannedSummaryWorksheet(input: {
+    outboundId: string;
+    customerName: string;
+    outboundDate: string;
+    boxCount: number;
+    totalCount: number;
+    productSummaries: ProductSummary[];
+  }) {
+    const rows = [
+      this.excelRow(
+        [this.excelCell('出库详情（实际扫描汇总）', 'SheetTitle', { mergeAcross: 2 })],
+        25,
+      ),
+      this.infoRow('出库ID：', input.outboundId, 1),
+      this.infoRow('销售客户：', input.customerName, 1),
+      this.infoRow('出库日期：', input.outboundDate, 1),
+      this.infoRow('箱数：', input.boxCount, 1),
+      this.infoRow('实际扫描总数：', input.totalCount, 1),
+      this.excelRow([]),
+      this.excelRow([
+        this.excelCell('UPC', 'Header'),
+        this.excelCell('型号', 'Header'),
+        this.excelCell('数量', 'Header'),
+      ]),
+      ...input.productSummaries.map((item) =>
+        this.excelRow([
+          this.excelCell(item.upc, 'Cell'),
+          this.excelCell(item.productName, 'Cell'),
+          this.excelCell(item.count, 'CenterCell', { type: 'Number' }),
+        ]),
+      ),
+      this.excelRow([
+        this.excelCell('合计', 'Total', { mergeAcross: 1 }),
+        this.excelCell(input.totalCount, 'Total', { type: 'Number' }),
+      ]),
+    ];
+
+    return `<Worksheet ss:Name="出库详情">
+  <Table>
+   <Column ss:Width="131"/>
+   <Column ss:Width="257"/>
+   <Column ss:Width="89"/>
+   ${rows.join('\n   ')}
+  </Table>
+ </Worksheet>`;
+  }
+
+  private infoRow(label: string, value: string | number, mergeAcross: number) {
+    return this.excelRow([
+      this.excelCell(label, 'InfoLabel'),
+      this.excelCell(value, 'InfoValue', { mergeAcross }),
+    ]);
+  }
+
+  private excelRow(cells: string[], height?: number) {
+    const heightAttr = height ? ` ss:Height="${height}"` : '';
+    return `<Row${heightAttr}>${cells.join('')}</Row>`;
+  }
+
+  private excelCell(
+    value: string | number,
+    styleId = 'Cell',
+    options: { type?: 'String' | 'Number'; mergeAcross?: number } = {},
+  ) {
+    const type = options.type ?? (typeof value === 'number' ? 'Number' : 'String');
+    const mergeAttr = options.mergeAcross ? ` ss:MergeAcross="${options.mergeAcross}"` : '';
+    return `<Cell ss:StyleID="${styleId}"${mergeAttr}><Data ss:Type="${type}">${this.escapeXml(
+      String(value),
+    )}</Data></Cell>`;
+  }
+
+  private thinBorders() {
+    return `<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>`;
+  }
+
+  private toOutboundDetailRows(rows: unknown[]): OutboundDetailExportRow[] {
+    return rows.map((row) => ({
+      boxNo: this.formatValue(this.readPath(row, 'outboundBox', 'boxNo')),
+      boxName: this.formatValue(this.readPath(row, 'outboundBox', 'boxName')),
+      customerCode: this.formatValue(this.readPath(row, 'outboundBox', 'customer', 'code')),
+      customerName: this.formatValue(this.readPath(row, 'outboundBox', 'customer', 'name')),
+      warehouseCode: this.formatValue(this.readPath(row, 'outboundBox', 'warehouse', 'code')),
+      productName: this.formatValue(this.readPath(row, 'inventoryItem', 'product', 'name')),
+      upc: this.formatValue(this.readPath(row, 'inventoryItem', 'upc')),
+      imei: this.formatValue(this.readPath(row, 'inventoryItem', 'imei')),
+      serial: this.formatValue(this.readPath(row, 'inventoryItem', 'serial')),
+      packedAt: this.toDateOrNull(this.readPath(row, 'packedAt')),
+      sealedAt: this.toDateOrNull(this.readPath(row, 'outboundBox', 'sealedAt')),
+    }));
+  }
+
+  private groupOutboundRowsByBox(rows: OutboundDetailExportRow[]): OutboundBoxExportGroup[] {
+    const groups = new Map<string, OutboundBoxExportGroup>();
+    [...rows]
+      .sort((left, right) => {
+        const boxCompare = left.boxNo.localeCompare(right.boxNo);
+        if (boxCompare !== 0) {
+          return boxCompare;
+        }
+        return (left.packedAt?.getTime() ?? 0) - (right.packedAt?.getTime() ?? 0);
+      })
+      .forEach((row) => {
+        const key = row.boxNo || row.boxName || '未命名箱子';
+        const group = groups.get(key) ?? {
+          boxNo: row.boxNo,
+          boxName: row.boxName,
+          rows: [],
+        };
+        group.rows.push(row);
+        groups.set(key, group);
+      });
+    return [...groups.values()];
+  }
+
+  private summarizeProducts(rows: OutboundDetailExportRow[]): ProductSummary[] {
+    const summaries = new Map<string, ProductSummary>();
+    rows.forEach((row) => {
+      const key = `${row.upc}::${row.productName}`;
+      const current = summaries.get(key) ?? {
+        upc: row.upc,
+        productName: row.productName,
+        count: 0,
+      };
+      current.count += 1;
+      summaries.set(key, current);
+    });
+    return [...summaries.values()].sort((left, right) => left.upc.localeCompare(right.upc));
+  }
+
+  private resolveOutboundDate(rows: OutboundDetailExportRow[]) {
+    const timestamps = rows
+      .flatMap((row) => [row.sealedAt, row.packedAt])
+      .filter((value): value is Date => value instanceof Date)
+      .map((value) => value.getTime());
+    const date = timestamps.length ? new Date(Math.max(...timestamps)) : new Date();
+    return date.toISOString().slice(0, 10);
+  }
+
+  private joinUnique(values: string[]) {
+    return [...new Set(values.map((value) => value.trim()).filter(Boolean))].join(' / ');
   }
 
   private resolveFields(reportType: ReportType, requestedFields?: string[]) {
@@ -557,6 +985,17 @@ export class ReportsService {
       return JSON.stringify(value);
     }
     return String(value);
+  }
+
+  private toDateOrNull(value: unknown) {
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+    if (typeof value === 'string' || typeof value === 'number') {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    return null;
   }
 
   private daysFromNow(days: number) {

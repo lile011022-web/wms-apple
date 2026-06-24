@@ -47,6 +47,7 @@ Request body:
 
 ```json
 {
+  "boxName": "Apple Reseller20260618箱1-A",
   "sizePreset": "CUSTOM",
   "customSize": "16*14*12",
   "weightLb": 42.5,
@@ -59,7 +60,9 @@ Rules:
 
 - The box must be `OPEN`.
 - Only submitted fields are changed.
-- Box name is system-generated at creation and cannot be edited.
+- Box name is system-generated at creation. Operators can edit it later while the box is open.
+- Edited box names cannot be empty and must stay unique among non-voided boxes inside the same
+  warehouse. A `VOIDED` box releases its visible box name for reuse.
 - `shippingTrackingNo` stores the outbound shipment or label number shown beside the box evidence controls.
 - Updating box settings writes an `OUTBOUND_BOX_UPDATE` audit log.
 

@@ -88,6 +88,15 @@ The current implementation completes small exports synchronously. Reports over t
 
 For sealed packing detail downloads, use `reportType = OUTBOUND_DETAIL` with `filters.outboundStatus = SEALED`. Search supports box number, customer, UPC, tracking number, IMEI, Serial, SKU, and product name. Include `boxNotes` when the download needs each box's remark.
 
+When `reportType = OUTBOUND_DETAIL` and `format = EXCEL`, the generated workbook follows the customer reconciliation layout used for outbound packing:
+
+- `出库信息`: outbound identifier, customer, date, total quantity, and whole-export UPC/model totals.
+- `SN&IMEI`: box-by-box item detail with sequence number, UPC, Serial as `SN`, and IMEI.
+- `各箱型号汇总`: UPC/model totals inside each box.
+- `出库详情`: actual scanned outbound summary with box count, total count, and UPC/model totals.
+
+This outbound Excel layout is fixed so it can match customer-facing packing detail sheets. The selected `fields` list still controls preview and CSV exports, but outbound Excel exports use the complete row data needed to build the four-sheet workbook.
+
 To re-download with the same report type, filters, fields, and format, call the same endpoint with:
 
 ```json

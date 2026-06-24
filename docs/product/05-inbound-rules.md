@@ -92,6 +92,13 @@ added inbound row below the scan inputs with the same package tracking number, U
 layout as the active scan entry form. Operators can click edit on this latest row and save changes in
 place; saving must overwrite the original preview row and must not create another preview row.
 
+After a row is automatically or manually added, the scan entry form should restore keyboard focus to
+the next receiving input so operators can continue with a scanner without clicking the mouse again.
+The default loop starts the next row at the package tracking field. When the operator enables the
+same-package continuous option, the current package tracking number is retained after a successful
+row and focus moves back to UPC for the next item. Exception rows must pause this focus loop until
+the abnormal row is corrected or removed.
+
 If the active draft contains exception rows, the exception summary should help the operator jump to
 the exception row and edit that row in place. Saving the correction must overwrite the original
 preview row and re-run the same UPC, package tracking, IMEI/Serial, duplicate, and scan-mode rules.

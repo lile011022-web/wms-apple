@@ -18,6 +18,7 @@ Reports provide traceable downloads for operational review, customer reconciliat
 - Every successful export must create a `REPORT_EXPORT` audit log.
 - 入库明细导出必须支持按已确认入库批次筛选下载，避免多天、多批次扫描后只能靠日期或搜索词定位。
 - 当入库明细按批次导出时，下载文件名必须包含批次号，方便操作员从浏览器下载记录和导出历史里辨认文件。
+- 装箱明细的 Excel 导出必须按客户核对样表排版，固定输出 `出库信息`、`SN&IMEI`、`各箱型号汇总`、`出库详情` 四个业务工作表；CSV 导出仍按用户勾选字段输出普通明细行。
 
 ## Supported Report Types
 
@@ -42,6 +43,7 @@ The detail-download page should:
 8. Download completed exports or re-create an export from history.
 
 For 装箱明细, the default page workflow should offer `仅已封箱` so customer-facing downloads do not include open boxes still being edited.
+When 装箱明细 is exported as Excel, the export uses a fixed customer-facing workbook layout rather than the selected-field table layout. Operators should use this Excel file for customer reconciliation because it groups SN/IMEI by box and includes per-box and whole-shipment UPC/model totals.
 
 For 入库明细, the page should offer an 入库批次 selector. Operators can download all inbound detail rows or restrict the export to one confirmed batch; selected-batch downloads should be named by batch number.
 
