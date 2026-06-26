@@ -67,7 +67,19 @@ Rows with `EXCEPTION`, `PACKED`, `OUTBOUND`, or `VOIDED` status must not appear 
 
 ## Customer Inventory Page Boundary
 
-The left navigation customer inventory page is for viewing customer-owned inventory only. It should not create boxes, select boxes, seal boxes, or expose batch packing controls.
+The left navigation customer inventory page is for viewing and cleaning customer-owned inventory. It
+should not create boxes, select boxes, seal boxes, or expose batch packing controls.
+
+The SKU summary table may expose destructive cleanup controls:
+
+- Operators can select one or more visible SKU rows and delete inventory for the selected customer,
+  warehouse, and products.
+- Operators can delete all SKU rows in the current SKU summary page.
+- Deletion must show a confirmation prompt before calling the API.
+- Deletion removes matching inventory rows, removes related outbound box item rows, and clears linked
+  inbound-item and exception inventory pointers.
+- Deletion does not delete customer records, products, inbound batches, or inbound item history.
+- Deletion must be audit logged with the selected customer, warehouse, product IDs, and deleted count.
 
 Batch packing belongs to the outbound packing workbench, where the selected customer inventory panel can add one or many available rows to the active outbound box.
 

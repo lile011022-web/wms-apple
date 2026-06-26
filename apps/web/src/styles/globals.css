@@ -396,6 +396,36 @@ textarea {
   font-size: 12px;
 }
 
+.inventory-section-title {
+  align-items: flex-start;
+}
+
+.inventory-section-title > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.inventory-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.inventory-bulk-actions .btn {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 0 12px;
+}
+
 .metric-grid,
 .stats-grid {
   display: grid;

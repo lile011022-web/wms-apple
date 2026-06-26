@@ -93,6 +93,28 @@ Expands one product into item-level IMEI or Serial inventory rows.
 
 Use the same query parameters as `GET /inventory/items`. The route validates that the product exists before listing rows.
 
+## DELETE /inventory/products
+
+Deletes inventory for one or more SKU/product rows in the customer inventory page.
+
+Permission: `customers.manage`
+
+Request body:
+
+```json
+{
+  "customerId": "customer-1",
+  "warehouseId": "warehouse-1",
+  "productIds": ["product-1", "product-2"]
+}
+```
+
+The backend deletes inventory rows matching the selected customer, optional warehouse, and selected
+products. Before deleting the inventory rows, it removes related outbound box item rows and clears
+linked `inbound_items.inventoryItemId` and `exception_records.inventoryItemId` values so foreign keys
+do not block the cleanup. The customer record, product catalog, inbound batch, and inbound item rows
+remain in place for historical review. The operation writes an audit log with the deleted item count.
+
 ## GET /inventory/items
 
 Returns item-level inventory rows.
@@ -133,7 +155,14 @@ filter in the IMEI detail section:
 - `latestOutboundBox.boxNo`: internal outbound box/order number when the inventory row has been packed or shipped.
 - `latestOutboundBox.boxName`: operator-facing generated box name, used by outbound packing search to tell staff which box already contains the item.
 
-The left navigation customer inventory page is read-only for box workflows. Batch packing must use `GET /inventory/available-for-outbound` from the outbound packing page, then add selected rows through `POST /outbound/boxes/:id/items`. The outbound packing page may call `GET /inventory/items` when an operator searches a specific value so packed rows can be found and their `latestOutboundBox` context can be shown, but only rows with `availableForOutbound = true` may be added to a box. Customer, warehouse, duplicate-packing, status, and audit rules remain owned by the outbound module.
+The left navigation customer inventory page does not create boxes, seal boxes, or pack inventory. It
+may delete selected SKU inventory for operational cleanup through `DELETE /inventory/products`.
+Batch packing must use `GET /inventory/available-for-outbound` from the outbound packing page, then
+add selected rows through `POST /outbound/boxes/:id/items`. The outbound packing page may call
+`GET /inventory/items` when an operator searches a specific value so packed rows can be found and
+their `latestOutboundBox` context can be shown, but only rows with `availableForOutbound = true` may
+be added to a box. Customer, warehouse, duplicate-packing, status, and audit rules remain owned by
+the outbound module.
 
 ## GET /inventory/items/:id
 
@@ -174,4 +203,7 @@ Returns the estimated row count and reusable report payload for inventory export
 
 ## Permission Notes
 
-The current gate is `inventory.read`. Customer or warehouse data-scope permissions are not modeled yet; when they are added, apply them in `InventoryService.normalizeItemQuery` or a dedicated policy layer before repository queries.
+Read endpoints use `inventory.read`. SKU inventory deletion uses `customers.manage` because it is a
+destructive customer-owned data cleanup action. Customer or warehouse data-scope permissions are not
+modeled yet; when they are added, apply them in `InventoryService.normalizeItemQuery` or a dedicated
+policy layer before repository queries.

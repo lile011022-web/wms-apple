@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InventoryStatus, Prisma } from '@prisma/client';
+import type { AuthenticatedUser } from '../../common/types/authenticated-user';
+import { DeleteInventoryProductsDto } from './dto/delete-inventory-products.dto';
 import { InventoryCustomerSummaryQueryDto } from './dto/inventory-customer-summary-query.dto';
 import { ListInventoryItemsQueryDto } from './dto/list-inventory-items-query.dto';
 import { ListInventoryProductsQueryDto } from './dto/list-inventory-products-query.dto';
@@ -151,6 +153,22 @@ export class InventoryService {
       throw new NotFoundException('Inventory item not found.');
     }
     return this.toItemResponse(item);
+  }
+
+  async deleteProducts(dto: DeleteInventoryProductsDto, operator: AuthenticatedUser) {
+    const customerId = await this.requireCustomerId(dto.customerId);
+    await this.findExistingCustomer(customerId);
+    const productIds = [...new Set(dto.productIds.map((id) => id.trim()).filter(Boolean))];
+    if (!productIds.length) {
+      throw new BadRequestException('At least one product must be selected.');
+    }
+
+    return this.inventoryRepository.deleteProducts({
+      customerId,
+      warehouseId: this.trimOptional(dto.warehouseId),
+      productIds,
+      operator,
+    });
   }
 
   async createExportPreview(query: ListInventoryItemsQueryDto) {

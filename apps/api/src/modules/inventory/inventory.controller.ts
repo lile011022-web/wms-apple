@@ -1,8 +1,11 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import type { AuthenticatedUser } from '../../common/types/authenticated-user';
+import { DeleteInventoryProductsDto } from './dto/delete-inventory-products.dto';
 import { InventoryCustomerSummaryQueryDto } from './dto/inventory-customer-summary-query.dto';
 import { ListInventoryItemsQueryDto } from './dto/list-inventory-items-query.dto';
 import { ListInventoryProductsQueryDto } from './dto/list-inventory-products-query.dto';
@@ -24,6 +27,12 @@ export class InventoryController {
   @Get('products')
   listProducts(@Query() query: ListInventoryProductsQueryDto) {
     return this.inventoryService.listProducts(query);
+  }
+
+  @Delete('products')
+  @Permissions('customers.manage')
+  deleteProducts(@Body() dto: DeleteInventoryProductsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.inventoryService.deleteProducts(dto, user);
   }
 
   @Get('products/:productId/items')

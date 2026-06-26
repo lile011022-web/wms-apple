@@ -4,6 +4,14 @@ import { CustomerStatus, InventoryStatus, ProductStatus } from '@prisma/client';
 import { InventoryRepository } from '../inventory.repository';
 import { InventoryService } from '../inventory.service';
 
+const operator = {
+  id: 'user-1',
+  email: 'operator@wms-scan.local',
+  name: 'Inventory Operator',
+  roles: ['ADMIN'],
+  permissions: ['customers.manage', 'inventory.read'],
+};
+
 const customer = {
   id: 'customer-1',
   code: 'CUST-001',
@@ -117,6 +125,12 @@ function createService(repositoryOverrides: Partial<Record<keyof InventoryReposi
     findItems: jest.fn().mockResolvedValue([1, [inventoryItem]]),
     countItems: jest.fn().mockResolvedValue(1),
     findItemById: jest.fn().mockResolvedValue(inventoryItem),
+    deleteProducts: jest.fn().mockResolvedValue({
+      deletedInventoryItems: 3,
+      deletedOutboundBoxItems: 1,
+      clearedInboundLinks: 3,
+      clearedExceptionLinks: 0,
+    }),
     toSearchWhere: jest.fn().mockReturnValue(undefined),
     toOutboundAvailableWhere: jest.fn().mockReturnValue({ status: InventoryStatus.IN_STOCK }),
     ...repositoryOverrides,
@@ -245,5 +259,37 @@ describe('InventoryService', () => {
         { product: { name: { contains: 'BOX-BB0001', mode: 'insensitive' } } },
       ]),
     });
+  });
+
+  it('deletes selected customer inventory products', async () => {
+    const { repository, service } = createService({});
+
+    await expect(
+      service.deleteProducts(
+        {
+          customerId: ' customer-1 ',
+          warehouseId: ' warehouse-1 ',
+          productIds: ['product-1', 'product-1', ' product-2 '],
+        },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      deletedInventoryItems: 3,
+      deletedOutboundBoxItems: 1,
+    });
+    expect(repository.deleteProducts).toHaveBeenCalledWith({
+      customerId: 'customer-1',
+      warehouseId: 'warehouse-1',
+      productIds: ['product-1', 'product-2'],
+      operator,
+    });
+  });
+
+  it('rejects product deletion without selected products', async () => {
+    const { service } = createService({});
+
+    await expect(
+      service.deleteProducts({ customerId: 'customer-1', productIds: [' '] }, operator),
+    ).rejects.toThrow(BadRequestException);
   });
 });

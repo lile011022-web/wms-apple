@@ -69,6 +69,7 @@ export const inventoryApi = {
     request<PaginatedResult<unknown>>('get', '/inventory/items', { params }),
   availableForOutbound: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/inventory/available-for-outbound', { params }),
+  deleteProducts: (data: Payload) => request<unknown>('delete', '/inventory/products', { data }),
 };
 
 export const outboundApi = {

@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { RefreshCw, Search } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { getSystemSettings, listWarehouses } from '../../api/settings';
 import { customersApi, inventoryApi } from '../../api/workflow';
@@ -8,6 +8,7 @@ import { PaginationControls } from '../../components/pagination-controls';
 import { selectDefaultWarehouseId } from '../../utils/default-warehouse';
 
 export function CustomerInventoryPage() {
+  const queryClient = useQueryClient();
   const [customerId, setCustomerId] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
   const [summaryPage, setSummaryPage] = useState(1);
@@ -15,6 +16,7 @@ export function CustomerInventoryPage() {
   const [detailPage, setDetailPage] = useState(1);
   const [detailPageSize, setDetailPageSize] = useState(50);
   const [detailSearch, setDetailSearch] = useState('');
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const detailTableRef = useRef<HTMLDivElement | null>(null);
   const customersQuery = useQuery({
     queryKey: ['customer-options'],
@@ -83,9 +85,69 @@ export function CustomerInventoryPage() {
     enabled: Boolean(customerId),
   });
   const inventory = inventoryQuery.data as InventoryResult | undefined;
+  const currentPageProductIds = productSummary?.items.map((row) => row.product.id) ?? [];
+  const selectedOnCurrentPage = currentPageProductIds.filter((id) =>
+    selectedProductIds.includes(id),
+  );
+  const isCurrentPageSelected =
+    currentPageProductIds.length > 0 && selectedOnCurrentPage.length === currentPageProductIds.length;
 
   const isFetching =
     customerSummaryQuery.isFetching || productSummaryQuery.isFetching || inventoryQuery.isFetching;
+  const deleteProductsMutation = useMutation({
+    mutationFn: (productIds: string[]) =>
+      inventoryApi.deleteProducts({
+        customerId,
+        warehouseId: warehouseId || undefined,
+        productIds,
+      }),
+    onSuccess: async () => {
+      setSelectedProductIds([]);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['inventory-customer-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-products'] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-items'] }),
+      ]);
+    },
+    onError: (error) => {
+      window.alert(error instanceof Error ? error.message : '删除库存失败');
+    },
+  });
+
+  useEffect(() => {
+    setSelectedProductIds([]);
+  }, [customerId, warehouseId, summaryPage, summaryPageSize]);
+
+  const toggleCurrentPageProducts = () => {
+    setSelectedProductIds((current) => {
+      if (isCurrentPageSelected) {
+        return current.filter((id) => !currentPageProductIds.includes(id));
+      }
+      return [...new Set([...current, ...currentPageProductIds])];
+    });
+  };
+
+  const toggleProduct = (productId: string) => {
+    setSelectedProductIds((current) =>
+      current.includes(productId)
+        ? current.filter((id) => id !== productId)
+        : [...current, productId],
+    );
+  };
+
+  const deleteProducts = (productIds: string[], label: string) => {
+    const normalizedProductIds = [...new Set(productIds)].filter(Boolean);
+    if (!normalizedProductIds.length || deleteProductsMutation.isPending) {
+      return;
+    }
+    const confirmed = window.confirm(
+      `确认删除${label}的库存？\n\n将删除 ${normalizedProductIds.length} 个 SKU 对应的当前客户/仓库库存，并解除相关箱内明细、入库记录和异常记录关联。`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    deleteProductsMutation.mutate(normalizedProductIds);
+  };
 
   return (
     <section className="page-frame">
@@ -167,9 +229,31 @@ export function CustomerInventoryPage() {
       </section>
 
       <section className="panel data-panel">
-        <div className="section-title">
-          <h2>SKU 汇总明细</h2>
-          <span>共 {productSummary?.total ?? 0} 款</span>
+        <div className="section-title inventory-section-title">
+          <div>
+            <h2>SKU 汇总明细</h2>
+            <span>共 {productSummary?.total ?? 0} 款，已选 {selectedProductIds.length} 款</span>
+          </div>
+          <div className="inventory-bulk-actions">
+            <button
+              type="button"
+              className="btn danger"
+              disabled={!selectedProductIds.length || deleteProductsMutation.isPending}
+              onClick={() => deleteProducts(selectedProductIds, '选中 SKU')}
+            >
+              <Trash2 size={16} />
+              删除选中
+            </button>
+            <button
+              type="button"
+              className="btn danger"
+              disabled={!currentPageProductIds.length || deleteProductsMutation.isPending}
+              onClick={() => deleteProducts(currentPageProductIds, '当前分页 SKU')}
+            >
+              <Trash2 size={16} />
+              删除当前分页
+            </button>
+          </div>
         </div>
         <PaginationControls
           page={summaryPage}
@@ -185,6 +269,14 @@ export function CustomerInventoryPage() {
         <table className="data-table">
           <thead>
             <tr>
+              <th>
+                <input
+                  type="checkbox"
+                  checked={isCurrentPageSelected}
+                  onChange={toggleCurrentPageProducts}
+                  aria-label="选择当前分页 SKU"
+                />
+              </th>
               <th>UPC</th>
               <th>SKU</th>
               <th>商品</th>
@@ -201,6 +293,14 @@ export function CustomerInventoryPage() {
           <tbody>
             {productSummary?.items.map((row) => (
               <tr key={row.product.id}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedProductIds.includes(row.product.id)}
+                    onChange={() => toggleProduct(row.product.id)}
+                    aria-label={`选择 ${row.product.sku}`}
+                  />
+                </td>
                 <td className="mono">{row.product.upcs.join(', ') || '-'}</td>
                 <td className="mono">{row.product.sku}</td>
                 <td>{row.product.name}</td>
@@ -216,7 +316,7 @@ export function CustomerInventoryPage() {
             ))}
             {!productSummary || productSummary.items.length === 0 ? (
               <tr>
-                <td colSpan={11}>暂无 SKU 汇总</td>
+                <td colSpan={12}>暂无 SKU 汇总</td>
               </tr>
             ) : null}
           </tbody>

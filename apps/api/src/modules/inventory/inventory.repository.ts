@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { InventoryStatus, Prisma } from '@prisma/client';
+import { AuditAction, InventoryStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 
 const inventoryItemInclude = {
   customer: true,
@@ -167,6 +168,94 @@ export class InventoryRepository {
     return this.prisma.inventoryItem.findUnique({
       where: { id },
       include: inventoryItemInclude,
+    });
+  }
+
+  async deleteProducts(input: {
+    customerId: string;
+    warehouseId?: string;
+    productIds: string[];
+    operator: AuthenticatedUser;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const where: Prisma.InventoryItemWhereInput = {
+        customerId: input.customerId,
+        warehouseId: input.warehouseId,
+        productId: { in: input.productIds },
+      };
+      const inventoryItems = await tx.inventoryItem.findMany({
+        where,
+        select: {
+          id: true,
+          productId: true,
+          upc: true,
+          imei: true,
+          serial: true,
+          status: true,
+        },
+      });
+      const inventoryItemIds = inventoryItems.map((item) => item.id);
+
+      if (!inventoryItemIds.length) {
+        return {
+          deletedInventoryItems: 0,
+          deletedOutboundBoxItems: 0,
+          clearedInboundLinks: 0,
+          clearedExceptionLinks: 0,
+        };
+      }
+
+      const deletedOutboundBoxItems = await tx.outboundBoxItem.deleteMany({
+        where: { inventoryItemId: { in: inventoryItemIds } },
+      });
+      const clearedInboundLinks = await tx.inboundItem.updateMany({
+        where: { inventoryItemId: { in: inventoryItemIds } },
+        data: { inventoryItemId: null },
+      });
+      const clearedExceptionLinks = await tx.exceptionRecord.updateMany({
+        where: { inventoryItemId: { in: inventoryItemIds } },
+        data: { inventoryItemId: null },
+      });
+
+      const deletedInventoryItems = await tx.inventoryItem.deleteMany({
+        where: { id: { in: inventoryItemIds } },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: AuditAction.CUSTOMER_CHANGE,
+          resourceType: 'inventory-products',
+          resourceId: input.customerId,
+          operatorId: input.operator.id,
+          beforeSnapshot: {
+            customerId: input.customerId,
+            warehouseId: input.warehouseId ?? null,
+            productIds: input.productIds,
+            itemCount: inventoryItems.length,
+            sampleItems: inventoryItems.slice(0, 20),
+          },
+          afterSnapshot: {
+            deletedInventoryItems: deletedInventoryItems.count,
+            deletedOutboundBoxItems: deletedOutboundBoxItems.count,
+            clearedInboundLinks: clearedInboundLinks.count,
+            clearedExceptionLinks: clearedExceptionLinks.count,
+          },
+          metadata: {
+            operation: 'inventory_product_delete',
+            customerId: input.customerId,
+            warehouseId: input.warehouseId ?? null,
+            productIds: input.productIds,
+            deletedInventoryItems: deletedInventoryItems.count,
+          },
+        },
+      });
+
+      return {
+        deletedInventoryItems: deletedInventoryItems.count,
+        deletedOutboundBoxItems: deletedOutboundBoxItems.count,
+        clearedInboundLinks: clearedInboundLinks.count,
+        clearedExceptionLinks: clearedExceptionLinks.count,
+      };
     });
   }
 
