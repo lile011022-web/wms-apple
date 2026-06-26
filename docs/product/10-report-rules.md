@@ -43,7 +43,7 @@ The detail-download page should:
 8. Download completed exports or re-create an export from history.
 
 For 装箱明细, the default page workflow should offer `仅已封箱` so customer-facing downloads do not include open boxes still being edited.
-When 装箱明细 is exported as Excel, the export uses a fixed customer-facing workbook layout rather than the selected-field table layout. Operators should use this Excel file for customer reconciliation because it groups SN/IMEI by box and includes per-box and whole-shipment UPC/model totals.
+When 装箱明细 is exported as Excel, the export uses a fixed customer-facing workbook layout rather than the selected-field table layout. Operators should use this Excel file for customer reconciliation because it groups SN/IMEI by box, includes each box's uploaded outbound shipment or label number, and includes per-box and whole-shipment UPC/model totals.
 
 For 入库明细, the page should offer an 入库批次 selector. Operators can download all inbound detail rows or restrict the export to one confirmed batch; selected-batch downloads should be named by batch number.
 

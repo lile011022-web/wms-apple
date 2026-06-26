@@ -61,6 +61,7 @@ const outboundRow = {
   outboundBox: {
     boxNo: 'BOX-20260621-001',
     boxName: 'Apex Trading - Blue iPad',
+    shippingTrackingNo: 'UPLOAD-TRACK-001',
     notes: '每箱备注：翻新 iPad 蓝色机',
     status: 'SEALED',
     customer: { code: 'CUST-001', name: 'Apple Reseller' },
@@ -82,6 +83,7 @@ const outboundRowSecondBox = {
   outboundBox: {
     boxNo: 'BOX-20260621-002',
     boxName: 'Apex Trading - Silver iPad',
+    shippingTrackingNo: 'UPLOAD-TRACK-002',
     notes: '第二箱备注',
     status: 'SEALED',
     customer: { code: 'CUST-001', name: 'Apple Reseller' },
@@ -226,19 +228,20 @@ describe('ReportsService', () => {
     );
   });
 
-  it('includes box notes in outbound detail downloads', async () => {
+  it('includes box notes and uploaded tracking number in outbound detail downloads', async () => {
     const { service } = createService({ findRows: jest.fn().mockResolvedValue([outboundRow]) });
 
     await expect(
       service.preview({
         reportType: ReportType.OUTBOUND_DETAIL,
-        fields: ['boxNo', 'boxNotes', 'imei'],
+        fields: ['boxNo', 'shippingTrackingNo', 'boxNotes', 'imei'],
       }),
     ).resolves.toMatchObject({
-      selectedFields: ['boxNo', 'boxNotes', 'imei'],
+      selectedFields: ['boxNo', 'shippingTrackingNo', 'boxNotes', 'imei'],
       sampleRows: [
         {
           boxNo: 'BOX-20260621-001',
+          shippingTrackingNo: 'UPLOAD-TRACK-001',
           boxNotes: '每箱备注：翻新 iPad 蓝色机',
           imei: 'SH9LRL91YFC',
         },
@@ -280,6 +283,9 @@ describe('ReportsService', () => {
     expect(completedPayload.metadata.fileContent).toContain('<Worksheet ss:Name="出库详情">');
     expect(completedPayload.metadata.fileContent).toContain('第 1 箱  （1 件）');
     expect(completedPayload.metadata.fileContent).toContain('第 2 箱  （1 件）');
+    expect(completedPayload.metadata.fileContent).toContain('上传单号：');
+    expect(completedPayload.metadata.fileContent).toContain('UPLOAD-TRACK-001');
+    expect(completedPayload.metadata.fileContent).toContain('UPLOAD-TRACK-002');
     expect(completedPayload.metadata.fileContent).toContain('SN-002');
     expect(completedPayload.metadata.fileContent).toContain('356789012345679');
     expect(completedPayload.metadata.fileContent).toContain('实际扫描总数：');

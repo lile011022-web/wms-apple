@@ -86,12 +86,12 @@ Supported formats:
 
 The current implementation completes small exports synchronously. Reports over the configured synchronous row limit are rejected for background-job handling. A successful export writes an `AuditLog` with action `REPORT_EXPORT`.
 
-For sealed packing detail downloads, use `reportType = OUTBOUND_DETAIL` with `filters.outboundStatus = SEALED`. Search supports box number, customer, UPC, tracking number, IMEI, Serial, SKU, and product name. Include `boxNotes` when the download needs each box's remark.
+For sealed packing detail downloads, use `reportType = OUTBOUND_DETAIL` with `filters.outboundStatus = SEALED`. Search supports box number, customer, UPC, tracking number, IMEI, Serial, SKU, and product name. Include `boxNotes` when the download needs each box's remark, and include `shippingTrackingNo` when the download needs the uploaded outbound shipment or label number.
 
 When `reportType = OUTBOUND_DETAIL` and `format = EXCEL`, the generated workbook follows the customer reconciliation layout used for outbound packing:
 
 - `出库信息`: outbound identifier, customer, date, total quantity, and whole-export UPC/model totals.
-- `SN&IMEI`: box-by-box item detail with sequence number, UPC, Serial as `SN`, and IMEI.
+- `SN&IMEI`: box-by-box item detail with each box's uploaded outbound shipment or label number, sequence number, UPC, Serial as `SN`, and IMEI.
 - `各箱型号汇总`: UPC/model totals inside each box.
 - `出库详情`: actual scanned outbound summary with box count, total count, and UPC/model totals.
 

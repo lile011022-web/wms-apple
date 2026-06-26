@@ -35,6 +35,7 @@ type ExportMetadata = {
 type OutboundDetailExportRow = {
   boxNo: string;
   boxName: string;
+  shippingTrackingNo: string;
   customerCode: string;
   customerName: string;
   warehouseCode: string;
@@ -49,6 +50,7 @@ type OutboundDetailExportRow = {
 type OutboundBoxExportGroup = {
   boxNo: string;
   boxName: string;
+  shippingTrackingNo: string;
   rows: OutboundDetailExportRow[];
 };
 
@@ -488,6 +490,7 @@ export class ReportsService {
           ],
           22,
         ),
+        this.infoRow('上传单号：', box.shippingTrackingNo || '-', 2),
       );
       rows.push(
         this.excelRow([
@@ -531,7 +534,13 @@ export class ReportsService {
       }
       rows.push(
         this.excelRow(
-          [this.excelCell(`第 ${boxIndex + 1} 箱`, 'BoxTitle', { mergeAcross: 2 })],
+          [
+            this.excelCell(
+              `第 ${boxIndex + 1} 箱  上传单号：${box.shippingTrackingNo || '-'}`,
+              'BoxTitle',
+              { mergeAcross: 2 },
+            ),
+          ],
           22,
         ),
       );
@@ -652,6 +661,9 @@ export class ReportsService {
     return rows.map((row) => ({
       boxNo: this.formatValue(this.readPath(row, 'outboundBox', 'boxNo')),
       boxName: this.formatValue(this.readPath(row, 'outboundBox', 'boxName')),
+      shippingTrackingNo: this.formatValue(
+        this.readPath(row, 'outboundBox', 'shippingTrackingNo'),
+      ),
       customerCode: this.formatValue(this.readPath(row, 'outboundBox', 'customer', 'code')),
       customerName: this.formatValue(this.readPath(row, 'outboundBox', 'customer', 'name')),
       warehouseCode: this.formatValue(this.readPath(row, 'outboundBox', 'warehouse', 'code')),
@@ -679,6 +691,7 @@ export class ReportsService {
         const group = groups.get(key) ?? {
           boxNo: row.boxNo,
           boxName: row.boxName,
+          shippingTrackingNo: row.shippingTrackingNo,
           rows: [],
         };
         group.rows.push(row);
@@ -772,6 +785,7 @@ export class ReportsService {
       [ReportType.OUTBOUND_DETAIL]: [
         field('boxNo', 'Box No', 'outboundBox', 'boxNo'),
         field('boxName', 'Box Name', 'outboundBox', 'boxName'),
+        field('shippingTrackingNo', 'Uploaded Tracking No', 'outboundBox', 'shippingTrackingNo'),
         field('boxNotes', 'Box Notes', 'outboundBox', 'notes'),
         field('boxStatus', 'Box Status', 'outboundBox', 'status'),
         field('customerCode', 'Customer Code', 'outboundBox', 'customer', 'code'),
