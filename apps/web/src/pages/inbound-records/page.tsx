@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, RefreshCw, Search, ShieldCheck } from 'lucide-react';
+import { Download, Edit3, RefreshCw, Save, Search, ShieldCheck, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { customersApi, inboundApi } from '../../api/workflow';
 import { PaginationControls } from '../../components/pagination-controls';
@@ -13,6 +13,7 @@ export function InboundRecordsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [preview, setPreview] = useState<InboundExportPreview | null>(null);
+  const [upcEdit, setUpcEdit] = useState({ itemId: '', upc: '', reason: '' });
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const queryClient = useQueryClient();
@@ -70,12 +71,56 @@ export function InboundRecordsPage() {
     },
   });
 
+  const correctUpcMutation = useMutation({
+    mutationFn: ({ itemId, upc, reason }: { itemId: string; upc: string; reason: string }) =>
+      inboundApi.correctRecordUpc(itemId, { upc, reason }),
+    onSuccess: () => {
+      setUpcEdit({ itemId: '', upc: '', reason: '' });
+      setMessage('UPC 已修正，入库明细和库存商品归属已同步更新。');
+      setErrorMessage('');
+      void recordsQuery.refetch();
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      void queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      void queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
+      void queryClient.invalidateQueries({ queryKey: ['inventory-products'] });
+      void queryClient.invalidateQueries({ queryKey: ['outbound-available-items'] });
+    },
+    onError: (error) => {
+      setMessage('');
+      setErrorMessage(error instanceof Error ? error.message : 'UPC 修正失败');
+    },
+  });
+
   function handleForceConfirm(item: InboundRecord) {
     setMessage('');
     setErrorMessage('');
     const reason = window.prompt('请输入强制入库原因');
     if (!reason) return;
     forceConfirmMutation.mutate({ itemId: item.id, reason });
+  }
+
+  function startUpcEdit(item: InboundRecord) {
+    setUpcEdit({ itemId: item.id, upc: item.upc, reason: '' });
+    setMessage('');
+    setErrorMessage('');
+  }
+
+  function cancelUpcEdit() {
+    setUpcEdit({ itemId: '', upc: '', reason: '' });
+  }
+
+  function saveUpcEdit() {
+    const nextUpc = upcEdit.upc.trim();
+    const reason = upcEdit.reason.trim();
+    if (!nextUpc) {
+      setErrorMessage('请填写修正后的 UPC');
+      return;
+    }
+    if (!reason) {
+      setErrorMessage('请填写 UPC 修正原因');
+      return;
+    }
+    correctUpcMutation.mutate({ itemId: upcEdit.itemId, upc: nextUpc, reason });
   }
 
   return (
@@ -212,13 +257,47 @@ export function InboundRecordsPage() {
             {records?.items.map((item) => {
               const canForceConfirm =
                 item.status === 'EXCEPTION' && Boolean(item.product) && !item.inventoryItemId;
+              const isUpcEditing = upcEdit.itemId === item.id;
+              const canCorrectUpc =
+                item.status === 'CONFIRMED' &&
+                Boolean(item.inventoryItemId) &&
+                (item.inventoryStatus === 'IN_STOCK' || item.inventoryStatus === 'EXCEPTION');
               return (
                 <tr key={item.id}>
                   <td className="mono">
                     {item.batch?.batchNo ?? item.inboundBatch?.batchNo ?? '-'}
                   </td>
                   <td>{item.customer?.code ?? '-'}</td>
-                  <td className="mono">{item.upc}</td>
+                  <td className="mono">
+                    {isUpcEditing ? (
+                      <div className="upc-correction-box">
+                        <input
+                          className="table-inline-input"
+                          value={upcEdit.upc}
+                          onChange={(event) =>
+                            setUpcEdit((current) => ({
+                              ...current,
+                              upc: event.target.value.trim(),
+                            }))
+                          }
+                          placeholder="输入正确 UPC"
+                        />
+                        <input
+                          className="table-inline-input"
+                          value={upcEdit.reason}
+                          onChange={(event) =>
+                            setUpcEdit((current) => ({
+                              ...current,
+                              reason: event.target.value,
+                            }))
+                          }
+                          placeholder="修正原因"
+                        />
+                      </div>
+                    ) : (
+                      item.upc
+                    )}
+                  </td>
                   <td className="mono">{item.imei ?? item.serial ?? '-'}</td>
                   <td>{item.product?.name ?? '-'}</td>
                   <td className="mono">{item.upsTrackingNo ?? '-'}</td>
@@ -230,19 +309,52 @@ export function InboundRecordsPage() {
                   <td>{formatDate(item.scannedAt ?? item.createdAt)}</td>
                   <td>{formatOperator(item.batch?.operator ?? item.inboundBatch?.operator)}</td>
                   <td>
-                    {canForceConfirm ? (
-                      <button
-                        type="button"
-                        className="table-action"
-                        disabled={forceConfirmMutation.isPending}
-                        onClick={() => handleForceConfirm(item)}
-                      >
-                        <ShieldCheck size={14} />
-                        强制入库
-                      </button>
-                    ) : (
-                      '-'
-                    )}
+                    <div className="inbound-record-actions">
+                      {canForceConfirm ? (
+                        <button
+                          type="button"
+                          className="table-action"
+                          disabled={forceConfirmMutation.isPending}
+                          onClick={() => handleForceConfirm(item)}
+                        >
+                          <ShieldCheck size={14} />
+                          强制入库
+                        </button>
+                      ) : null}
+                      {isUpcEditing ? (
+                        <>
+                          <button
+                            type="button"
+                            className="table-action"
+                            disabled={correctUpcMutation.isPending}
+                            onClick={saveUpcEdit}
+                          >
+                            <Save size={14} />
+                            {correctUpcMutation.isPending ? '保存中' : '保存'}
+                          </button>
+                          <button
+                            type="button"
+                            className="table-action secondary"
+                            disabled={correctUpcMutation.isPending}
+                            onClick={cancelUpcEdit}
+                          >
+                            <X size={14} />
+                            取消
+                          </button>
+                        </>
+                      ) : canCorrectUpc ? (
+                        <button
+                          type="button"
+                          className="table-action secondary"
+                          disabled={correctUpcMutation.isPending}
+                          onClick={() => startUpcEdit(item)}
+                        >
+                          <Edit3 size={14} />
+                          修正UPC
+                        </button>
+                      ) : null}
+                      {!canForceConfirm && !canCorrectUpc && !isUpcEditing ? '-' : null}
+                    </div>
                   </td>
                 </tr>
               );
@@ -274,6 +386,7 @@ type InboundRecord = {
   upsTrackingNo?: string | null;
   status: string;
   inventoryItemId?: string | null;
+  inventoryStatus?: string | null;
   forcedInbound?: boolean;
   forceReason?: string | null;
   forcedAt?: string | null;
@@ -281,7 +394,7 @@ type InboundRecord = {
   scannedAt?: string | null;
   createdAt: string;
   customer?: { code: string; name: string } | null;
-  product?: { name: string } | null;
+  product?: { id?: string; name: string; modelCode?: string | null } | null;
   batch?: { batchNo: string; operator?: OperatorSummary | null } | null;
   inboundBatch?: { batchNo: string; operator?: OperatorSummary | null } | null;
 };

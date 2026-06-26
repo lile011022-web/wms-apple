@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { AddInboundItemDto } from './dto/add-inbound-item.dto';
+import { CorrectInboundRecordUpcDto } from './dto/correct-inbound-record-upc.dto';
 import { CreateInboundDraftDto } from './dto/create-inbound-draft.dto';
 import { ForceConfirmInboundItemDto } from './dto/force-confirm-inbound-item.dto';
 import { ImportInboundItemsDto } from './dto/import-inbound-items.dto';
@@ -87,6 +88,15 @@ export class InboundController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.inboundService.forceConfirmRecord(id, dto, user);
+  }
+
+  @Patch('records/:id/upc')
+  correctRecordUpc(
+    @Param('id') id: string,
+    @Body() dto: CorrectInboundRecordUpcDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inboundService.correctRecordUpc(id, dto, user);
   }
 
   @Get('records')

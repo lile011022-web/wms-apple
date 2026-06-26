@@ -69,6 +69,12 @@ Inbound preview deletion is logical during the draft lifecycle. Removed rows are
 
 Confirmed inbound records and inventory rows must not be physically deleted by normal inbound workflows.
 
+If an operator confirms an inbound row with the wrong UPC, the correction must be done from the
+inbound records page instead of deleting history. A confirmed row can have its UPC corrected only
+while its linked inventory is still `IN_STOCK` or `EXCEPTION`. The corrected UPC must match an
+active UPC/product mapping, and the system must update both the inbound record and linked inventory
+item in one audited transaction. Packed or outbound inventory cannot be corrected through this flow.
+
 ## Force Inbound
 
 Force inbound is a supervisor exception workflow for rows that were saved as `EXCEPTION` but should become inventory after manual review.

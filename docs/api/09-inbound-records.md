@@ -62,6 +62,28 @@ Returns one inbound item with batch, customer, product, linked inventory status,
 
 Use this for the inbound-record detail drawer when the selected table row is an inbound item.
 
+## Correct Record UPC
+
+`PATCH /api/v1/inbound/records/:id/upc`
+
+```json
+{
+  "upc": "195950251593",
+  "reason": "UPC was scanned incorrectly during receiving."
+}
+```
+
+Corrects the UPC/product assignment for a confirmed inbound record and its linked inventory row.
+
+Rules:
+
+- The inbound batch must already be confirmed.
+- The inbound row must be `CONFIRMED` and linked to inventory.
+- Linked inventory must still be `IN_STOCK` or `EXCEPTION`; packed or outbound inventory is blocked.
+- The new UPC must match an active UPC mapping and active product.
+- The request must include an operator reason.
+- The API updates both `inbound_items` and `inventory_items` in one transaction and writes an `INBOUND_UPC_CORRECTION` audit log.
+
 ## Get Record Items
 
 `GET /api/v1/inbound/records/:id/items`

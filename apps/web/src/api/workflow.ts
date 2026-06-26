@@ -52,6 +52,8 @@ export const inboundApi = {
     request<PaginatedResult<unknown>>('get', '/inbound/records', { params }),
   forceConfirmRecord: (id: string, data: Payload) =>
     request<unknown>('post', `/inbound/records/${id}/force-confirm`, { data }),
+  correctRecordUpc: (id: string, data: Payload) =>
+    request<unknown>('patch', `/inbound/records/${id}/upc`, { data }),
   exportPreview: (data: Payload) =>
     request<unknown>('post', '/inbound/records/export-preview', { data }),
 };

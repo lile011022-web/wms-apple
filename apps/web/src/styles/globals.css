@@ -2555,6 +2555,23 @@ button:disabled {
   margin-left: 0;
 }
 
+.inbound-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.inbound-record-actions .table-action + .table-action {
+  margin-left: 0;
+}
+
+.upc-correction-box {
+  display: grid;
+  min-width: 220px;
+  gap: 6px;
+}
+
 .table-inline-input {
   min-height: 34px;
   width: 100%;

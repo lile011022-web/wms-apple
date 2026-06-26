@@ -135,6 +135,37 @@ const pendingItem = {
   inventoryItem: null,
 };
 
+const confirmedInventoryItem = {
+  id: 'inventory-1',
+  customerId: 'customer-1',
+  warehouseId: 'warehouse-1',
+  productId: 'product-1',
+  inboundBatchId: 'draft-1',
+  imei: '356789012345678',
+  serial: null,
+  upc: '194253149189',
+  upsTrackingNo: '1Z999AA10123456784',
+  status: InventoryStatus.IN_STOCK,
+  receivedAt: new Date('2026-06-17T00:00:00Z'),
+  packedAt: null,
+  outboundAt: null,
+  voidedAt: null,
+  createdAt: new Date('2026-06-17T00:00:00Z'),
+  updatedAt: new Date('2026-06-17T00:00:00Z'),
+};
+
+const confirmedItem = {
+  ...pendingItem,
+  status: InboundItemStatus.CONFIRMED,
+  inventoryItemId: confirmedInventoryItem.id,
+  inboundBatch: {
+    ...draft,
+    status: InboundBatchStatus.CONFIRMED,
+    confirmedAt: new Date('2026-06-17T00:00:00Z'),
+  },
+  inventoryItem: confirmedInventoryItem,
+};
+
 function createService(repositoryOverrides: Partial<Record<keyof InboundRepository, jest.Mock>>) {
   const repository = {
     findCustomerById: jest.fn().mockResolvedValue(customer),
@@ -163,6 +194,7 @@ function createService(repositoryOverrides: Partial<Record<keyof InboundReposito
     deleteItem: jest.fn(),
     clearDraftItems: jest.fn(),
     forceConfirmItem: jest.fn(),
+    correctRecordUpc: jest.fn().mockResolvedValue(confirmedItem),
     confirmDraft: jest.fn().mockResolvedValue({
       ...draft,
       status: InboundBatchStatus.CONFIRMED,
@@ -409,6 +441,80 @@ describe('InboundService', () => {
       operatorId: 'user-1',
       reason: 'FedEx tracking reviewed',
     });
+  });
+
+  it('corrects UPC on a confirmed inbound record and linked inventory', async () => {
+    const nextProduct = {
+      ...product,
+      id: 'product-2',
+      sku: 'IPHONE-16-PRO-128-BLK',
+      name: 'iPhone 16 Pro 128GB Black Titanium',
+      upcs: [],
+    };
+    const correctedItem = {
+      ...confirmedItem,
+      upc: '195950251593',
+      productId: nextProduct.id,
+      product: nextProduct,
+      inventoryItem: {
+        ...confirmedInventoryItem,
+        upc: '195950251593',
+        productId: nextProduct.id,
+      },
+    };
+    const { repository, service } = createService({
+      findItemById: jest.fn().mockResolvedValue(confirmedItem),
+      findProductByUpc: jest.fn().mockResolvedValue({
+        id: 'upc-2',
+        upc: '195950251593',
+        productId: nextProduct.id,
+        status: ProductStatus.ACTIVE,
+        createdAt: new Date('2026-06-17T00:00:00Z'),
+        updatedAt: new Date('2026-06-17T00:00:00Z'),
+        product: nextProduct,
+      }),
+      correctRecordUpc: jest.fn().mockResolvedValue(correctedItem),
+    });
+
+    await expect(
+      service.correctRecordUpc(
+        'item-1',
+        { upc: ' 195950251593 ', reason: 'UPC scanned wrong during receiving' },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      upc: '195950251593',
+      product: { id: nextProduct.id, name: nextProduct.name },
+    });
+
+    expect(repository.correctRecordUpc).toHaveBeenCalledWith({
+      itemId: confirmedItem.id,
+      inventoryItemId: confirmedInventoryItem.id,
+      operatorId: operator.id,
+      upc: '195950251593',
+      productId: nextProduct.id,
+      reason: 'UPC scanned wrong during receiving',
+    });
+  });
+
+  it('rejects UPC correction after inventory is packed or outbound', async () => {
+    const { service } = createService({
+      findItemById: jest.fn().mockResolvedValue({
+        ...confirmedItem,
+        inventoryItem: {
+          ...confirmedInventoryItem,
+          status: InventoryStatus.PACKED,
+        },
+      }),
+    });
+
+    await expect(
+      service.correctRecordUpc(
+        'item-1',
+        { upc: '195950251593', reason: 'UPC scanned wrong during receiving' },
+        operator,
+      ),
+    ).rejects.toThrow('Packed or outbound inventory cannot have UPC corrected.');
   });
 
   it('rejects force inbound when the exception item has no matched active product', async () => {

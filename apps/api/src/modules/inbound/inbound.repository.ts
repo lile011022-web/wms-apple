@@ -456,6 +456,88 @@ export class InboundRepository {
     });
   }
 
+  async correctRecordUpc(input: {
+    itemId: string;
+    inventoryItemId: string;
+    operatorId: string;
+    upc: string;
+    productId: string;
+    reason: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const item = await tx.inboundItem.findUniqueOrThrow({
+        where: { id: input.itemId },
+        include: inboundItemInclude,
+      });
+      const inventoryItem = await tx.inventoryItem.findUniqueOrThrow({
+        where: { id: input.inventoryItemId },
+        include: { product: true },
+      });
+
+      const [updatedItem] = await Promise.all([
+        tx.inboundItem.update({
+          where: { id: input.itemId },
+          data: {
+            upc: input.upc,
+            productId: input.productId,
+          },
+          include: inboundItemInclude,
+        }),
+        tx.inventoryItem.update({
+          where: { id: input.inventoryItemId },
+          data: {
+            upc: input.upc,
+            productId: input.productId,
+          },
+        }),
+      ]);
+
+      await tx.auditLog.create({
+        data: {
+          action: AuditAction.INBOUND_UPC_CORRECTION,
+          resourceType: 'inbound-item',
+          resourceId: item.id,
+          operatorId: input.operatorId,
+          beforeSnapshot: {
+            inboundItem: {
+              upc: item.upc,
+              productId: item.productId,
+            },
+            inventoryItem: {
+              id: inventoryItem.id,
+              upc: inventoryItem.upc,
+              productId: inventoryItem.productId,
+              status: inventoryItem.status,
+            },
+          },
+          afterSnapshot: {
+            inboundItem: {
+              upc: updatedItem.upc,
+              productId: updatedItem.productId,
+            },
+            inventoryItem: {
+              id: input.inventoryItemId,
+              upc: input.upc,
+              productId: input.productId,
+              status: inventoryItem.status,
+            },
+          },
+          metadata: {
+            reason: input.reason,
+            batchId: item.inboundBatchId,
+            customerId: item.customerId,
+            warehouseId: item.inboundBatch.warehouseId,
+            inventoryItemId: input.inventoryItemId,
+            beforeProductName: item.product?.name,
+            afterProductId: input.productId,
+          },
+        },
+      });
+
+      return updatedItem;
+    });
+  }
+
   findRecords(params: {
     skip: number;
     take: number;

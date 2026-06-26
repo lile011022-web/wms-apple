@@ -9,6 +9,7 @@ import {
   ExceptionType,
   InboundBatchStatus,
   InboundItemStatus,
+  InventoryStatus,
   Prisma,
   ProductStatus,
 } from '@prisma/client';
@@ -22,6 +23,7 @@ import {
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { SettingsService } from '../settings/settings.service';
 import { AddInboundItemDto } from './dto/add-inbound-item.dto';
+import { CorrectInboundRecordUpcDto } from './dto/correct-inbound-record-upc.dto';
 import { CreateInboundDraftDto } from './dto/create-inbound-draft.dto';
 import { ForceConfirmInboundItemDto } from './dto/force-confirm-inbound-item.dto';
 import { ImportInboundItemsDto } from './dto/import-inbound-items.dto';
@@ -317,6 +319,57 @@ export class InboundService {
       reason,
     });
     return this.toItemResponse(confirmed);
+  }
+
+  async correctRecordUpc(id: string, dto: CorrectInboundRecordUpcDto, operator: AuthenticatedUser) {
+    const item = await this.inboundRepository.findItemById(id);
+    if (!item) {
+      throw new NotFoundException('Inbound record not found.');
+    }
+    if (item.inboundBatch.status !== InboundBatchStatus.CONFIRMED) {
+      throw new ConflictException('Only records from confirmed inbound batches can be corrected.');
+    }
+    if (item.status !== InboundItemStatus.CONFIRMED) {
+      throw new ConflictException('Only confirmed inbound records can have UPC corrected.');
+    }
+    if (!item.inventoryItemId || !item.inventoryItem) {
+      throw new ConflictException('Inbound record has no linked inventory to correct.');
+    }
+    if (
+      item.inventoryItem.status !== InventoryStatus.IN_STOCK &&
+      item.inventoryItem.status !== InventoryStatus.EXCEPTION
+    ) {
+      throw new ConflictException('Packed or outbound inventory cannot have UPC corrected.');
+    }
+
+    const nextUpc = this.normalizeUpc(dto.upc);
+    const reason = dto.reason.trim();
+    if (!reason) {
+      throw new BadRequestException('UPC correction reason is required.');
+    }
+    if (nextUpc === item.upc) {
+      throw new ConflictException('New UPC is the same as the current UPC.');
+    }
+
+    const productUpc = await this.inboundRepository.findProductByUpc(nextUpc);
+    if (
+      !productUpc ||
+      productUpc.status !== ProductStatus.ACTIVE ||
+      productUpc.product.status !== ProductStatus.ACTIVE
+    ) {
+      throw new ConflictException('New UPC does not match an active product.');
+    }
+
+    const corrected = await this.inboundRepository.correctRecordUpc({
+      itemId: item.id,
+      inventoryItemId: item.inventoryItemId,
+      operatorId: operator.id,
+      upc: nextUpc,
+      productId: productUpc.product.id,
+      reason,
+    });
+
+    return this.toItemResponse(corrected);
   }
 
   async getRecordItems(batchId: string, query: ListInboundRecordsQueryDto) {
