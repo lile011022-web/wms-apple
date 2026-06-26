@@ -81,6 +81,7 @@ export function InboundScanPage() {
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [trackingWarning, setTrackingWarning] = useState<TrackingWarning | null>(null);
+  const [isCheckingTracking, setIsCheckingTracking] = useState(false);
   const [importRows, setImportRows] = useState<ImportInboundItemRow[]>([]);
   const [importFileName, setImportFileName] = useState('');
   const [importFailedRows, setImportFailedRows] = useState<ImportFailedRow[]>([]);
@@ -166,6 +167,7 @@ export function InboundScanPage() {
     isCurrentSelectionLocked &&
     !blockingExceptionItem &&
     !isTrackingWarningBlocking &&
+    !isCheckingTracking &&
     !!upsTrackingNo.trim() &&
     !!upc.trim() &&
     (scanMode === 'TRACKING_UPC' || !!imei.trim());
@@ -252,6 +254,54 @@ export function InboundScanPage() {
     return nextDraft;
   };
 
+  const reviewTrackingInput = useCallback(async () => {
+    const normalized = normalizeTrackingInput(upsTrackingNo);
+    if (!normalized) {
+      throw new Error('请先扫描物流单号');
+    }
+    if (activeTrackingWarning?.trackingNo === normalized && activeTrackingWarning.confirmed) {
+      return true;
+    }
+    if (blockingExceptionItem) {
+      throw new Error('上一条入库明细仍为异常，请先在当前入库单中修正该异常后再继续入库。');
+    }
+
+    setIsCheckingTracking(true);
+    try {
+      const activeDraft = await ensureDraft();
+      const scanResult = (await inboundApi.scanUps(activeDraft.id, {
+        upsTrackingNo: upsTrackingNo.trim(),
+      })) as TrackingScanResult;
+      const reasons = buildTrackingWarningReasons(scanResult);
+      if (reasons.length === 0) {
+        setTrackingWarning(null);
+        return true;
+      }
+
+      setTrackingWarning({
+        trackingNo: scanResult.upsTrackingNo,
+        reasons,
+        confirmed: false,
+      });
+      setMessage('');
+      setErrorMessage('该物流单号需要手动确认后才能继续入库。');
+      focusScanInput('tracking');
+      return false;
+    } finally {
+      setIsCheckingTracking(false);
+    }
+  }, [
+    activeTrackingWarning,
+    blockingExceptionItem,
+    customerId,
+    draft,
+    focusScanInput,
+    isCurrentSelectionLocked,
+    isDraftOpen,
+    upsTrackingNo,
+    warehouseId,
+  ]);
+
   const createDraftMutation = useMutation({
     mutationFn: () => inboundApi.createDraft({ customerId, warehouseId, notes: 'Web local test' }),
     onMutate: () => {
@@ -274,6 +324,10 @@ export function InboundScanPage() {
     mutationFn: async () => {
       if (blockingExceptionItem) {
         throw new Error('上一条入库明细仍为异常，请先在当前入库单中修正该异常后再继续入库。');
+      }
+      const trackingReviewed = await reviewTrackingInput();
+      if (!trackingReviewed) {
+        throw new Error('请先手动确认物流单号后再加入明细。');
       }
       const activeDraft = await ensureDraft();
       const item = (await inboundApi.addItem(activeDraft.id, {
@@ -475,6 +529,29 @@ export function InboundScanPage() {
     return () => window.clearTimeout(timer);
   }, [blockingExceptionItem, isCurrentSelectionLocked, trackingWarning, upsTrackingNo]);
 
+  const handleReuseTrackingChange = async (checked: boolean) => {
+    if (!checked) {
+      setReuseTrackingNo(false);
+      focusScanInput('tracking');
+      return;
+    }
+
+    try {
+      const trackingReviewed = await reviewTrackingInput();
+      if (!trackingReviewed) {
+        setReuseTrackingNo(false);
+        return;
+      }
+      setReuseTrackingNo(true);
+      focusScanInput('upc');
+    } catch (error) {
+      setReuseTrackingNo(false);
+      setMessage('');
+      setErrorMessage(toUserErrorMessage(error, '物流单号检查失败'));
+      focusScanInput('tracking');
+    }
+  };
+
   const handleCreateDraft = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     createDraftMutation.mutate();
@@ -674,15 +751,8 @@ export function InboundScanPage() {
             <input
               type="checkbox"
               checked={reuseTrackingNo}
-              disabled={!!blockingExceptionItem}
-              onChange={(event) => {
-                setReuseTrackingNo(event.target.checked);
-                if (event.target.checked && upsTrackingNo.trim()) {
-                  focusScanInput('upc');
-                } else {
-                  focusScanInput('tracking');
-                }
-              }}
+              disabled={!!blockingExceptionItem || isCheckingTracking}
+              onChange={(event) => void handleReuseTrackingChange(event.target.checked)}
             />
             <span>同一物流单连续扫</span>
           </label>
@@ -729,12 +799,12 @@ export function InboundScanPage() {
           </label>
           <button
             type="button"
-            disabled={!canAddCurrentScan || addItemMutation.isPending}
+            disabled={!canAddCurrentScan || addItemMutation.isPending || isCheckingTracking}
             onClick={() => addItemMutation.mutate()}
             title="当前模式所需字段填写完整后会自动加入明细，也可手动点击补提交"
           >
             <Plus size={16} />
-            {addItemMutation.isPending ? '添加中' : '加入明细'}
+            {isCheckingTracking ? '检查中' : addItemMutation.isPending ? '添加中' : '加入明细'}
           </button>
           <button
             type="button"
@@ -891,6 +961,8 @@ type TrackingScanResult = {
   valid: boolean;
   duplicate: boolean;
   duplicateCount: number;
+  currentDraftDuplicate?: boolean;
+  currentDraftDuplicateCount?: number;
 };
 
 function DraftPanel({
@@ -1338,10 +1410,13 @@ function normalizeTrackingInput(value: string) {
 function buildTrackingWarningReasons(result: TrackingScanResult) {
   const reasons: string[] = [];
   if (!result.valid) {
-    reasons.push('单号规则不存在');
+    reasons.push('不是 UPS 或 9622 开头的 22-34 位 FedEx 自动放行规则');
   }
   if (result.duplicate) {
     reasons.push(`该物流单号已有 ${result.duplicateCount} 条确认入库记录`);
+  }
+  if (result.currentDraftDuplicate) {
+    reasons.push(`当前入库单已扫过该物流单号 ${result.currentDraftDuplicateCount ?? 1} 次`);
   }
   return reasons;
 }

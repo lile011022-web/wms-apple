@@ -153,6 +153,7 @@ function createService(repositoryOverrides: Partial<Record<keyof InboundReposito
     findInventoryByImei: jest.fn().mockResolvedValue(null),
     findInventoryBySerial: jest.fn().mockResolvedValue(null),
     countConfirmedItemsByUps: jest.fn().mockResolvedValue(0),
+    countDraftItemsByUps: jest.fn().mockResolvedValue(0),
     createItem: jest.fn().mockResolvedValue(pendingItem),
     updateItem: jest.fn().mockResolvedValue(pendingItem),
     findItemById: jest.fn().mockResolvedValue(pendingItem),
@@ -189,7 +190,7 @@ describe('InboundService', () => {
     );
   });
 
-  it('accepts UPS, USPS, and FedEx package tracking numbers for inbound scans', async () => {
+  it('auto-accepts UPS and 9622 FedEx package tracking numbers for inbound scans', async () => {
     const { repository, service } = createService({});
 
     await expect(
@@ -200,30 +201,78 @@ describe('InboundService', () => {
       duplicate: false,
     });
     await expect(
+      service.scanUps('draft-1', { upsTrackingNo: '9622 1234 5678 9012 3456 78' }),
+    ).resolves.toMatchObject({
+      upsTrackingNo: '9622123456789012345678',
+      valid: true,
+    });
+    await expect(
+      service.scanUps('draft-1', { upsTrackingNo: '9622 0804 3000 9579 2651 0053 0689 178' }),
+    ).resolves.toMatchObject({
+      upsTrackingNo: '9622080430009579265100530689178',
+      valid: true,
+    });
+
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('1Z999AA10123456784');
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('9622123456789012345678');
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith(
+      '9622080430009579265100530689178',
+    );
+    expect(repository.countDraftItemsByUps).toHaveBeenCalledWith('draft-1', '1Z999AA10123456784');
+    expect(repository.countDraftItemsByUps).toHaveBeenCalledWith(
+      'draft-1',
+      '9622123456789012345678',
+    );
+    expect(repository.countDraftItemsByUps).toHaveBeenCalledWith(
+      'draft-1',
+      '9622080430009579265100530689178',
+    );
+  });
+
+  it('warns when the package tracking number already exists in the active draft', async () => {
+    const { service } = createService({
+      countDraftItemsByUps: jest.fn().mockResolvedValue(1),
+    });
+
+    await expect(
+      service.scanUps('draft-1', { upsTrackingNo: '1Z999AA10123456784' }),
+    ).resolves.toMatchObject({
+      upsTrackingNo: '1Z999AA10123456784',
+      valid: true,
+      currentDraftDuplicate: true,
+      currentDraftDuplicateCount: 1,
+    });
+  });
+
+  it('requires manual confirmation for USPS and non-9622 FedEx tracking numbers', async () => {
+    const { repository, service } = createService({});
+
+    await expect(
       service.scanUps('draft-1', { upsTrackingNo: '9400 1118 9922 3857 0000 00' }),
     ).resolves.toMatchObject({
       upsTrackingNo: '9400111899223857000000',
-      valid: true,
+      valid: false,
+      duplicate: false,
+      duplicateCount: 0,
     });
     await expect(
       service.scanUps('draft-1', { upsTrackingNo: '9611020987654312345672' }),
     ).resolves.toMatchObject({
       upsTrackingNo: '9611020987654312345672',
-      valid: true,
+      valid: false,
+      duplicate: false,
+      duplicateCount: 0,
     });
     await expect(
       service.scanUps('draft-1', { upsTrackingNo: '96320804008675235705004823280' }),
     ).resolves.toMatchObject({
       upsTrackingNo: '96320804008675235705004823280',
-      valid: true,
+      valid: false,
+      duplicate: false,
+      duplicateCount: 0,
     });
 
-    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('1Z999AA10123456784');
-    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('9400111899223857000000');
-    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('9611020987654312345672');
-    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith(
-      '96320804008675235705004823280',
-    );
+    expect(repository.countConfirmedItemsByUps).not.toHaveBeenCalled();
   });
 
   it('rejects unsupported package tracking numbers before saving inbound items', async () => {

@@ -9,6 +9,7 @@ import {
   isValidPackageTracking,
   isValidUpsTracking,
   isValidUspsTracking,
+  isAutoAcceptedPackageTracking,
   normalizePackageTracking,
 } from './ups.js';
 
@@ -38,6 +39,15 @@ describe('shared scan validators', () => {
     expect(normalizePackageTracking(' 9400 1118 9922 3857 0000 00 ')).toBe(
       '9400111899223857000000',
     );
+  });
+
+  it('only auto-accepts UPS and 9622 FedEx tracking before manual review', () => {
+    expect(isAutoAcceptedPackageTracking('1Z999AA10123456784')).toBe(true);
+    expect(isAutoAcceptedPackageTracking('9622123456789012345678')).toBe(true);
+    expect(isAutoAcceptedPackageTracking('9622080430009579265100530689178')).toBe(true);
+    expect(isAutoAcceptedPackageTracking('9400111899223857000000')).toBe(false);
+    expect(isAutoAcceptedPackageTracking('9611020987654312345672')).toBe(false);
+    expect(isAutoAcceptedPackageTracking('96320804008675235705004823280')).toBe(false);
   });
 
   it('parses known barcode formats in a stable order', () => {

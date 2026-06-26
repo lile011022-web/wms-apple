@@ -14,7 +14,7 @@ import {
 } from '@prisma/client';
 import {
   isValidImei,
-  isValidPackageTracking,
+  isAutoAcceptedPackageTracking,
   isValidSerial,
   isValidUpc,
   normalizePackageTracking,
@@ -87,7 +87,11 @@ export class InboundService {
     const draft = await this.findOpenDraft(draftId);
     const upsTrackingNo = normalizePackageTracking(dto.upsTrackingNo);
     const settings = await this.settingsService.getSettings();
-    const valid = isValidPackageTracking(upsTrackingNo);
+    const valid = isAutoAcceptedPackageTracking(upsTrackingNo);
+    const currentDraftDuplicateCount = await this.inboundRepository.countDraftItemsByUps(
+      draft.id,
+      upsTrackingNo,
+    );
     if (!valid) {
       return {
         draftId: draft.id,
@@ -95,6 +99,9 @@ export class InboundService {
         valid: false,
         duplicate: false,
         duplicateCount: 0,
+        currentDraftDuplicate:
+          settings.scanRules.detectDuplicateUps && currentDraftDuplicateCount > 0,
+        currentDraftDuplicateCount,
       };
     }
 
@@ -106,6 +113,9 @@ export class InboundService {
       valid,
       duplicate: settings.scanRules.detectDuplicateUps && duplicateCount > 0,
       duplicateCount,
+      currentDraftDuplicate:
+        settings.scanRules.detectDuplicateUps && currentDraftDuplicateCount > 0,
+      currentDraftDuplicateCount,
     };
   }
 
@@ -579,7 +589,7 @@ export class InboundService {
 
   private normalizeUps(value: string, allowUnsupportedFormat = false) {
     const normalized = normalizePackageTracking(value);
-    if (!isValidPackageTracking(normalized) && !allowUnsupportedFormat) {
+    if (!isAutoAcceptedPackageTracking(normalized) && !allowUnsupportedFormat) {
       throw new BadRequestException('Invalid package tracking number format.');
     }
     return normalized;

@@ -14,6 +14,11 @@ export function isValidFedexTracking(value: string): boolean {
   return /^(?:[0-9]{12}|[0-9]{15}|[0-9]{20}|[0-9]{22}|96[0-9]{20,32})$/.test(normalized);
 }
 
+export function isAutoAcceptedFedexTracking(value: string): boolean {
+  const normalized = value.trim().replace(/\s+/g, '');
+  return /^9622[0-9]{18,30}$/.test(normalized);
+}
+
 export function normalizePackageTracking(value: string): string {
   return value.trim().replace(/\s+/g, '').toUpperCase();
 }
@@ -25,4 +30,9 @@ export function isValidPackageTracking(value: string): boolean {
     isValidUspsTracking(normalized) ||
     isValidFedexTracking(normalized)
   );
+}
+
+export function isAutoAcceptedPackageTracking(value: string): boolean {
+  const normalized = normalizePackageTracking(value);
+  return isValidUpsTracking(normalized) || isAutoAcceptedFedexTracking(normalized);
 }

@@ -44,7 +44,26 @@ per-UPC product counts. No separate summary endpoint is required for this draft-
 }
 ```
 
-Returns normalized package tracking data and duplicate status. This endpoint accepts UPS, USPS, and FedEx tracking numbers, then validates and checks the tracking number before item scans. FedEx currently accepts common pure-numeric 12, 15, 20, and 22 digit formats, including Express-style 12 digit values and 96-prefixed SmartPost/Ground Economy-style values. Unsupported formats return `valid: false` instead of failing the request, so the web page can ask the operator whether to continue. The request and response keep the legacy `upsTrackingNo` field name for API compatibility.
+Returns normalized package tracking data and duplicate status. This endpoint auto-accepts UPS
+tracking numbers and FedEx tracking numbers that start with `9622` and contain 22 to 34 digits in
+total before item scans, but it still reports duplicate counts from both confirmed inbound records
+and the current draft. USPS, other FedEx formats, and unsupported package tracking formats return
+`valid: false` instead of failing the request, so the web page can ask the operator whether to
+continue. The request and response keep the legacy `upsTrackingNo` field name for API compatibility.
+
+Example response:
+
+```json
+{
+  "draftId": "draft-1",
+  "upsTrackingNo": "1Z999AA10123456784",
+  "valid": true,
+  "duplicate": false,
+  "duplicateCount": 0,
+  "currentDraftDuplicate": true,
+  "currentDraftDuplicateCount": 1
+}
+```
 
 ## Add Preview Item
 
@@ -52,7 +71,7 @@ Returns normalized package tracking data and duplicate status. This endpoint acc
 
 ```json
 {
-  "upsTrackingNo": "9611020987654312345672",
+  "upsTrackingNo": "9622123456789012345678",
   "upc": "194253149189",
   "imei": "356789012345678",
   "scanMode": "STANDARD",
@@ -63,10 +82,11 @@ Returns normalized package tracking data and duplicate status. This endpoint acc
 Rules:
 
 - `upsTrackingNo` is required for scan entry. The API keeps the legacy field name, but the business
-  meaning is UPS, USPS, or FedEx package tracking number.
+  meaning is package tracking number.
 - `trackingExceptionConfirmed` is optional. It should only be sent after the operator confirms a
-  package tracking warning. When true, unsupported package tracking formats can be saved to the draft
-  instead of being rejected.
+  package tracking warning. When true, USPS, non-9622 FedEx, duplicate tracking numbers from
+  confirmed records or the current draft, or other unsupported tracking formats can be saved to the
+  draft instead of being rejected.
 - `scanMode` is optional and defaults to `STANDARD`.
 - `STANDARD` mode is the strict mode used by the web page's `一版模式`: package tracking number, UPC,
   and IMEI/Serial are required according to product rules.

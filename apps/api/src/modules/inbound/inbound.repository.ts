@@ -111,6 +111,18 @@ export class InboundRepository {
     });
   }
 
+  countDraftItemsByUps(draftId: string, upsTrackingNo: string) {
+    return this.prisma.inboundItem.count({
+      where: {
+        inboundBatchId: draftId,
+        upsTrackingNo,
+        status: {
+          not: InboundItemStatus.VOIDED,
+        },
+      },
+    });
+  }
+
   createDraft(data: Prisma.InboundBatchCreateInput) {
     return this.prisma.inboundBatch.create({
       data,

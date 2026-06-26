@@ -30,15 +30,21 @@ The customer must be locked before scan data becomes operational inventory. Pack
 
 ## Package Tracking
 
-- UPS, USPS, and FedEx tracking values are validated independently and can also be attached to each preview item.
+- UPS and FedEx tracking values are validated independently and can also be attached to each preview item.
 - The current API and database field remains `upsTrackingNo` for compatibility, but the business meaning is package tracking number.
 - Multiple items may share one package tracking number within the same package.
 - A package tracking value already confirmed in prior inbound records is treated as a duplicate package signal and can create `UPS_DUPLICATED` exceptions.
-- FedEx accepts common pure-numeric formats: 12, 15, 20, and 22 digits. The 12-digit Express style, 22-digit 96xx style, and longer 96-prefixed SmartPost/Ground Economy style values pass package tracking validation.
+- The scan page auto-accepts only UPS tracking numbers and FedEx tracking numbers that start with
+  `9622` and contain 22 to 34 digits in total. These values can proceed without an extra operator
+  warning.
+- USPS values, non-9622 FedEx values, and all other package tracking formats are abnormal for the
+  current receiving workflow. They must pause the scan page and require explicit operator
+  confirmation before the item can be added to the draft.
 - When a package tracking number is entered, the scan page should warn the operator if the number
-  does not match a supported UPS/USPS/FedEx rule or if it already appears in confirmed inbound
-  records. The operator can either modify the number or explicitly continue inbound. After explicit
-  confirmation, the current scan can still be saved with that package tracking value.
+  does not match the UPS or 9622 FedEx auto-accept rules, if it already appears in confirmed inbound
+  records, or if it already appears in the current draft. The operator can either modify the number
+  or explicitly continue inbound. After explicit confirmation, the current scan can still be saved
+  with that package tracking value.
 
 ## Confirmation
 
@@ -95,9 +101,11 @@ place; saving must overwrite the original preview row and must not create anothe
 After a row is automatically or manually added, the scan entry form should restore keyboard focus to
 the next receiving input so operators can continue with a scanner without clicking the mouse again.
 The default loop starts the next row at the package tracking field. When the operator enables the
-same-package continuous option, the current package tracking number is retained after a successful
-row and focus moves back to UPC for the next item. Exception rows must pause this focus loop until
-the abnormal row is corrected or removed.
+same-package continuous option, the page must first review the current package tracking number.
+Duplicate tracking numbers and tracking numbers outside the UPS/9622-prefixed FedEx auto-accept
+rules must be confirmed before the option becomes active. After confirmation, the current package
+tracking number is retained after a successful row and focus moves back to UPC for the next item.
+Exception rows must pause this focus loop until the abnormal row is corrected or removed.
 
 If the active draft contains exception rows, the exception summary should help the operator jump to
 the exception row and edit that row in place. Saving the correction must overwrite the original
