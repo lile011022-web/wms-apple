@@ -745,6 +745,7 @@ export class InboundService {
       brand: product.brand,
       name: product.name,
       model: product.model,
+      modelCode: product.modelCode,
       category: product.category,
       color: product.color,
       capacity: product.capacity,

@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 type PaginationControlsProps = {
   page: number;
   pageSize: number;
@@ -6,6 +8,7 @@ type PaginationControlsProps = {
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   pageSizeOptions?: number[];
+  children?: ReactNode;
 };
 
 export function PaginationControls({
@@ -16,6 +19,7 @@ export function PaginationControls({
   onPageChange,
   onPageSizeChange,
   pageSizeOptions = [20, 50, 100],
+  children,
 }: PaginationControlsProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -29,6 +33,7 @@ export function PaginationControls({
           第 {rangeStart}-{rangeEnd} 条 / 共 {total} 条
         </span>
       </div>
+      {children ? <div className="pagination-extra">{children}</div> : null}
       <div>
         <span>每页</span>
         <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>

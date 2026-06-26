@@ -75,6 +75,33 @@ Outbound search can match UPS tracking number, UPC, IMEI, Serial, SKU, and produ
 
 The package tracking storage field keeps the legacy API name `upsTrackingNo`, but operators can search UPS, USPS, and FedEx numbers through the outbound search box.
 
+The outbound packing inventory table must show the inventory `receivedAt` time as 入库时间 so
+operators can prioritize older or specific inbound stock while packing.
+
+In bulk box packing mode, the outbound packing inventory table can be narrowed by
+operator-facing product class filters:
+
+- 成色: 全部, 全新, 翻新.
+- 品类: 全部品类, iPhone, iPad.
+
+These product class filters must only be visible and active in bulk box packing mode. Detailed scan
+packing must not show or apply them; it should continue to rely on scanned UPC and IMEI / Serial
+matching plus the normal search box.
+
+Bulk product-class filters must be evaluated against all currently available outbound inventory for
+the selected customer and warehouse, not only the visible page. The displayed bulk packing count,
+pagination total, and batch modal source rows must all use that full filtered result.
+
+The current implementation derives these classes from UPC/product text already returned with the
+inventory row. Product names, SKU, model, category, and UPC should remain available to the frontend
+so the filter can distinguish the four main working buckets: 全新 iPhone, 全新 iPad, 翻新 iPhone,
+and 翻新 iPad. Selecting 成色 = 翻新 and 品类 = 全部品类 lets operators pack refurbished phones
+and refurbished tablets together.
+
+Visible selections must be remembered while operators change search text, filters, pages, or page
+size inside the same selected customer and warehouse. Changing customer or warehouse clears the
+remembered selection because outbound packing must not mix ownership or warehouse stock.
+
 ## Packing Modes
 
 Outbound packing supports two operator modes.
@@ -96,11 +123,25 @@ Detailed scan packing:
 Bulk box packing:
 
 - The operator starts from the selected customer's available outbound inventory.
+- The operator can filter available inventory by product class, manually tick rows, and keep those
+  selected rows remembered while paging or changing filters. Product class filters only appear in
+  bulk box packing mode.
 - The operator enters the number of boxes and the item count for each box.
-- The sum of per-box counts must equal the current available inventory total before submission.
-- Random allocation lets the system distribute available inventory rows into the requested boxes.
-- Manual allocation is not exposed in the outbound packing page.
+- The batch modal uses manually selected rows first; if no rows are selected, it uses the currently
+  filtered available inventory.
+- The sum of per-box counts must equal the selected or filtered available total before submission.
+- While entering per-box counts, the modal must preview each box's planned detail rows, including
+  inventory received time, product, and IMEI / Serial or tracking number.
 - Bulk packing creates boxes and adds existing inventory rows to those boxes; it must not create or delete inventory rows.
+
+Box detail printing:
+
+- The box detail modal should provide a `打印明细` action.
+- Clicking `打印明细` opens a printable preview modal instead of printing the whole workbench.
+- The preview groups the current box items by product name and prints one line per product in the
+  format `商品名称*数量`, followed by `|Total: N|`.
+- The preview title must use the current box context only: date, customer name, and box name.
+- Operators must click `确认打印` in the preview before the browser print dialog opens.
 
 ## Box Lifecycle
 

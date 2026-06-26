@@ -195,6 +195,7 @@ export class OutboundRepository {
                   id: true,
                   sku: true,
                   name: true,
+                  modelCode: true,
                 },
               },
             },

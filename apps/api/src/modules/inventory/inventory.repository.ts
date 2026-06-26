@@ -182,6 +182,19 @@ export class InventoryRepository {
         { imei: { contains: trimmed } },
         { serial: { contains: trimmed, mode: 'insensitive' } },
         { upsTrackingNo: { contains: trimmed, mode: 'insensitive' } },
+        { inboundBatch: { batchNo: { contains: trimmed, mode: 'insensitive' } } },
+        {
+          outboundBoxItems: {
+            some: {
+              outboundBox: {
+                OR: [
+                  { boxNo: { contains: trimmed, mode: 'insensitive' } },
+                  { boxName: { contains: trimmed, mode: 'insensitive' } },
+                ],
+              },
+            },
+          },
+        },
         { product: { sku: { contains: trimmed, mode: 'insensitive' } } },
         { product: { name: { contains: trimmed, mode: 'insensitive' } } },
       ],

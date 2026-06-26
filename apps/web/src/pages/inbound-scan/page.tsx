@@ -912,7 +912,7 @@ type InboundDraftItem = {
   imei: string | null;
   serial?: string | null;
   status: string;
-  product?: { name: string } | null;
+  product?: { name: string; modelCode?: string | null } | null;
 };
 type EditInboundItemValues = {
   upsTrackingNo: string;
@@ -1162,7 +1162,10 @@ function DraftPanel({
                     (item.imei ?? item.serial ?? '-')
                   )}
                 </td>
-                <td>{item.product?.name ?? '-'}</td>
+                <td>
+                  <strong>{item.product?.name ?? '-'}</strong>
+                  {item.product?.modelCode ? <span>型号代码 {item.product.modelCode}</span> : null}
+                </td>
                 <td>{item.status}</td>
                 <td>
                   {isEditing ? (

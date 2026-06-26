@@ -104,7 +104,8 @@ Query parameters:
 - `productId`: optional.
 - `status`: optional `IN_STOCK`, `PACKED`, `OUTBOUND`, `EXCEPTION`, or `VOIDED`.
 - `upc`, `imei`, `serial`, `upsTrackingNo`: optional exact-field contains filters.
-- `search`: optional search across UPC, IMEI, Serial, UPS, SKU, and product name.
+- `search`: optional search across UPC, IMEI, Serial, UPS, inbound batch number, outbound box
+  number/name, SKU, and product name.
 - `availableForOutbound`: optional boolean. When true, only `IN_STOCK` rows are returned.
 - `page`, `pageSize`, `sortBy`, `sortOrder`: standard pagination and sorting.
 
@@ -119,7 +120,8 @@ Allowed sort fields:
 
 Rows include customer, warehouse, product, inbound batch, inbound item, latest outbound box, exception summary, and timestamps.
 
-Customer inventory item tables should display the returned tracking context:
+Customer inventory item tables should display the returned tracking context and expose the `search`
+filter in the IMEI detail section:
 
 - `inboundBatch.batchNo`: inbound batch number.
 - `upsTrackingNo`: package tracking/order number captured during inbound scan or CSV import.

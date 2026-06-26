@@ -8,6 +8,7 @@ import {
   Eye,
   ImagePlus,
   PackagePlus,
+  Printer,
   RefreshCw,
   Save,
   ScanLine,
@@ -29,6 +30,8 @@ type BoxStatus = 'draft' | 'sealed' | 'rework';
 type ItemStatus = 'available' | 'packed' | 'outbound' | 'exception' | 'voided';
 type WeightUnit = 'lb';
 type OutboundPackingMode = 'DETAILED_SCAN' | 'BULK_BOX';
+type ProductConditionFilter = 'ALL' | 'NEW' | 'REFURBISHED';
+type ProductDeviceFilter = 'ALL' | 'IPHONE' | 'IPAD';
 
 type BoxSizePreset = {
   label: string;
@@ -45,11 +48,16 @@ type PackingItem = {
   trackingNumber: string;
   upc?: string;
   productName?: string;
+  productSku?: string;
+  productModel?: string | null;
+  productModelCode?: string | null;
+  productCategory?: string | null;
   imeiOrSerial?: string;
   customerId: string;
   customerName: string;
   status: ItemStatus;
   availableForOutbound?: boolean;
+  receivedAt?: string | null;
   addedAt?: string;
   latestOutboundBox?: LatestOutboundBox | null;
   raw?: AvailableItem | InventorySearchItem | OutboundBox['items'][number];
@@ -104,8 +112,11 @@ export function OutboundPackingPage() {
   const [warehouseId, setWarehouseId] = useState('');
   const [currentBox, setCurrentBox] = useState<PackingBox | null>(null);
   const [detailBox, setDetailBox] = useState<PackingBox | null>(null);
+  const [printDetailBox, setPrintDetailBox] = useState<PackingBox | null>(null);
   const [packingMode, setPackingMode] = useState<OutboundPackingMode>('DETAILED_SCAN');
   const [inventorySearch, setInventorySearch] = useState('');
+  const [conditionFilter, setConditionFilter] = useState<ProductConditionFilter>('ALL');
+  const [deviceFilter, setDeviceFilter] = useState<ProductDeviceFilter>('ALL');
   const [boxSearch, setBoxSearch] = useState('');
   const [scanValue, setScanValue] = useState('');
   const [scanUpc, setScanUpc] = useState('');
@@ -128,6 +139,9 @@ export function OutboundPackingPage() {
   const [selectedAvailableItemIds, setSelectedAvailableItemIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [selectedAvailableItemsById, setSelectedAvailableItemsById] = useState<
+    Map<string, PackingItem>
+  >(() => new Map());
   const [boxItemsPage, setBoxItemsPage] = useState(1);
   const [boxItemsPageSize, setBoxItemsPageSize] = useState(10);
   const [selectedBoxItemIds, setSelectedBoxItemIds] = useState<Set<string>>(() => new Set());
@@ -180,6 +194,13 @@ export function OutboundPackingPage() {
 
   const selectedCustomer = customers.find((customer) => customer.id === customerId);
   const activeInventorySearch = inventorySearch.trim();
+  const isBulkPackingMode = packingMode === 'BULK_BOX';
+  const activeConditionFilter = isBulkPackingMode ? conditionFilter : 'ALL';
+  const activeDeviceFilter = isBulkPackingMode ? deviceFilter : 'ALL';
+  const hasActiveBulkProductFilter =
+    isBulkPackingMode &&
+    !activeInventorySearch &&
+    (activeConditionFilter !== 'ALL' || activeDeviceFilter !== 'ALL');
   const availableQueryKey = [
     'outbound-available-items',
     customerId,
@@ -217,7 +238,7 @@ export function OutboundPackingPage() {
     enabled: Boolean(customerId && warehouseId),
   });
   const available = availableQuery.data as InventoryResult | undefined;
-  const availableItems = useMemo(() => {
+  const availableItemsBeforeProductFilters = useMemo(() => {
     const items = available?.items ?? [];
     if (activeInventorySearch) {
       return items.map((item) => toPackingItem(item, selectedCustomer));
@@ -226,13 +247,16 @@ export function OutboundPackingPage() {
       .filter((item) => !locallyPackedInventoryIds.has(item.id))
       .map((item) => toPackingItem(item, selectedCustomer));
   }, [activeInventorySearch, available?.items, locallyPackedInventoryIds, selectedCustomer]);
+  const currentPageAvailableItems = useMemo(
+    () =>
+      availableItemsBeforeProductFilters.filter((item) =>
+        matchesProductFilters(item, activeConditionFilter, activeDeviceFilter),
+      ),
+    [activeConditionFilter, activeDeviceFilter, availableItemsBeforeProductFilters],
+  );
   const locallyHiddenAvailableCount = (available?.items ?? []).filter((item) =>
     locallyPackedInventoryIds.has(item.id),
   ).length;
-  const availableTotal = activeInventorySearch
-    ? (available?.total ?? 0)
-    : Math.max(0, (available?.total ?? 0) - locallyHiddenAvailableCount);
-
   const boxesQuery = useQuery({
     queryKey: boxesQueryKey,
     queryFn: () =>
@@ -285,7 +309,11 @@ export function OutboundPackingPage() {
     const data = (await outboundApi.getBox(box.id)) as OutboundBox;
     return updateBoxEverywhere(data);
   };
-  const fetchAvailablePackingItems = async (params?: { search?: string }) => {
+  const fetchAvailablePackingItems = async (params?: {
+    search?: string;
+    condition?: ProductConditionFilter;
+    device?: ProductDeviceFilter;
+  }) => {
     const collected: AvailableItem[] = [];
     let page = 1;
     let total = 0;
@@ -305,14 +333,54 @@ export function OutboundPackingPage() {
 
     return collected
       .filter((item) => !locallyPackedInventoryIds.has(item.id))
-      .map((item) => toPackingItem(item, selectedCustomer));
+      .map((item) => toPackingItem(item, selectedCustomer))
+      .filter((item) =>
+        matchesProductFilters(item, params?.condition ?? 'ALL', params?.device ?? 'ALL'),
+      );
   };
+  const bulkFilteredItemsQuery = useQuery({
+    queryKey: [
+      'outbound-available-items',
+      'bulk-filtered-all',
+      customerId,
+      warehouseId,
+      activeConditionFilter,
+      activeDeviceFilter,
+      Array.from(locallyPackedInventoryIds).sort().join(','),
+    ],
+    queryFn: () =>
+      fetchAvailablePackingItems({
+        condition: activeConditionFilter,
+        device: activeDeviceFilter,
+      }),
+    enabled: Boolean(customerId && warehouseId && hasActiveBulkProductFilter),
+  });
+  const availableItems = useMemo(() => {
+    if (hasActiveBulkProductFilter && bulkFilteredItemsQuery.data) {
+      return paginateItems(bulkFilteredItemsQuery.data, availablePage, availablePageSize);
+    }
+    return currentPageAvailableItems;
+  }, [
+    availablePage,
+    availablePageSize,
+    bulkFilteredItemsQuery.data,
+    currentPageAvailableItems,
+    hasActiveBulkProductFilter,
+  ]);
+  const availableTotal = hasActiveBulkProductFilter
+    ? (bulkFilteredItemsQuery.data?.length ?? available?.total ?? currentPageAvailableItems.length)
+    : activeInventorySearch
+      ? (available?.total ?? 0)
+      : Math.max(0, (available?.total ?? 0) - locallyHiddenAvailableCount);
   const refreshBatchItems = async () => {
     if (!customerId || !warehouseId) return;
     setIsBatchItemsLoading(true);
     setErrorMessage('');
     try {
-      const items = await fetchAvailablePackingItems();
+      const items = await fetchAvailablePackingItems({
+        condition: activeConditionFilter,
+        device: activeDeviceFilter,
+      });
       setBatchItems(items);
     } catch (error) {
       setErrorMessage(toUserErrorMessage(error, '读取可装箱库存失败'));
@@ -370,11 +438,24 @@ export function OutboundPackingPage() {
     setAvailablePage(1);
     setLocallyPackedInventoryIds(new Set());
     setSelectedAvailableItemIds(new Set());
-  }, [activeInventorySearch, customerId]);
+    setSelectedAvailableItemsById(new Map());
+  }, [customerId, warehouseId]);
 
   useEffect(() => {
-    setSelectedAvailableItemIds(new Set());
-  }, [availablePage, availablePageSize, customerId, warehouseId]);
+    setAvailablePage(1);
+  }, [activeConditionFilter, activeDeviceFilter, activeInventorySearch]);
+
+  useEffect(() => {
+    setSelectedAvailableItemsById((current) => {
+      const next = new Map(current);
+      for (const item of availableItems) {
+        if (selectedAvailableItemIds.has(item.id)) {
+          next.set(item.id, item);
+        }
+      }
+      return next;
+    });
+  }, [availableItems, selectedAvailableItemIds]);
 
   useEffect(() => {
     setBoxItemsPage(1);
@@ -642,7 +723,20 @@ export function OutboundPackingPage() {
       if (counts.length === 0) {
         throw new Error('请先填写每箱数量。');
       }
-      const sourceItems = batchItems.length ? batchItems : await fetchAvailablePackingItems();
+      const selectedBatchItems = getSelectedAvailableItems(
+        selectedAvailableItemIds,
+        selectedAvailableItemsById,
+        batchItems,
+      );
+      const sourceItems =
+        selectedBatchItems.length > 0
+          ? selectedBatchItems
+          : batchItems.length
+            ? batchItems
+            : await fetchAvailablePackingItems({
+                condition: activeConditionFilter,
+                device: activeDeviceFilter,
+              });
       const totalCount = counts.reduce((sum, count) => sum + count, 0);
       if (sourceItems.length === 0) {
         throw new Error('当前客户没有可装箱库存。');
@@ -651,7 +745,7 @@ export function OutboundPackingPage() {
         throw new Error(`每箱数量合计必须等于当前可装箱总数 ${sourceItems.length}。`);
       }
 
-      const groups = buildRandomBatchGroups(sourceItems, counts);
+      const groups = buildBatchGroups(sourceItems, counts);
       const packedInventoryIds: string[] = [];
       let latestBox: OutboundBox | null = null;
       for (const group of groups) {
@@ -858,6 +952,10 @@ export function OutboundPackingPage() {
   });
 
   const selectedCreatedBoxes = createdBoxes.filter((box) => selectedCreatedBoxIds.has(box.id));
+  const batchModalItems =
+    selectedAvailableItemIds.size > 0
+      ? getSelectedAvailableItems(selectedAvailableItemIds, selectedAvailableItemsById, batchItems)
+      : batchItems;
   const requestSealBox = (box: PackingBox | null) => {
     if (!box) {
       setErrorMessage('请先选择或新建箱子');
@@ -1105,6 +1203,9 @@ export function OutboundPackingPage() {
           pageSize={availablePageSize}
           search={inventorySearch}
           isSearchMode={Boolean(activeInventorySearch)}
+          showProductFilters={isBulkPackingMode}
+          conditionFilter={conditionFilter}
+          deviceFilter={deviceFilter}
           canAdd={Boolean(currentBox && canMutateCurrentBox)}
           isAdding={
             addItemMutation.isPending ||
@@ -1112,15 +1213,41 @@ export function OutboundPackingPage() {
             batchPackingMutation.isPending
           }
           canBulkPackAll={Boolean(
-            customerId && warehouseId && !activeInventorySearch && availableTotal > 0,
+            customerId &&
+              warehouseId &&
+              (selectedAvailableItemIds.size > 0 || (!activeInventorySearch && availableTotal > 0)),
           )}
           selectedItemIds={selectedAvailableItemIds}
+          selectedTotal={selectedAvailableItemIds.size}
           onSearchChange={(value) => {
             setInventorySearch(value);
             setAvailablePage(1);
-            setSelectedAvailableItemIds(new Set());
           }}
-          onSelectionChange={setSelectedAvailableItemIds}
+          onConditionFilterChange={setConditionFilter}
+          onDeviceFilterChange={setDeviceFilter}
+          onSelectionChange={(nextIds) => {
+            setSelectedAvailableItemIds(nextIds);
+            setSelectedAvailableItemsById((current) => {
+              const next = new Map(current);
+              for (const item of availableItems) {
+                if (nextIds.has(item.id)) {
+                  next.set(item.id, item);
+                } else {
+                  next.delete(item.id);
+                }
+              }
+              for (const id of Array.from(next.keys())) {
+                if (!nextIds.has(id)) {
+                  next.delete(id);
+                }
+              }
+              return next;
+            });
+          }}
+          onClearSelection={() => {
+            setSelectedAvailableItemIds(new Set());
+            setSelectedAvailableItemsById(new Map());
+          }}
           onPageChange={setAvailablePage}
           onPageSizeChange={(nextPageSize) => {
             setAvailablePageSize(nextPageSize);
@@ -1220,9 +1347,11 @@ export function OutboundPackingPage() {
 
       <BatchPackingModal
         open={batchPackingOpen}
-        items={batchItems}
+        items={batchModalItems}
         boxCount={batchBoxCount}
         allocationCounts={batchAllocationCounts}
+        selectedCount={selectedAvailableItemIds.size}
+        filterLabel={getProductFilterLabel(activeConditionFilter, activeDeviceFilter)}
         isLoadingItems={isBatchItemsLoading}
         isSubmitting={batchPackingMutation.isPending}
         onClose={() => setBatchPackingOpen(false)}
@@ -1243,6 +1372,13 @@ export function OutboundPackingPage() {
         isRemoving={removeItemMutation.isPending}
         onClose={() => setDetailBox(null)}
         onRemove={(item) => removeItemMutation.mutate(item)}
+        onOpenPrint={(box) => setPrintDetailBox(box)}
+      />
+
+      <PrintDetailModal
+        box={printDetailBox}
+        onClose={() => setPrintDetailBox(null)}
+        onConfirmPrint={() => window.print()}
       />
     </section>
   );
@@ -1314,7 +1450,7 @@ function PackingModeSwitch(props: {
       >
         <ClipboardList size={16} />
         <strong>批量装箱</strong>
-        <span>按总库存拆分多箱，系统自动随机分配</span>
+        <span>筛选并勾选库存后，按每箱数量生成明细</span>
       </button>
     </section>
   );
@@ -1461,12 +1597,19 @@ function InventoryPackingTable(props: {
   pageSize: number;
   search: string;
   isSearchMode: boolean;
+  showProductFilters: boolean;
+  conditionFilter: ProductConditionFilter;
+  deviceFilter: ProductDeviceFilter;
   canAdd: boolean;
   canBulkPackAll: boolean;
   isAdding: boolean;
   selectedItemIds: Set<string>;
+  selectedTotal: number;
   onSearchChange: (value: string) => void;
+  onConditionFilterChange: (value: ProductConditionFilter) => void;
+  onDeviceFilterChange: (value: ProductDeviceFilter) => void;
   onSelectionChange: (value: Set<string>) => void;
+  onClearSelection: () => void;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   onAdd: (item: PackingItem) => void;
@@ -1506,17 +1649,49 @@ function InventoryPackingTable(props: {
           <h2>客户库存 / 可装箱货物</h2>
           <span>
             {props.isSearchMode ? '搜索结果包含待装箱和已装箱货物' : '当前客户可装箱货物'}
-            {selectedItems.length ? ` · 已选 ${selectedItems.length} 件` : ''}
+            {props.selectedTotal ? ` · 已记忆勾选 ${props.selectedTotal} 件` : ''}
           </span>
         </div>
-        <label className="outbound-mini-search">
-          <Search size={15} />
-          <input
-            value={props.search}
-            onChange={(event) => props.onSearchChange(event.target.value)}
-            placeholder="搜索单号、IMEI/Serial 或货物信息"
-          />
-        </label>
+        <div className="outbound-filter-row">
+          {props.showProductFilters ? (
+            <>
+              <label className="outbound-mini-select">
+                <span>成色</span>
+                <select
+                  value={props.conditionFilter}
+                  onChange={(event) =>
+                    props.onConditionFilterChange(event.target.value as ProductConditionFilter)
+                  }
+                >
+                  <option value="ALL">全部</option>
+                  <option value="NEW">全新</option>
+                  <option value="REFURBISHED">翻新</option>
+                </select>
+              </label>
+              <label className="outbound-mini-select">
+                <span>品类</span>
+                <select
+                  value={props.deviceFilter}
+                  onChange={(event) =>
+                    props.onDeviceFilterChange(event.target.value as ProductDeviceFilter)
+                  }
+                >
+                  <option value="ALL">全部品类</option>
+                  <option value="IPHONE">iPhone</option>
+                  <option value="IPAD">iPad</option>
+                </select>
+              </label>
+            </>
+          ) : null}
+          <label className="outbound-mini-search">
+            <Search size={15} />
+            <input
+              value={props.search}
+              onChange={(event) => props.onSearchChange(event.target.value)}
+              placeholder="搜索单号、IMEI/Serial 或货物信息"
+            />
+          </label>
+        </div>
       </div>
       <div className="outbound-box-footer compact">
         <button
@@ -1526,7 +1701,7 @@ function InventoryPackingTable(props: {
           onClick={props.onOpenBulkPacking}
         >
           <Shuffle size={16} />
-          全部装箱 {props.total ? `${props.total} 件` : ''}
+          分箱装箱 {props.selectedTotal ? `${props.selectedTotal} 件已选` : `${props.total} 件`}
         </button>
         <button
           type="button"
@@ -1536,6 +1711,15 @@ function InventoryPackingTable(props: {
         >
           <PackagePlus size={16} />
           批量装箱 {selectedItems.length ? `${selectedItems.length} 件` : ''}
+        </button>
+        <button
+          type="button"
+          className="outbound-btn outbound-btn-outline"
+          disabled={props.selectedTotal === 0 || props.isAdding}
+          onClick={props.onClearSelection}
+        >
+          <X size={16} />
+          取消勾选 {props.selectedTotal ? `${props.selectedTotal} 件` : ''}
         </button>
       </div>
       <div className="outbound-table-wrap">
@@ -1551,6 +1735,7 @@ function InventoryPackingTable(props: {
                   onChange={(event) => toggleVisibleSelection(event.target.checked)}
                 />
               </th>
+              <th>入库时间</th>
               <th>物流单号</th>
               <th>货物信息</th>
               <th>IMEI / Serial</th>
@@ -1573,6 +1758,7 @@ function InventoryPackingTable(props: {
                       onChange={(event) => toggleItemSelection(item.id, event.target.checked)}
                     />
                   </td>
+                  <td>{formatShortDateTime(item.receivedAt)}</td>
                   <td>
                     <strong className="mono">{item.trackingNumber || '-'}</strong>
                     <span>{item.carrier}</span>
@@ -1580,6 +1766,8 @@ function InventoryPackingTable(props: {
                   <td>
                     <strong>{item.productName ?? '-'}</strong>
                     <span>UPC {item.upc ?? '-'}</span>
+                    {item.productModelCode ? <span>型号代码 {item.productModelCode}</span> : null}
+                    <span>{getProductClassLabel(item)}</span>
                   </td>
                   <td className="mono">{item.imeiOrSerial ?? '-'}</td>
                   <td>
@@ -1607,7 +1795,7 @@ function InventoryPackingTable(props: {
             })}
             {props.items.length === 0 ? (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   {props.isSearchMode ? '没有匹配的客户库存货物' : '没有匹配的可装箱货物'}
                 </td>
               </tr>
@@ -1769,6 +1957,7 @@ function CurrentBoxWorkspace(props: {
                 <td>
                   <strong>{item.productName ?? '-'}</strong>
                   <span>UPC {item.upc ?? '-'}</span>
+                  {item.productModelCode ? <span>型号代码 {item.productModelCode}</span> : null}
                 </td>
                 <td className="mono">{item.imeiOrSerial ?? '-'}</td>
                 <td>{formatShortDateTime(item.addedAt)}</td>
@@ -2388,6 +2577,8 @@ function BatchPackingModal(props: {
   items: PackingItem[];
   boxCount: string;
   allocationCounts: string[];
+  selectedCount: number;
+  filterLabel: string;
   isLoadingItems: boolean;
   isSubmitting: boolean;
   onClose: () => void;
@@ -2408,6 +2599,7 @@ function BatchPackingModal(props: {
     props.items.length > 0 &&
     counts.length === props.allocationCounts.length &&
     allocationTotal === props.items.length;
+  const previewGroups = buildBatchGroups(props.items, props.allocationCounts.map((value) => Math.max(0, Number(value) || 0)));
 
   return (
     <div className="outbound-modal-backdrop" role="presentation" onClick={props.onClose}>
@@ -2421,7 +2613,7 @@ function BatchPackingModal(props: {
         <div className="outbound-modal-head">
           <div>
             <p>Bulk Packing</p>
-            <h2>全部库存批量装箱</h2>
+            <h2>库存批量分箱</h2>
           </div>
           <button type="button" className="outbound-modal-close" onClick={props.onClose}>
             <X size={18} />
@@ -2429,7 +2621,7 @@ function BatchPackingModal(props: {
         </div>
         <div className="outbound-batch-summary">
           <SummaryTile
-            label="可装箱总数"
+            label={props.selectedCount ? '已勾选货物' : '筛选后可装箱'}
             value={props.isLoadingItems ? '读取中' : props.items.length}
           />
           <SummaryTile label="分配合计" value={allocationTotal} />
@@ -2447,8 +2639,12 @@ function BatchPackingModal(props: {
             />
           </label>
           <div className="outbound-batch-random-note">
-            <Shuffle size={16} />
-            <span>确认后系统会按每箱数量随机分配库存货物</span>
+            <ClipboardList size={16} />
+            <span>
+              {props.selectedCount
+                ? `使用已勾选货物，筛选：${props.filterLabel}`
+                : `未勾选时使用当前筛选库存：${props.filterLabel}`}
+            </span>
           </div>
           <button
             type="button"
@@ -2478,6 +2674,27 @@ function BatchPackingModal(props: {
             每箱数量合计必须等于当前可装箱总数 {props.items.length}。
           </div>
         ) : null}
+        <div className="outbound-batch-preview">
+          {previewGroups.map((group, index) => (
+            <article key={index} className="outbound-batch-preview-box">
+              <div className="outbound-batch-preview-head">
+                <strong>箱 {index + 1}</strong>
+                <span>{group.length} 件</span>
+              </div>
+              <div className="outbound-batch-preview-list">
+                {group.slice(0, 8).map((item) => (
+                  <div key={item.id}>
+                    <span>{formatShortDateTime(item.receivedAt)}</span>
+                    <strong>{item.productName ?? '-'}</strong>
+                    <em className="mono">{item.imeiOrSerial ?? item.trackingNumber ?? '-'}</em>
+                  </div>
+                ))}
+                {group.length > 8 ? <small>还有 {group.length - 8} 件未展开</small> : null}
+                {group.length === 0 ? <small>填写数量后显示箱内明细</small> : null}
+              </div>
+            </article>
+          ))}
+        </div>
         <div className="outbound-confirm-actions">
           <button
             type="button"
@@ -2508,33 +2725,43 @@ function BoxDetailModal(props: {
   isRemoving: boolean;
   onClose: () => void;
   onRemove: (item: PackingItem) => void;
+  onOpenPrint: (box: PackingBox) => void;
 }) {
   if (!props.box) {
     return null;
   }
-  const carrierCounts = props.box.items.reduce(
+  const box = props.box;
+  const carrierCounts = box.items.reduce(
     (counts, item) => {
       counts[item.carrier] += 1;
       return counts;
     },
     { UPS: 0, FedEx: 0, USPS: 0 } as Record<Carrier, number>,
   );
-  const imeiCount = props.box.items.filter((item) => item.imeiOrSerial).length;
-  const upcSummaries = summarizeByUpc(props.box.items, props.availableItems);
+  const imeiCount = box.items.filter((item) => item.imeiOrSerial).length;
+  const upcSummaries = summarizeByUpc(box.items, props.availableItems);
   return (
     <div className="outbound-modal-backdrop" role="presentation" onClick={props.onClose}>
       <section
         className="outbound-detail-modal"
         role="dialog"
         aria-modal="true"
-        aria-label={`${getBoxDisplayName(props.box)} 明细`}
+        aria-label={`${getBoxDisplayName(box)} 明细`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="outbound-modal-head">
           <div>
             <p>Box Detail</p>
-            <h2>{getBoxDisplayName(props.box)} 明细</h2>
+            <h2>{getBoxDisplayName(box)} 明细</h2>
           </div>
+          <button
+            type="button"
+            className="outbound-btn outbound-btn-outline outbound-print-detail-trigger"
+            onClick={() => props.onOpenPrint(box)}
+          >
+            <Printer size={16} />
+            打印明细
+          </button>
           <button type="button" className="outbound-modal-close" onClick={props.onClose}>
             <X size={18} />
           </button>
@@ -2583,7 +2810,10 @@ function BoxDetailModal(props: {
                       <td>{item.carrier}</td>
                       <td className="mono">{item.trackingNumber || '-'}</td>
                       <td className="mono">{item.upc ?? '-'}</td>
-                      <td>{item.productName ?? '-'}</td>
+                      <td>
+                        <strong>{item.productName ?? '-'}</strong>
+                        {item.productModelCode ? <span>型号代码 {item.productModelCode}</span> : null}
+                      </td>
                       <td className="mono">{item.imeiOrSerial ?? '-'}</td>
                       <td>{item.customerName}</td>
                       <td>{formatShortDateTime(item.addedAt)}</td>
@@ -2664,6 +2894,54 @@ function BoxDetailModal(props: {
               </div>
             )}
           </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PrintDetailModal(props: {
+  box: PackingBox | null;
+  onClose: () => void;
+  onConfirmPrint: () => void;
+}) {
+  if (!props.box) {
+    return null;
+  }
+  const lines = buildPrintDetailLines(props.box);
+  return (
+    <div className="outbound-modal-backdrop compact" role="presentation" onClick={props.onClose}>
+      <section
+        className="outbound-confirm-modal outbound-print-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="打印明细"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="outbound-modal-head">
+          <div>
+            <p>Print Detail</p>
+            <h2>打印明细</h2>
+          </div>
+          <button type="button" className="outbound-modal-close" onClick={props.onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="outbound-print-sheet">
+          <pre>{lines.join('\n')}</pre>
+        </div>
+        <div className="outbound-confirm-actions">
+          <button type="button" className="outbound-btn outbound-btn-outline" onClick={props.onClose}>
+            取消
+          </button>
+          <button
+            type="button"
+            className="outbound-btn outbound-btn-primary"
+            onClick={props.onConfirmPrint}
+          >
+            <Printer size={16} />
+            确认打印
+          </button>
         </div>
       </section>
     </div>
@@ -2808,7 +3086,15 @@ type InventorySearchItem = {
   availableForOutbound?: boolean;
   latestOutboundBox?: LatestOutboundBox | null;
   customer?: { id: string; name: string };
-  product: { name: string };
+  product: {
+    id?: string;
+    sku?: string;
+    name: string;
+    model?: string | null;
+    modelCode?: string | null;
+    category?: string | null;
+  };
+  receivedAt?: string | null;
 };
 type AvailableItem = InventorySearchItem;
 type OutboundBox = {
@@ -2839,7 +3125,15 @@ type OutboundBox = {
       serial: string | null;
       status: string;
       customer?: { id: string; name: string };
-      product: { name: string };
+      product: {
+        id?: string;
+        sku?: string;
+        name: string;
+        model?: string | null;
+        modelCode?: string | null;
+        category?: string | null;
+      };
+      receivedAt?: string | null;
     };
   }>;
 };
@@ -2898,11 +3192,16 @@ function toPackingItem(item: AvailableItem, selectedCustomer?: CustomerOption): 
     trackingNumber: item.upsTrackingNo ?? '',
     upc: item.upc,
     productName: item.product.name,
+    productSku: item.product.sku,
+    productModel: item.product.model,
+    productModelCode: item.product.modelCode,
+    productCategory: item.product.category,
     imeiOrSerial: item.imei ?? item.serial ?? undefined,
     customerId: item.customer?.id ?? selectedCustomer?.id ?? '',
     customerName: item.customer?.name ?? selectedCustomer?.label ?? '-',
     status: toItemStatus(item.status),
     availableForOutbound: item.availableForOutbound ?? item.status === 'IN_STOCK',
+    receivedAt: item.receivedAt,
     latestOutboundBox: item.latestOutboundBox ?? null,
     raw: item,
   };
@@ -2933,10 +3232,15 @@ function toPackingBox(box: OutboundBox, reworkBoxIds: Set<string>): PackingBox {
       trackingNumber: item.inventoryItem.upsTrackingNo ?? '',
       upc: item.inventoryItem.upc,
       productName: item.inventoryItem.product.name,
+      productSku: item.inventoryItem.product.sku,
+      productModel: item.inventoryItem.product.model,
+      productModelCode: item.inventoryItem.product.modelCode,
+      productCategory: item.inventoryItem.product.category,
       imeiOrSerial: item.inventoryItem.imei ?? item.inventoryItem.serial ?? undefined,
       customerId: item.inventoryItem.customer?.id ?? box.customer?.id ?? '',
       customerName: item.inventoryItem.customer?.name ?? box.customer?.name ?? '-',
       status: 'packed',
+      receivedAt: item.inventoryItem.receivedAt,
       addedAt: item.packedAt,
       raw: item,
     })),
@@ -3099,6 +3403,60 @@ function summarizeByUpc(boxItems: PackingItem[], availableItems: PackingItem[]) 
   return Array.from(summaries.values()).sort((a, b) => b.packedCount - a.packedCount);
 }
 
+function buildPrintDetailLines(box: PackingBox) {
+  const productCounts = new Map<string, number>();
+  for (const item of box.items) {
+    const productName = normalizePrintProductName(item.productName ?? item.upc ?? '未命名商品');
+    productCounts.set(productName, (productCounts.get(productName) ?? 0) + 1);
+  }
+  const productLines = Array.from(productCounts.entries()).map(
+    ([productName, count]) => `${productName}*${count}`,
+  );
+  const total = Array.from(productCounts.values()).reduce((sum, count) => sum + count, 0);
+
+  return [
+    buildPrintDetailTitle(box),
+    getPrintBoxLabel(box),
+    ...productLines,
+    `|Total: ${total}|`,
+  ];
+}
+
+function buildPrintDetailTitle(box: PackingBox) {
+  return [
+    formatPrintMonthDay(box.createdAt || new Date().toISOString()),
+    getPrintCustomerName(box),
+    getBoxDisplayName(box),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function getPrintCustomerName(box: PackingBox) {
+  return box.raw.customer?.name?.trim() || box.items[0]?.customerName?.trim() || '';
+}
+
+function getPrintBoxLabel(box: PackingBox) {
+  const displayName = getBoxDisplayName(box);
+  const matched = displayName.match(/箱\s*(\d+)/i);
+  if (matched?.[1]) {
+    return `箱${matched[1]}`;
+  }
+  return displayName;
+}
+
+function normalizePrintProductName(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function formatPrintMonthDay(value?: string | null) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return `${date.getMonth() + 1}.${date.getDate()}`;
+}
+
 function classifyOutboundScanValue(value: string): 'UPC' | 'IMEI_SERIAL' {
   const normalized = value.trim();
   if (/^\d{8,14}$/.test(normalized)) {
@@ -3140,24 +3498,88 @@ function normalizeBatchCounts(values: string[]) {
   return counts;
 }
 
-function buildRandomBatchGroups(items: PackingItem[], counts: number[]) {
-  const shuffled = [...items];
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    const currentItem = shuffled[index];
-    const swapItem = shuffled[swapIndex];
-    if (!currentItem || !swapItem) {
-      continue;
-    }
-    shuffled[index] = swapItem;
-    shuffled[swapIndex] = currentItem;
-  }
+function buildBatchGroups(items: PackingItem[], counts: number[]) {
   let cursor = 0;
   return counts.map((count) => {
-    const group = shuffled.slice(cursor, cursor + count);
+    const group = items.slice(cursor, cursor + count);
     cursor += count;
     return group;
   });
+}
+
+function getSelectedAvailableItems(
+  selectedIds: Set<string>,
+  cachedItems: Map<string, PackingItem>,
+  fallbackItems: PackingItem[],
+) {
+  if (selectedIds.size === 0) {
+    return [];
+  }
+  const fallbackById = new Map(fallbackItems.map((item) => [item.id, item]));
+  return Array.from(selectedIds)
+    .map((id) => cachedItems.get(id) ?? fallbackById.get(id))
+    .filter((item): item is PackingItem => Boolean(item))
+    .filter(isPackingItemSelectable);
+}
+
+function matchesProductFilters(
+  item: PackingItem,
+  condition: ProductConditionFilter,
+  device: ProductDeviceFilter,
+) {
+  if (condition !== 'ALL' && getProductCondition(item) !== condition) {
+    return false;
+  }
+  if (device !== 'ALL' && getProductDevice(item) !== device) {
+    return false;
+  }
+  return true;
+}
+
+function getProductCondition(item: PackingItem): Exclude<ProductConditionFilter, 'ALL'> {
+  const text = getProductClassificationText(item);
+  return /(refurb|renewed|翻新|官翻|整备|rfb|certified pre-owned)/i.test(text)
+    ? 'REFURBISHED'
+    : 'NEW';
+}
+
+function getProductDevice(item: PackingItem): Exclude<ProductDeviceFilter, 'ALL'> | 'UNKNOWN' {
+  const text = getProductClassificationText(item);
+  if (/ipad/i.test(text)) {
+    return 'IPAD';
+  }
+  if (/iphone/i.test(text)) {
+    return 'IPHONE';
+  }
+  return 'UNKNOWN';
+}
+
+function getProductClassificationText(item: PackingItem) {
+  return [
+    item.upc,
+    item.productSku,
+    item.productName,
+    item.productModel,
+    item.productCategory,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function getProductClassLabel(item: PackingItem) {
+  const conditionLabel = getProductCondition(item) === 'REFURBISHED' ? '翻新' : '全新';
+  const device = getProductDevice(item);
+  const deviceLabel =
+    device === 'IPHONE' ? 'iPhone' : device === 'IPAD' ? 'iPad' : '未识别品类';
+  return `${conditionLabel} / ${deviceLabel}`;
+}
+
+function getProductFilterLabel(condition: ProductConditionFilter, device: ProductDeviceFilter) {
+  const conditionLabel =
+    condition === 'REFURBISHED' ? '翻新' : condition === 'NEW' ? '全新' : '全部成色';
+  const deviceLabel =
+    device === 'IPHONE' ? 'iPhone' : device === 'IPAD' ? 'iPad' : '全部品类';
+  return `${conditionLabel} / ${deviceLabel}`;
 }
 
 function toWeightNumber(value: string) {

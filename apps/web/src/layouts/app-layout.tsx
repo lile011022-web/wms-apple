@@ -42,7 +42,7 @@ const navigationItems = [
   {
     group: '基础资料',
     links: [
-      { label: 'UPC 商品库', to: '/upc-library', icon: Tags },
+      { label: '商品管理', to: '/upc-library', icon: Tags },
       { label: '客户管理', to: '/customer-management', icon: Users },
       { label: '系统设置', to: '/system-settings', icon: Settings },
     ],

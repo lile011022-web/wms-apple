@@ -461,6 +461,7 @@ export class OutboundService {
             brand: item.inventoryItem.product.brand,
             name: item.inventoryItem.product.name,
             model: item.inventoryItem.product.model,
+            modelCode: item.inventoryItem.product.modelCode,
             category: item.inventoryItem.product.category,
             color: item.inventoryItem.product.color,
             capacity: item.inventoryItem.product.capacity,

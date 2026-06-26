@@ -194,7 +194,12 @@ export function BatchCustomerChangePage() {
                     />
                   </td>
                   <td>{item.customer.code}</td>
-                  <td>{item.product?.name ?? '-'}</td>
+                  <td>
+                    <strong>{item.product?.name ?? '-'}</strong>
+                    {item.product?.modelCode ? (
+                      <span>型号代码 {item.product.modelCode}</span>
+                    ) : null}
+                  </td>
                   <td className="mono">{item.imei ?? item.serial ?? '-'}</td>
                   <td>{item.inventoryItem?.status ?? '-'}</td>
                   <td>
@@ -298,7 +303,7 @@ type CandidateResult = { items: CustomerChangeCandidate[]; total: number };
 type CustomerChangeCandidate = {
   id: string;
   customer: { id: string; code: string; name: string };
-  product?: { name: string } | null;
+  product?: { name: string; modelCode?: string | null } | null;
   imei?: string | null;
   serial?: string | null;
   inventoryItem?: { status: string } | null;

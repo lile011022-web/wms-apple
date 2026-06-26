@@ -53,6 +53,12 @@ Detail rows should preserve:
 - Latest outbound box when packed or outbound.
 - Exception summary.
 
+The customer inventory detail table should provide a search box for narrowing item rows without
+leaving the page. Search should use the inventory item list API's broad `search` filter so operators
+can find rows by package tracking number, IMEI, Serial, UPC, SKU, or product name while preserving
+the selected customer and warehouse filters. The search should also cover inbound batch number and
+latest outbound box number/name because those columns are visible in the detail table.
+
 ## Outbound Availability
 
 Only `IN_STOCK` rows are available for outbound packing.

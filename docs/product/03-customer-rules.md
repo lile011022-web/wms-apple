@@ -10,6 +10,8 @@ Customers define ownership for inbound scans, inventory, outbound packing, batch
 - Customer code must be unique.
 - Customer code is normalized to uppercase before storage.
 - Customer name is the human-readable business name.
+- Customer management table rows can be edited inline. Operators click `编辑`, change customer code
+  or name directly in the row, then click `保存` to persist the update.
 
 ## Customer Status
 

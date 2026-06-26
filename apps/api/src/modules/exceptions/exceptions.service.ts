@@ -187,6 +187,7 @@ export class ExceptionsService {
             brand: exception.product.brand,
             name: exception.product.name,
             model: exception.product.model,
+            modelCode: exception.product.modelCode,
             category: exception.product.category,
             color: exception.product.color,
             capacity: exception.product.capacity,

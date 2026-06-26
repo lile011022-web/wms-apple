@@ -218,4 +218,32 @@ describe('InventoryService', () => {
       }),
     );
   });
+
+  it('builds customer inventory search across visible detail columns', () => {
+    const repository = new InventoryRepository({} as never);
+
+    expect(repository.toSearchWhere('BOX-BB0001')).toEqual({
+      OR: expect.arrayContaining([
+        { upc: { contains: 'BOX-BB0001' } },
+        { imei: { contains: 'BOX-BB0001' } },
+        { serial: { contains: 'BOX-BB0001', mode: 'insensitive' } },
+        { upsTrackingNo: { contains: 'BOX-BB0001', mode: 'insensitive' } },
+        { inboundBatch: { batchNo: { contains: 'BOX-BB0001', mode: 'insensitive' } } },
+        {
+          outboundBoxItems: {
+            some: {
+              outboundBox: {
+                OR: [
+                  { boxNo: { contains: 'BOX-BB0001', mode: 'insensitive' } },
+                  { boxName: { contains: 'BOX-BB0001', mode: 'insensitive' } },
+                ],
+              },
+            },
+          },
+        },
+        { product: { sku: { contains: 'BOX-BB0001', mode: 'insensitive' } } },
+        { product: { name: { contains: 'BOX-BB0001', mode: 'insensitive' } } },
+      ]),
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getSystemSettings, listWarehouses } from '../../api/settings';
 import { customersApi, inventoryApi } from '../../api/workflow';
@@ -13,6 +13,7 @@ export function CustomerInventoryPage() {
   const [summaryPageSize, setSummaryPageSize] = useState(20);
   const [detailPage, setDetailPage] = useState(1);
   const [detailPageSize, setDetailPageSize] = useState(50);
+  const [detailSearch, setDetailSearch] = useState('');
   const customersQuery = useQuery({
     queryKey: ['customer-options'],
     queryFn: () => customersApi.options(),
@@ -61,9 +62,22 @@ export function CustomerInventoryPage() {
   const productSummary = productSummaryQuery.data as ProductSummaryResult | undefined;
 
   const inventoryQuery = useQuery({
-    queryKey: ['inventory-items', customerId, warehouseId, detailPage, detailPageSize],
+    queryKey: [
+      'inventory-items',
+      customerId,
+      warehouseId,
+      detailSearch,
+      detailPage,
+      detailPageSize,
+    ],
     queryFn: () =>
-      inventoryApi.items({ customerId, warehouseId, page: detailPage, pageSize: detailPageSize }),
+      inventoryApi.items({
+        customerId,
+        warehouseId,
+        search: detailSearch.trim() || undefined,
+        page: detailPage,
+        pageSize: detailPageSize,
+      }),
     enabled: Boolean(customerId),
   });
   const inventory = inventoryQuery.data as InventoryResult | undefined;
@@ -172,6 +186,7 @@ export function CustomerInventoryPage() {
               <th>UPC</th>
               <th>SKU</th>
               <th>商品</th>
+              <th>型号代码</th>
               <th>物流单号数</th>
               <th>总数</th>
               <th>在库</th>
@@ -187,6 +202,7 @@ export function CustomerInventoryPage() {
                 <td className="mono">{row.product.upcs.join(', ') || '-'}</td>
                 <td className="mono">{row.product.sku}</td>
                 <td>{row.product.name}</td>
+                <td className="mono">{row.product.modelCode ?? '-'}</td>
                 <td>{row.trackingNumberCount}</td>
                 <td>{row.summary.totalQuantity}</td>
                 <td>{row.summary.inStockQuantity}</td>
@@ -220,7 +236,19 @@ export function CustomerInventoryPage() {
             setDetailPageSize(nextPageSize);
             setDetailPage(1);
           }}
-        />
+        >
+          <label className="outbound-search-control inventory-search-control">
+            <Search size={16} />
+            <input
+              value={detailSearch}
+              onChange={(event) => {
+                setDetailSearch(event.target.value);
+                setDetailPage(1);
+              }}
+              placeholder="搜索单号、入库单、箱号、IMEI、UPC 或商品"
+            />
+          </label>
+        </PaginationControls>
         <table className="data-table">
           <thead>
             <tr>
@@ -230,6 +258,7 @@ export function CustomerInventoryPage() {
               <th>IMEI</th>
               <th>UPC</th>
               <th>商品</th>
+              <th>型号代码</th>
               <th>状态</th>
             </tr>
           </thead>
@@ -242,12 +271,13 @@ export function CustomerInventoryPage() {
                 <td>{item.imei ?? item.serial}</td>
                 <td>{item.upc}</td>
                 <td>{item.product.name}</td>
+                <td className="mono">{item.product.modelCode ?? '-'}</td>
                 <td>{item.status}</td>
               </tr>
             ))}
             {!inventory || inventory.items.length === 0 ? (
               <tr>
-                <td colSpan={7}>暂无库存</td>
+                <td colSpan={8}>暂无库存</td>
               </tr>
             ) : null}
           </tbody>
@@ -279,6 +309,7 @@ type ProductSummaryItem = {
     id: string;
     sku: string;
     name: string;
+    modelCode?: string | null;
     upcs: string[];
   };
   summary: {
@@ -305,7 +336,7 @@ type InventoryItem = {
   status: string;
   availableForOutbound: boolean;
   upsTrackingNo: string | null;
-  product: { name: string };
+  product: { name: string; modelCode?: string | null };
   inboundBatch?: { batchNo: string } | null;
   latestOutboundBox?: { boxNo: string } | null;
 };

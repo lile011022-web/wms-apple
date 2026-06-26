@@ -275,6 +275,7 @@ export class CustomerChangeService {
             brand: item.product.brand,
             name: item.product.name,
             model: item.product.model,
+            modelCode: item.product.modelCode,
             category: item.product.category,
             color: item.product.color,
             capacity: item.product.capacity,

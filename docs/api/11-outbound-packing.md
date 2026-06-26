@@ -121,7 +121,14 @@ The backend delegates to `GET /inventory/available-for-outbound`, forces `status
 Frontend packing modes reuse this endpoint:
 
 - Detailed scan packing searches available inventory by scanned IMEI / Serial, then verifies the scanned UPC before adding the row to the current box.
-- Bulk box packing reads all available pages for the selected customer and warehouse, validates that per-box quantities equal the available total, then creates boxes and calls `POST /outbound/boxes/:id/items` for each assigned row.
+- Bulk box packing reads available rows for the selected customer and warehouse, lets the frontend
+  filter them into 全新 iPhone, 全新 iPad, 翻新 iPhone, and 翻新 iPad buckets from product/UPC text,
+  remembers manual row selections while filters or pages change, validates that per-box quantities
+  equal the selected or filtered total, previews each planned box detail, then creates boxes and
+  calls `POST /outbound/boxes/:id/items` for each assigned row.
+
+Available-item rows include the inventory `receivedAt` time. The outbound packing page displays it
+as 入库时间 in the customer inventory table and in the batch packing per-box preview.
 
 ## POST /outbound/boxes/:id/items
 
