@@ -102,6 +102,7 @@ export class ProductsRepository {
             { brand: { contains: search, mode: 'insensitive' } },
             { name: { contains: search, mode: 'insensitive' } },
             { model: { contains: search, mode: 'insensitive' } },
+            { modelCode: { contains: search, mode: 'insensitive' } },
             { category: { contains: search, mode: 'insensitive' } },
             { color: { contains: search, mode: 'insensitive' } },
             { capacity: { contains: search, mode: 'insensitive' } },

@@ -37,6 +37,12 @@ export class CreateProductDto {
   @MaxLength(120)
   model?: string;
 
+  @ApiPropertyOptional({ example: 'MG7K4LL/A', description: 'Display-only Apple Part No. / MPN.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  modelCode?: string;
+
   @ApiPropertyOptional({ example: 'iPhone' })
   @IsOptional()
   @IsString()

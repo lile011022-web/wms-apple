@@ -222,6 +222,7 @@ model Product {
   brand        String        @default("Apple")
   name         String
   model        String?
+  modelCode    String?       @map("model_code")
   category     String?
   color        String?
   capacity     String?

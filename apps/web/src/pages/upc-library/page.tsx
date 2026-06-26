@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileDown, Plus, Search, Upload } from 'lucide-react';
 import { type ChangeEvent, type FormEvent, useRef, useState } from 'react';
+import { read, utils, writeFile } from 'xlsx';
 import { productsApi } from '../../api/workflow';
 
 const importTemplateHeaders = [
@@ -8,6 +9,7 @@ const importTemplateHeaders = [
   'name',
   'brand',
   'model',
+  'modelCode',
   'category',
   'color',
   'capacity',
@@ -22,6 +24,7 @@ const importTemplateRows = [
     'iPhone 16 Pro 256GB Natural Titanium',
     'Apple',
     'iPhone 16 Pro',
+    'MG7K4LL/A',
     'iPhone',
     'Natural Titanium',
     '256GB',
@@ -37,6 +40,7 @@ export function UpcLibraryPage() {
   const [pageSize, setPageSize] = useState(20);
   const [sku, setSku] = useState('');
   const [name, setName] = useState('');
+  const [modelCode, setModelCode] = useState('');
   const [upc, setUpc] = useState('');
   const [lookupUpc, setLookupUpc] = useState('');
   const [lookupResult, setLookupResult] = useState<Product | null>(null);
@@ -60,6 +64,7 @@ export function UpcLibraryPage() {
         sku,
         name,
         model: name,
+        modelCode,
         category: 'iPhone',
         brand: 'Apple',
         color: 'Black',
@@ -70,6 +75,7 @@ export function UpcLibraryPage() {
     onSuccess: () => {
       setSku('');
       setName('');
+      setModelCode('');
       setUpc('');
       setMessage('商品已新增');
       setErrorMessage('');
@@ -112,8 +118,22 @@ export function UpcLibraryPage() {
   };
 
   const handleTemplateDownload = () => {
-    const content = toCsv(importTemplateRows);
-    downloadTextFile('upc-product-import-template.csv', content, 'text/csv; charset=utf-8');
+    const workbook = utils.book_new();
+    const worksheet = utils.aoa_to_sheet(importTemplateRows);
+    worksheet['!cols'] = [
+      { wch: 28 },
+      { wch: 42 },
+      { wch: 14 },
+      { wch: 22 },
+      { wch: 16 },
+      { wch: 14 },
+      { wch: 20 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 30 },
+    ];
+    utils.book_append_sheet(workbook, worksheet, '商品导入模板');
+    writeFile(workbook, 'product-import-template.xlsx');
   };
 
   const handleImportFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -123,7 +143,7 @@ export function UpcLibraryPage() {
     }
 
     try {
-      const rows = parseImportCsv(await file.text());
+      const rows = await parseImportFile(file);
       setImportRows(rows);
       setImportFileName(file.name);
       setMessage(`已读取 ${file.name}：${rows.length} 行待导入`);
@@ -139,8 +159,8 @@ export function UpcLibraryPage() {
     <section className="page-frame">
       <div className="page-heading">
         <div>
-          <p>Product Catalog</p>
-          <h1>UPC 商品库</h1>
+          <p>Product Management</p>
+          <h1>商品管理</h1>
         </div>
         <button type="button" className="btn secondary" onClick={handleTemplateDownload}>
           <FileDown size={16} />
@@ -166,6 +186,14 @@ export function UpcLibraryPage() {
           />
         </label>
         <label>
+          <span>型号代码</span>
+          <input
+            value={modelCode}
+            onChange={(event) => setModelCode(event.target.value.toUpperCase())}
+            placeholder="MG7K4LL/A"
+          />
+        </label>
+        <label>
           <span>UPC</span>
           <input value={upc} onChange={(event) => setUpc(event.target.value)} />
         </label>
@@ -181,7 +209,7 @@ export function UpcLibraryPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
             onChange={handleImportFileChange}
           />
         </label>
@@ -212,6 +240,7 @@ export function UpcLibraryPage() {
         {lookupResult ? (
           <strong>
             {lookupResult.sku} / {lookupResult.name}
+            {lookupResult.modelCode ? ` / ${lookupResult.modelCode}` : ''}
           </strong>
         ) : null}
       </section>
@@ -269,6 +298,7 @@ export function UpcLibraryPage() {
             <tr>
               <th>SKU</th>
               <th>商品</th>
+              <th>型号代码</th>
               <th>UPC</th>
               <th>状态</th>
             </tr>
@@ -278,13 +308,14 @@ export function UpcLibraryPage() {
               <tr key={product.id}>
                 <td>{product.sku}</td>
                 <td>{product.name}</td>
+                <td>{product.modelCode ?? '-'}</td>
                 <td>{product.upcs.map((item) => item.upc).join(', ')}</td>
                 <td>{product.status}</td>
               </tr>
             ))}
             {!result || result.items.length === 0 ? (
               <tr>
-                <td colSpan={4}>暂无商品</td>
+                <td colSpan={5}>暂无商品</td>
               </tr>
             ) : null}
           </tbody>
@@ -298,6 +329,7 @@ type Product = {
   id: string;
   sku: string;
   name: string;
+  modelCode?: string | null;
   status: string;
   upcs: Array<{ upc: string }>;
 };
@@ -312,6 +344,7 @@ type ImportProductRow = {
   name: string;
   brand?: string;
   model?: string;
+  modelCode?: string;
   category?: string;
   color?: string;
   capacity?: string;
@@ -323,14 +356,37 @@ type ImportResult = {
   items: Product[];
 };
 
-function parseImportCsv(text: string): ImportProductRow[] {
-  const rows = parseCsv(text).filter((row) => row.some((cell) => cell.trim()));
+async function parseImportFile(file: File): Promise<ImportProductRow[]> {
+  const fileName = file.name.toLowerCase();
+  if (fileName.endsWith('.xlsx')) {
+    const workbook = read(await file.arrayBuffer(), { type: 'array' });
+    const worksheet = workbook.Sheets[workbook.SheetNames[0] ?? ''];
+    if (!worksheet) {
+      throw new Error('导入文件没有可读取的工作表');
+    }
+    const rows = utils.sheet_to_json<string[]>(worksheet, {
+      header: 1,
+      raw: false,
+      defval: '',
+    });
+    return parseImportRows(rows);
+  }
+
+  if (fileName.endsWith('.csv')) {
+    return parseImportRows(parseCsv(await file.text()));
+  }
+
+  throw new Error('导入文件仅支持 .xlsx 或 .csv');
+}
+
+function parseImportRows(inputRows: string[][]): ImportProductRow[] {
+  const rows = inputRows.filter((row) => row.some((cell) => String(cell).trim()));
   if (rows.length < 2) {
     throw new Error('导入文件至少需要表头和一行商品数据');
   }
 
   const headers = rows[0]!.map((header, index) =>
-    index === 0 ? header.replace(/^\uFEFF/, '').trim() : header.trim(),
+    index === 0 ? String(header).replace(/^\uFEFF/, '').trim() : String(header).trim(),
   );
   const missingHeader = importTemplateHeaders.find((header) => !headers.includes(header));
   if (missingHeader) {
@@ -339,7 +395,7 @@ function parseImportCsv(text: string): ImportProductRow[] {
 
   return rows.slice(1).map((row, index) => {
     const record: Record<string, string> = Object.fromEntries(
-      headers.map((header, column) => [header, row[column] ?? '']),
+      headers.map((header, column) => [header, String(row[column] ?? '')]),
     );
     const lineNo = index + 2;
     const sku = (record.sku ?? '').trim().toUpperCase();
@@ -364,6 +420,7 @@ function parseImportCsv(text: string): ImportProductRow[] {
       name,
       brand: optionalText(record.brand),
       model: optionalText(record.model),
+      modelCode: optionalText(record.modelCode)?.toUpperCase(),
       category: optionalText(record.category),
       color: optionalText(record.color),
       capacity: optionalText(record.capacity),
@@ -433,30 +490,6 @@ function parseOptionalBoolean(value?: string) {
 function optionalText(value?: string) {
   const trimmed = value?.trim();
   return trimmed || undefined;
-}
-
-function toCsv(rows: string[][]) {
-  return `\uFEFF${rows.map((row) => row.map(escapeCsvCell).join(',')).join('\n')}`;
-}
-
-function escapeCsvCell(value: string) {
-  return /[",\n\r]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
-}
-
-function downloadTextFile(fileName: string, content: string, contentType: string) {
-  const blob = new globalThis.Blob([content], { type: contentType });
-  const url = globalThis.URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.style.display = 'none';
-  document.body.appendChild(anchor);
-  anchor.click();
-
-  window.setTimeout(() => {
-    anchor.remove();
-    globalThis.URL.revokeObjectURL(url);
-  }, 0);
 }
 
 function toUserErrorMessage(error: unknown, fallback: string) {
