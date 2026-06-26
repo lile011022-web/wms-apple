@@ -15,6 +15,12 @@ export class CreateOutboundBoxDto {
   @IsString()
   warehouseId?: string;
 
+  @ApiPropertyOptional({ example: 'Apple Reseller20260618箱1-A' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  boxName?: string;
+
   @ApiPropertyOptional({ enum: outboundBoxSizePresets, example: '12*12*12' })
   @IsOptional()
   @IsIn(outboundBoxSizePresets)

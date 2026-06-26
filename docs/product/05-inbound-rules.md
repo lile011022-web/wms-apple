@@ -25,6 +25,8 @@ The customer must be locked before scan data becomes operational inventory. Pack
 - Products with `requiresImei = false` can use Serial or IMEI in the current phase.
 - A preview item cannot provide both IMEI and Serial.
 - Duplicate IMEI or Serial values are blocking conditions and must not create normal inventory.
+- If an IMEI or Serial already exists in the current draft, the scan page and API must reject the new
+  preview row immediately instead of allowing another `PENDING` row.
 - If an IMEI or Serial already exists in inventory, confirmation of the draft is rejected until
   the operator fixes or deletes the duplicate preview row.
 
@@ -69,11 +71,13 @@ Inbound preview deletion is logical during the draft lifecycle. Removed rows are
 
 Confirmed inbound records and inventory rows must not be physically deleted by normal inbound workflows.
 
-If an operator confirms an inbound row with the wrong UPC, the correction must be done from the
-inbound records page instead of deleting history. A confirmed row can have its UPC corrected only
-while its linked inventory is still `IN_STOCK` or `EXCEPTION`. The corrected UPC must match an
-active UPC/product mapping, and the system must update both the inbound record and linked inventory
-item in one audited transaction. Packed or outbound inventory cannot be corrected through this flow.
+If an operator confirms or leaves an inbound row with wrong scan fields, the correction must be done
+from the inbound records page instead of deleting history. Operators can correct package tracking
+number, UPC, and IMEI/Serial in one row-level correction panel. A corrected UPC must match an active
+UPC/product mapping. If the row already has linked inventory, the system updates both the inbound
+record and linked inventory item in one audited transaction. If the row is still `EXCEPTION` or
+`PENDING` without linked inventory, saving a valid correction creates inventory and marks the row as
+normal `CONFIRMED` inbound. Packed or outbound inventory cannot be corrected through this flow.
 
 ## Force Inbound
 

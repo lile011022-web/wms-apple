@@ -54,6 +54,8 @@ export const inboundApi = {
     request<unknown>('post', `/inbound/records/${id}/force-confirm`, { data }),
   correctRecordUpc: (id: string, data: Payload) =>
     request<unknown>('patch', `/inbound/records/${id}/upc`, { data }),
+  correctRecord: (id: string, data: Payload) =>
+    request<unknown>('patch', `/inbound/records/${id}/correction`, { data }),
   exportPreview: (data: Payload) =>
     request<unknown>('post', '/inbound/records/export-preview', { data }),
 };

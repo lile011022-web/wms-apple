@@ -79,12 +79,17 @@ export class OutboundService {
     if (existing) {
       throw new ConflictException('Outbound box number already exists in this warehouse.');
     }
-    await this.assertUniqueBoxName(warehouseId, generatedBoxIdentity.boxName);
+    const requestedBoxName = this.trimOptional(dto.boxName);
+    if (dto.boxName !== undefined && !requestedBoxName) {
+      throw new BadRequestException('boxName cannot be empty.');
+    }
+    const boxName = requestedBoxName ?? generatedBoxIdentity.boxName;
+    await this.assertUniqueBoxName(warehouseId, boxName);
 
     const box = await this.outboundRepository.createBoxWithAudit(
       {
         boxNo,
-        boxName: generatedBoxIdentity.boxName,
+        boxName,
         sizePreset: this.normalizeSizePreset(dto.sizePreset, '12*12*12'),
         customSize: this.normalizeCustomSize(dto.sizePreset, dto.customSize),
         weightLb: dto.weightLb ?? 45,

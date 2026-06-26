@@ -265,6 +265,83 @@ describe('OutboundService', () => {
     }
   });
 
+  it('creates a box with a custom visible name when provided', async () => {
+    jest.useFakeTimers().setSystemTime(now);
+    try {
+      const createdBox = {
+        ...emptyBox,
+        boxNo: 'BOX-CUST-001-20260617-001',
+        boxName: 'Apple Reseller Custom Box',
+      };
+      const { repository, service } = createService({
+        createBoxWithAudit: jest.fn().mockResolvedValue(createdBox),
+      });
+
+      await expect(
+        service.createBox(
+          {
+            customerId: customer.id,
+            warehouseId: warehouse.id,
+            boxName: '  Apple Reseller Custom Box  ',
+          },
+          user,
+        ),
+      ).resolves.toMatchObject({
+        boxNo: 'BOX-CUST-001-20260617-001',
+        boxName: 'Apple Reseller Custom Box',
+      });
+      expect(repository.findBoxByName).toHaveBeenCalledWith(
+        warehouse.id,
+        'Apple Reseller Custom Box',
+        undefined,
+      );
+      expect(repository.createBoxWithAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          boxNo: 'BOX-CUST-001-20260617-001',
+          boxName: 'Apple Reseller Custom Box',
+        }),
+        user.id,
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('rejects empty or duplicate custom box names when creating a box', async () => {
+    jest.useFakeTimers().setSystemTime(now);
+    try {
+      const emptyName = createService();
+      await expect(
+        emptyName.service.createBox(
+          {
+            customerId: customer.id,
+            warehouseId: warehouse.id,
+            boxName: '   ',
+          },
+          user,
+        ),
+      ).rejects.toThrow('boxName cannot be empty.');
+
+      const duplicateName = createService({
+        findBoxByName: jest
+          .fn()
+          .mockResolvedValue({ ...emptyBox, boxName: 'Apple Reseller Custom Box' }),
+      });
+      await expect(
+        duplicateName.service.createBox(
+          {
+            customerId: customer.id,
+            warehouseId: warehouse.id,
+            boxName: 'Apple Reseller Custom Box',
+          },
+          user,
+        ),
+      ).rejects.toThrow('当前仓库已存在同名箱子，请修改箱子名称后再保存。');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('increments customer-date box numbers and names from the latest created box', async () => {
     jest.useFakeTimers().setSystemTime(now);
     try {

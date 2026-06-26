@@ -491,7 +491,10 @@ describe('InboundService', () => {
       itemId: confirmedItem.id,
       inventoryItemId: confirmedInventoryItem.id,
       operatorId: operator.id,
+      upsTrackingNo: '1Z999AA10123456784',
       upc: '195950251593',
+      imei: '356789012345678',
+      serial: undefined,
       productId: nextProduct.id,
       reason: 'UPC scanned wrong during receiving',
     });
@@ -514,7 +517,74 @@ describe('InboundService', () => {
         { upc: '195950251593', reason: 'UPC scanned wrong during receiving' },
         operator,
       ),
-    ).rejects.toThrow('Packed or outbound inventory cannot have UPC corrected.');
+    ).rejects.toThrow('Packed or outbound inventory cannot be corrected here.');
+  });
+
+  it('corrects an exception inbound record and saves it as normal inbound', async () => {
+    const exceptionItem = {
+      ...pendingItem,
+      status: InboundItemStatus.EXCEPTION,
+      productId: null,
+      product: null,
+      inventoryItemId: null,
+      inventoryItem: null,
+      upc: '357017259903923',
+      imei: null,
+      serial: 'SG3R4GR71M0',
+      inboundBatch: {
+        ...draft,
+        status: InboundBatchStatus.CONFIRMED,
+      },
+    };
+    const correctedItem = {
+      ...confirmedItem,
+      upc: '195950251593',
+      imei: '357017259903923',
+      serial: null,
+    };
+    const { repository, service } = createService({
+      findItemById: jest.fn().mockResolvedValue(exceptionItem),
+      findProductByUpc: jest.fn().mockResolvedValue({
+        id: 'upc-1',
+        upc: '195950251593',
+        productId: product.id,
+        status: ProductStatus.ACTIVE,
+        createdAt: new Date('2026-06-17T00:00:00Z'),
+        updatedAt: new Date('2026-06-17T00:00:00Z'),
+        product,
+      }),
+      correctRecordUpc: jest.fn().mockResolvedValue(correctedItem),
+    });
+
+    await expect(
+      service.correctRecordUpc(
+        'item-1',
+        {
+          upsTrackingNo: '9622080430009579265100530689178',
+          upc: '195950251593',
+          imei: '357017259903923',
+          serial: '',
+          reason: 'UPC and identity were scanned into the wrong fields',
+        },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      status: InboundItemStatus.CONFIRMED,
+      upc: '195950251593',
+      imei: '357017259903923',
+    });
+
+    expect(repository.correctRecordUpc).toHaveBeenCalledWith({
+      itemId: exceptionItem.id,
+      inventoryItemId: undefined,
+      operatorId: operator.id,
+      upsTrackingNo: '9622080430009579265100530689178',
+      upc: '195950251593',
+      imei: '357017259903923',
+      serial: undefined,
+      productId: product.id,
+      reason: 'UPC and identity were scanned into the wrong fields',
+    });
   });
 
   it('rejects force inbound when the exception item has no matched active product', async () => {
@@ -694,6 +764,49 @@ describe('InboundService', () => {
         rawValue: '356789012345678',
       }),
     );
+  });
+
+  it('rejects duplicate IMEI inside the active draft before saving another preview row', async () => {
+    const { repository, service } = createService({
+      findDraftById: jest.fn().mockResolvedValue({ ...draft, inboundItems: [pendingItem] }),
+    });
+
+    await expect(
+      service.addItem('draft-1', {
+        upsTrackingNo: '1Z999AA10123456784',
+        upc: '194253149189',
+        imei: '356789012345678',
+      }),
+    ).rejects.toThrow(
+      '当前入库单内 IMEI 已重复: 356789012345678。请修正或删除重复明细后再继续入库。',
+    );
+    expect(repository.createItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects draft item correction when it would duplicate another row identity', async () => {
+    const duplicateDraftItem = {
+      ...pendingItem,
+      id: 'item-2',
+      imei: '357017259903923',
+    };
+    const { repository, service } = createService({
+      findDraftById: jest.fn().mockResolvedValue({
+        ...draft,
+        inboundItems: [pendingItem, duplicateDraftItem],
+      }),
+      findItemById: jest.fn().mockResolvedValue(duplicateDraftItem),
+    });
+
+    await expect(
+      service.updateItem('draft-1', 'item-2', {
+        upsTrackingNo: '1Z999AA10123456784',
+        upc: '194253149189',
+        imei: '356789012345678',
+      }),
+    ).rejects.toThrow(
+      '当前入库单内 IMEI 已重复: 356789012345678。请修正或删除重复明细后再继续入库。',
+    );
+    expect(repository.updateItem).not.toHaveBeenCalled();
   });
 
   it('accepts alphanumeric iPad IMEI values and normalizes them for duplicate checks', async () => {

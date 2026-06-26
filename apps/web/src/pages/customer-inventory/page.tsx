@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getSystemSettings, listWarehouses } from '../../api/settings';
 import { customersApi, inventoryApi } from '../../api/workflow';
+import { HorizontalScrollControl } from '../../components/horizontal-scroll-control';
 import { PaginationControls } from '../../components/pagination-controls';
 import { selectDefaultWarehouseId } from '../../utils/default-warehouse';
 
@@ -14,6 +15,7 @@ export function CustomerInventoryPage() {
   const [detailPage, setDetailPage] = useState(1);
   const [detailPageSize, setDetailPageSize] = useState(50);
   const [detailSearch, setDetailSearch] = useState('');
+  const detailTableRef = useRef<HTMLDivElement | null>(null);
   const customersQuery = useQuery({
     queryKey: ['customer-options'],
     queryFn: () => customersApi.options(),
@@ -214,7 +216,7 @@ export function CustomerInventoryPage() {
             ))}
             {!productSummary || productSummary.items.length === 0 ? (
               <tr>
-                <td colSpan={10}>暂无 SKU 汇总</td>
+                <td colSpan={11}>暂无 SKU 汇总</td>
               </tr>
             ) : null}
           </tbody>
@@ -249,39 +251,52 @@ export function CustomerInventoryPage() {
             />
           </label>
         </PaginationControls>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>单号</th>
-              <th>入库单号</th>
-              <th>出单号/箱号</th>
-              <th>IMEI</th>
-              <th>UPC</th>
-              <th>商品</th>
-              <th>型号代码</th>
-              <th>状态</th>
-            </tr>
-          </thead>
-          <tbody>
-            {inventory?.items.map((item) => (
-              <tr key={item.id}>
-                <td className="mono">{item.upsTrackingNo ?? '-'}</td>
-                <td className="mono">{item.inboundBatch?.batchNo ?? '-'}</td>
-                <td className="mono">{item.latestOutboundBox?.boxNo ?? '-'}</td>
-                <td>{item.imei ?? item.serial}</td>
-                <td>{item.upc}</td>
-                <td>{item.product.name}</td>
-                <td className="mono">{item.product.modelCode ?? '-'}</td>
-                <td>{item.status}</td>
-              </tr>
-            ))}
-            {!inventory || inventory.items.length === 0 ? (
+        <div ref={detailTableRef} className="inventory-detail-table-wrap">
+          <table className="data-table inventory-detail-table">
+            <thead>
               <tr>
-                <td colSpan={8}>暂无库存</td>
+                <th>单号</th>
+                <th>入库单号</th>
+                <th>出单号/箱号</th>
+                <th>IMEI</th>
+                <th>UPC</th>
+                <th>商品</th>
+                <th>型号代码</th>
+                <th>扫描时间</th>
+                <th>入库时间</th>
+                <th>状态</th>
               </tr>
-            ) : null}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {inventory?.items.map((item) => (
+                <tr key={item.id}>
+                  <td className="mono">{item.upsTrackingNo ?? '-'}</td>
+                  <td className="mono">{item.inboundBatch?.batchNo ?? '-'}</td>
+                  <td className="mono">{item.latestOutboundBox?.boxNo ?? '-'}</td>
+                  <td className="mono">{item.imei ?? item.serial}</td>
+                  <td className="mono">{item.upc}</td>
+                  <td>{item.product.name}</td>
+                  <td className="mono">{item.product.modelCode ?? '-'}</td>
+                  <td>
+                    <TimeCell value={item.inboundItem?.scannedAt ?? null} />
+                  </td>
+                  <td>
+                    <TimeCell value={item.receivedAt} />
+                  </td>
+                  <td>
+                    <span className={inventoryStatusClass(item.status)}>{item.status}</span>
+                  </td>
+                </tr>
+              ))}
+              {!inventory || inventory.items.length === 0 ? (
+                <tr>
+                  <td colSpan={10}>暂无库存</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+        <HorizontalScrollControl targetRef={detailTableRef} />
       </section>
     </section>
   );
@@ -336,7 +351,9 @@ type InventoryItem = {
   status: string;
   availableForOutbound: boolean;
   upsTrackingNo: string | null;
+  receivedAt: string | null;
   product: { name: string; modelCode?: string | null };
+  inboundItem?: { scannedAt?: string | null } | null;
   inboundBatch?: { batchNo: string } | null;
   latestOutboundBox?: { boxNo: string } | null;
 };
@@ -356,4 +373,23 @@ function SummaryMetric({
       <strong>{value}</strong>
     </div>
   );
+}
+
+function TimeCell({ value }: { value?: string | null }) {
+  if (!value) {
+    return <span className="time-cell muted">-</span>;
+  }
+  const date = new Date(value);
+  return (
+    <span className="time-cell">
+      <strong>{date.toLocaleDateString()}</strong>
+      <span>{date.toLocaleTimeString()}</span>
+    </span>
+  );
+}
+
+function inventoryStatusClass(status: string) {
+  if (status === 'IN_STOCK') return 'badge badge-success';
+  if (status === 'EXCEPTION' || status === 'VOIDED') return 'badge badge-danger';
+  return 'badge badge-info';
 }

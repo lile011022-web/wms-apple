@@ -53,8 +53,16 @@ Rules:
 - Operators can rename an open box after it is created. Manual box names must not be empty and must
   remain unique inside the same warehouse. The internal box number does not change when the visible
   box name is edited.
+- In bulk box packing, operators can edit each planned box's visible name directly in the batch
+  preview before confirming. Leaving the name empty keeps the backend-generated visible box name.
 - Voided boxes release their visible box names. A name used by a `VOIDED` box can be reused by a new
   or open box in the same warehouse.
+- The outbound packing page groups created boxes by the task header in the visible box name. The task
+  header is the text before the trailing `箱{SEQUENCE}` part, so names such as
+  `wangchen20260625翻 新ipad箱7` and `wangchen20260625翻 新ipad箱8` appear in the same group while
+  `wangchen20260625翻 新手机 16pro箱1` appears in a separate group.
+- The created-box list should load enough boxes per page for a day's active tasks to be grouped
+  together in normal warehouse use.
 
 ## Available Inventory
 
@@ -95,8 +103,9 @@ pagination total, and batch modal source rows must all use that full filtered re
 The current implementation derives these classes from UPC/product text already returned with the
 inventory row. Product names, SKU, model, category, and UPC should remain available to the frontend
 so the filter can distinguish the four main working buckets: 全新 iPhone, 全新 iPad, 翻新 iPhone,
-and 翻新 iPad. Selecting 成色 = 翻新 and 品类 = 全部品类 lets operators pack refurbished phones
-and refurbished tablets together.
+and 翻新 iPad. The refurbished detector should tolerate common English typos such as
+`Reurbished`, while still treating rows without refurbished signals as 全新. Selecting 成色 = 翻新
+and 品类 = 全部品类 lets operators pack refurbished phones and refurbished tablets together.
 
 Visible selections must be remembered while operators change search text, filters, pages, or page
 size inside the same selected customer and warehouse. Changing customer or warehouse clears the
@@ -132,6 +141,8 @@ Bulk box packing:
 - The sum of per-box counts must equal the selected or filtered available total before submission.
 - While entering per-box counts, the modal must preview each box's planned detail rows, including
   inventory received time, product, and IMEI / Serial or tracking number.
+- Each preview card includes an editable visible box name. Custom names are submitted when creating
+  the boxes; blank names use the normal generated name.
 - Bulk packing creates boxes and adds existing inventory rows to those boxes; it must not create or delete inventory rows.
 
 Box detail printing:
@@ -142,6 +153,10 @@ Box detail printing:
   format `商品名称*数量`, followed by `|Total: N|`.
 - The preview title must use the current box context only: date, customer name, and box name.
 - Operators must click `确认打印` in the preview before the browser print dialog opens.
+- `确认打印` must send a standalone print document containing only the current box detail text, not
+  the surrounding workbench or modal layout. The printable document must fit the complete current
+  box summary onto one sheet; when there are many summary lines, the print content should scale down
+  instead of paginating, clipping, or repeating on every page.
 
 ## Box Lifecycle
 
@@ -156,6 +171,7 @@ Allowed operations for an open box:
 - Remove one inventory row.
 - Clear all rows.
 - Upload or delete packing photos or videos.
+- Download the current box packing detail data for customer-service order creation before sealing.
 - Seal the box.
 
 Allowed operations for a sealed box:
@@ -183,6 +199,10 @@ When a box is sealed:
 - The backend verifies all box inventory rows remain `PACKED`.
 - The backend requires at least one packing photo or video evidence file on the box before sealing.
 - An `OUTBOUND_BOX_SEAL` audit log is written.
+
+Downloading box packing data is allowed before sealing. This export is for customer-service order
+creation and reconciliation only; it must not change the box lifecycle state and must not bypass the
+photo/video evidence requirement for final sealing.
 
 When a sealed box is reopened for rework:
 

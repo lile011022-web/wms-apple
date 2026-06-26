@@ -21,14 +21,15 @@ const completedExport = {
   requestedById: operator.id,
   filters: {
     filters: { customerId: 'customer-1' },
-    fields: ['imei', 'serial'],
+    fields: ['upsTrackingNo', 'upc', 'imei', 'productName', 'quantity'],
     format: ReportExportFormat.CSV,
     rowCount: 1,
     fileName: 'inventory_detail-export-1.csv',
     contentType: 'text/csv; charset=utf-8',
     generatedAt: now.toISOString(),
     metadata: {
-      fileContent: 'IMEI,Serial\n356789012345678,',
+      fileContent:
+        '单号,UPC,IMEI,商品名称,数量\n1Z999AA10123456784,194253149189,356789012345678,iPhone 16 Pro,3',
     },
   },
   fileUrl: 'report-export://export-1/inventory_detail-export-1.csv',
@@ -53,8 +54,23 @@ const inventoryRow = {
   imei: '356789012345678',
   serial: null,
   upsTrackingNo: '1Z999AA10123456784',
+  quantity: 3,
   status: 'IN_STOCK',
   receivedAt: now,
+};
+
+const inventoryRowSameProduct = {
+  ...inventoryRow,
+  imei: '356789012345679',
+  upsTrackingNo: '1Z999AA10123456784',
+  quantity: 2,
+};
+
+const inventoryRowSameProductDifferentTracking = {
+  ...inventoryRow,
+  imei: '356789012345680',
+  upsTrackingNo: '1Z999AA10123456785',
+  quantity: 4,
 };
 
 const outboundRow = {
@@ -123,7 +139,13 @@ function createService(
 ) {
   const repository = {
     countRows: jest.fn().mockResolvedValue(1),
-    findRows: jest.fn().mockResolvedValue([inventoryRow]),
+    findRows: jest
+      .fn()
+      .mockResolvedValue([
+        inventoryRow,
+        inventoryRowSameProduct,
+        inventoryRowSameProductDifferentTracking,
+      ]),
     createExport: jest.fn().mockResolvedValue({
       ...completedExport,
       status: 'PENDING',
@@ -177,13 +199,56 @@ describe('ReportsService', () => {
       service.preview({
         reportType: ReportType.INVENTORY_DETAIL,
         filters: { customerId: ' customer-1 ' },
-        fields: ['imei', 'serial'],
+        fields: ['upsTrackingNo', 'upc', 'imei', 'productName', 'quantity'],
       }),
     ).resolves.toMatchObject({
       reportType: ReportType.INVENTORY_DETAIL,
-      estimatedRowCount: 1,
-      selectedFields: ['imei', 'serial'],
-      sampleRows: [{ imei: '356789012345678', serial: '' }],
+      estimatedRowCount: 5,
+      selectedFields: ['upsTrackingNo', 'upc', 'imei', 'productName', 'quantity'],
+      availableFields: [
+        { key: 'upsTrackingNo', title: '单号' },
+        { key: 'upc', title: 'UPC' },
+        { key: 'imei', title: 'IMEI' },
+        { key: 'productName', title: '商品名称' },
+        { key: 'quantity', title: '数量' },
+      ],
+      sampleRows: [
+        {
+          upsTrackingNo: '1Z999AA10123456784',
+          upc: '194253149189',
+          imei: '共 5 台，已列 2 个 IMEI',
+          productName: 'iPhone 16 Pro',
+          quantity: '5',
+        },
+        {
+          upsTrackingNo: '',
+          upc: '',
+          imei: '356789012345678',
+          productName: '',
+          quantity: '',
+        },
+        {
+          upsTrackingNo: '',
+          upc: '',
+          imei: '356789012345679',
+          productName: '',
+          quantity: '',
+        },
+        {
+          upsTrackingNo: '1Z999AA10123456785',
+          upc: '194253149189',
+          imei: '共 4 台，已列 1 个 IMEI',
+          productName: 'iPhone 16 Pro',
+          quantity: '4',
+        },
+        {
+          upsTrackingNo: '',
+          upc: '',
+          imei: '356789012345680',
+          productName: '',
+          quantity: '',
+        },
+      ],
       shouldRunInBackground: false,
       filters: { customerId: 'customer-1' },
     });
@@ -195,7 +260,7 @@ describe('ReportsService', () => {
       {
         customerId: 'customer-1',
       },
-      10,
+      5001,
     );
   });
 
@@ -207,14 +272,14 @@ describe('ReportsService', () => {
         {
           reportType: ReportType.INVENTORY_DETAIL,
           format: ReportExportFormat.CSV,
-          fields: ['imei', 'serial'],
+          fields: ['upsTrackingNo', 'upc', 'imei', 'productName', 'quantity'],
         },
         operator,
       ),
     ).resolves.toMatchObject({
       id: 'export-1',
       status: 'COMPLETED',
-      rowCount: 1,
+      rowCount: 5,
       fileName: 'inventory_detail-export-1.csv',
     });
     expect(repository.createAuditLog).toHaveBeenCalledWith(
@@ -222,9 +287,29 @@ describe('ReportsService', () => {
         exportId: 'export-1',
         operatorId: operator.id,
         reportType: ReportType.INVENTORY_DETAIL,
-        rowCount: 1,
+        rowCount: 5,
         format: ReportExportFormat.CSV,
       }),
+    );
+    const completedCall = repository.updateExport.mock.calls[0];
+    const completedPayload = completedCall![0].filters as {
+      metadata: { fileContent: string };
+    };
+    expect(completedPayload.metadata.fileContent).toContain('单号,UPC,IMEI,商品名称,数量');
+    expect(completedPayload.metadata.fileContent).toContain(
+      '1Z999AA10123456784,194253149189,共 5 台，已列 2 个 IMEI,iPhone 16 Pro,5',
+    );
+    expect(completedPayload.metadata.fileContent).toContain(
+      ',,356789012345678,,',
+    );
+    expect(completedPayload.metadata.fileContent).toContain(
+      ',,356789012345679,,',
+    );
+    expect(completedPayload.metadata.fileContent).toContain(
+      '1Z999AA10123456785,194253149189,共 4 台，已列 1 个 IMEI,iPhone 16 Pro,4',
+    );
+    expect(completedPayload.metadata.fileContent).toContain(
+      ',,356789012345680,,',
     );
   });
 
@@ -294,6 +379,41 @@ describe('ReportsService', () => {
     );
   });
 
+  it('allows outbound detail Excel downloads for an open box before sealing', async () => {
+    const openBoxRow = {
+      ...outboundRow,
+      outboundBox: {
+        ...outboundRow.outboundBox,
+        status: 'OPEN',
+        sealedAt: null,
+      },
+    };
+    const { repository, service } = createService({
+      findRows: jest.fn().mockResolvedValue([openBoxRow]),
+    });
+
+    await expect(
+      service.createExport(
+        {
+          reportType: ReportType.OUTBOUND_DETAIL,
+          format: ReportExportFormat.EXCEL,
+          filters: { boxNo: 'BOX-20260621-001' },
+          fields: ['boxNo', 'boxStatus', 'imei'],
+        },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      fileName: 'outbound_detail-BOX-20260621-001-export-1.xls',
+      rowCount: 1,
+    });
+
+    expect(repository.findRows).toHaveBeenCalledWith(
+      ReportType.OUTBOUND_DETAIL,
+      { boxNo: 'BOX-20260621-001' },
+      expect.any(Number),
+    );
+  });
+
   it('names inbound detail export files with the selected batch number', async () => {
     const { service } = createService({ findRows: jest.fn().mockResolvedValue([inboundRow]) });
 
@@ -309,6 +429,42 @@ describe('ReportsService', () => {
       ),
     ).resolves.toMatchObject({
       fileName: 'inbound_detail-INB-20260622-001-export-1.csv',
+    });
+  });
+
+  it('expands inventory summary rows when quantity is greater than one', async () => {
+    const { service } = createService({
+      findRows: jest.fn().mockResolvedValue([
+        {
+          ...inventoryRow,
+          quantity: 2,
+        },
+      ]),
+    });
+
+    await expect(
+      service.preview({
+        reportType: ReportType.INVENTORY_DETAIL,
+        fields: ['upsTrackingNo', 'upc', 'imei', 'productName', 'quantity'],
+      }),
+    ).resolves.toMatchObject({
+      estimatedRowCount: 2,
+      sampleRows: [
+        {
+          upsTrackingNo: '1Z999AA10123456784',
+          upc: '194253149189',
+          imei: '共 2 台，已列 1 个 IMEI',
+          productName: 'iPhone 16 Pro',
+          quantity: '2',
+        },
+        {
+          upsTrackingNo: '',
+          upc: '',
+          imei: '356789012345678',
+          productName: '',
+          quantity: '',
+        },
+      ],
     });
   });
 
@@ -344,7 +500,8 @@ describe('ReportsService', () => {
     await expect(service.download('export-1', operator)).resolves.toMatchObject({
       id: 'export-1',
       contentType: 'text/csv; charset=utf-8',
-      content: 'IMEI,Serial\n356789012345678,',
+      content:
+        '单号,UPC,IMEI,商品名称,数量\n1Z999AA10123456784,194253149189,356789012345678,iPhone 16 Pro,3',
     });
   });
 });

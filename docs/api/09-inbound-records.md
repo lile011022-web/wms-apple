@@ -51,6 +51,8 @@ Each row returns:
 - Product summary when UPC matched.
 - Linked `inventoryItemId`.
 - `inventoryStatus`.
+- `scannedAt` and linked inventory `receivedAt`. The frontend displays `scannedAt` as scan time
+  and `receivedAt` as inbound time; rows without linked inventory show an empty inbound time.
 - `selectableForCustomerChange`, currently false only for voided inbound rows.
 - Exception summaries.
 
@@ -62,27 +64,37 @@ Returns one inbound item with batch, customer, product, linked inventory status,
 
 Use this for the inbound-record detail drawer when the selected table row is an inbound item.
 
-## Correct Record UPC
+## Correct Record
 
-`PATCH /api/v1/inbound/records/:id/upc`
+`PATCH /api/v1/inbound/records/:id/correction`
 
 ```json
 {
+  "upsTrackingNo": "9622080430009579265100530689178",
   "upc": "195950251593",
-  "reason": "UPC was scanned incorrectly during receiving."
+  "imei": "357017259903923",
+  "reason": "UPC and IMEI were scanned into the wrong fields during receiving."
 }
 ```
 
-Corrects the UPC/product assignment for a confirmed inbound record and its linked inventory row.
+Corrects scan fields for an inbound record. Operators can fix the package tracking number, UPC, and
+IMEI/Serial from the inbound records page. Saving an exception or pending row creates normal inbound
+inventory when the corrected data is valid.
 
 Rules:
 
-- The inbound batch must already be confirmed.
-- The inbound row must be `CONFIRMED` and linked to inventory.
-- Linked inventory must still be `IN_STOCK` or `EXCEPTION`; packed or outbound inventory is blocked.
+- `upc` and `reason` are required.
+- Use either `imei` or `serial` for one row, not both.
 - The new UPC must match an active UPC mapping and active product.
-- The request must include an operator reason.
-- The API updates both `inbound_items` and `inventory_items` in one transaction and writes an `INBOUND_UPC_CORRECTION` audit log.
+- If the row already has linked inventory, that inventory must still be `IN_STOCK` or `EXCEPTION`;
+  packed or outbound inventory is blocked.
+- If the row is `EXCEPTION` or `PENDING` and has no linked inventory, the API creates an inventory
+  row and marks the inbound row `CONFIRMED`.
+- The API updates `inbound_items` and `inventory_items` in one transaction and writes an
+  `INBOUND_RECORD_CORRECTION` audit log.
+
+`PATCH /api/v1/inbound/records/:id/upc` is kept as a compatibility alias for the same correction
+behavior.
 
 ## Get Record Items
 

@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, Edit3, RefreshCw, Save, Search, ShieldCheck, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { customersApi, inboundApi } from '../../api/workflow';
+import { HorizontalScrollControl } from '../../components/horizontal-scroll-control';
 import { PaginationControls } from '../../components/pagination-controls';
 
 export function InboundRecordsPage() {
@@ -13,9 +14,10 @@ export function InboundRecordsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [preview, setPreview] = useState<InboundExportPreview | null>(null);
-  const [upcEdit, setUpcEdit] = useState({ itemId: '', upc: '', reason: '' });
+  const [recordEdit, setRecordEdit] = useState<InboundRecordEdit | null>(null);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const recordsTableRef = useRef<HTMLDivElement | null>(null);
   const queryClient = useQueryClient();
 
   const customersQuery = useQuery({
@@ -49,6 +51,9 @@ export function InboundRecordsPage() {
     enabled: Boolean(customerId),
   });
   const records = recordsQuery.data as InboundRecordsResult | undefined;
+  const editingRecord = recordEdit
+    ? records?.items.find((item) => item.id === recordEdit.itemId)
+    : undefined;
 
   const previewMutation = useMutation({
     mutationFn: () => inboundApi.exportPreview(params),
@@ -71,12 +76,18 @@ export function InboundRecordsPage() {
     },
   });
 
-  const correctUpcMutation = useMutation({
-    mutationFn: ({ itemId, upc, reason }: { itemId: string; upc: string; reason: string }) =>
-      inboundApi.correctRecordUpc(itemId, { upc, reason }),
+  const correctRecordMutation = useMutation({
+    mutationFn: (input: InboundRecordEdit) =>
+      inboundApi.correctRecord(input.itemId, {
+        upsTrackingNo: input.upsTrackingNo,
+        upc: input.upc,
+        imei: input.identityType === 'IMEI' ? input.identityValue : undefined,
+        serial: input.identityType === 'SERIAL' ? input.identityValue : undefined,
+        reason: input.reason,
+      }),
     onSuccess: () => {
-      setUpcEdit({ itemId: '', upc: '', reason: '' });
-      setMessage('UPC 已修正，入库明细和库存商品归属已同步更新。');
+      setRecordEdit(null);
+      setMessage('入库记录已修正，入库明细和库存商品归属已同步更新。');
       setErrorMessage('');
       void recordsQuery.refetch();
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
@@ -87,7 +98,7 @@ export function InboundRecordsPage() {
     },
     onError: (error) => {
       setMessage('');
-      setErrorMessage(error instanceof Error ? error.message : 'UPC 修正失败');
+      setErrorMessage(error instanceof Error ? error.message : '入库记录修正失败');
     },
   });
 
@@ -99,28 +110,50 @@ export function InboundRecordsPage() {
     forceConfirmMutation.mutate({ itemId: item.id, reason });
   }
 
-  function startUpcEdit(item: InboundRecord) {
-    setUpcEdit({ itemId: item.id, upc: item.upc, reason: '' });
+  function startRecordEdit(item: InboundRecord) {
+    setRecordEdit({
+      itemId: item.id,
+      upsTrackingNo: item.upsTrackingNo ?? '',
+      upc: item.upc,
+      identityType: item.serial ? 'SERIAL' : 'IMEI',
+      identityValue: item.serial ?? item.imei ?? '',
+      reason: '入库记录人工修正',
+    });
     setMessage('');
     setErrorMessage('');
   }
 
-  function cancelUpcEdit() {
-    setUpcEdit({ itemId: '', upc: '', reason: '' });
+  function cancelRecordEdit() {
+    setRecordEdit(null);
   }
 
-  function saveUpcEdit() {
-    const nextUpc = upcEdit.upc.trim();
-    const reason = upcEdit.reason.trim();
+  function updateRecordEdit(patch: Partial<InboundRecordEdit>) {
+    setRecordEdit((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  function saveRecordEdit() {
+    if (!recordEdit) return;
+    const nextUpc = recordEdit.upc.trim();
+    const reason = recordEdit.reason.trim();
+    const identityValue = recordEdit.identityValue.trim();
     if (!nextUpc) {
       setErrorMessage('请填写修正后的 UPC');
       return;
     }
-    if (!reason) {
-      setErrorMessage('请填写 UPC 修正原因');
+    if (!identityValue) {
+      setErrorMessage('请填写修正后的 IMEI 或 Serial');
       return;
     }
-    correctUpcMutation.mutate({ itemId: upcEdit.itemId, upc: nextUpc, reason });
+    if (!reason) {
+      setErrorMessage('请填写修正原因');
+      return;
+    }
+    correctRecordMutation.mutate({
+      ...recordEdit,
+      upc: nextUpc,
+      identityValue,
+      reason,
+    });
   }
 
   return (
@@ -238,135 +271,192 @@ export function InboundRecordsPage() {
             setPage(1);
           }}
         />
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>批次</th>
-              <th>客户</th>
-              <th>UPC</th>
-              <th>IMEI/Serial</th>
-              <th>商品</th>
-              <th>UPS</th>
-              <th>状态</th>
-              <th>扫描时间</th>
-              <th>操作人员</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {records?.items.map((item) => {
-              const canForceConfirm =
-                item.status === 'EXCEPTION' && Boolean(item.product) && !item.inventoryItemId;
-              const isUpcEditing = upcEdit.itemId === item.id;
-              const canCorrectUpc =
-                item.status === 'CONFIRMED' &&
-                Boolean(item.inventoryItemId) &&
-                (item.inventoryStatus === 'IN_STOCK' || item.inventoryStatus === 'EXCEPTION');
-              return (
-                <tr key={item.id}>
-                  <td className="mono">
-                    {item.batch?.batchNo ?? item.inboundBatch?.batchNo ?? '-'}
-                  </td>
-                  <td>{item.customer?.code ?? '-'}</td>
-                  <td className="mono">
-                    {isUpcEditing ? (
-                      <div className="upc-correction-box">
-                        <input
-                          className="table-inline-input"
-                          value={upcEdit.upc}
-                          onChange={(event) =>
-                            setUpcEdit((current) => ({
-                              ...current,
-                              upc: event.target.value.trim(),
-                            }))
-                          }
-                          placeholder="输入正确 UPC"
-                        />
-                        <input
-                          className="table-inline-input"
-                          value={upcEdit.reason}
-                          onChange={(event) =>
-                            setUpcEdit((current) => ({
-                              ...current,
-                              reason: event.target.value,
-                            }))
-                          }
-                          placeholder="修正原因"
-                        />
-                      </div>
-                    ) : (
-                      item.upc
-                    )}
-                  </td>
-                  <td className="mono">{item.imei ?? item.serial ?? '-'}</td>
-                  <td>{item.product?.name ?? '-'}</td>
-                  <td className="mono">{item.upsTrackingNo ?? '-'}</td>
-                  <td>
-                    <span className={statusClass(item.status)}>
-                      {item.forcedInbound ? 'FORCED' : item.status}
-                    </span>
-                  </td>
-                  <td>{formatDate(item.scannedAt ?? item.createdAt)}</td>
-                  <td>{formatOperator(item.batch?.operator ?? item.inboundBatch?.operator)}</td>
-                  <td>
-                    <div className="inbound-record-actions">
-                      {canForceConfirm ? (
-                        <button
-                          type="button"
-                          className="table-action"
-                          disabled={forceConfirmMutation.isPending}
-                          onClick={() => handleForceConfirm(item)}
-                        >
-                          <ShieldCheck size={14} />
-                          强制入库
-                        </button>
-                      ) : null}
-                      {isUpcEditing ? (
-                        <>
-                          <button
-                            type="button"
-                            className="table-action"
-                            disabled={correctUpcMutation.isPending}
-                            onClick={saveUpcEdit}
-                          >
-                            <Save size={14} />
-                            {correctUpcMutation.isPending ? '保存中' : '保存'}
-                          </button>
-                          <button
-                            type="button"
-                            className="table-action secondary"
-                            disabled={correctUpcMutation.isPending}
-                            onClick={cancelUpcEdit}
-                          >
-                            <X size={14} />
-                            取消
-                          </button>
-                        </>
-                      ) : canCorrectUpc ? (
-                        <button
-                          type="button"
-                          className="table-action secondary"
-                          disabled={correctUpcMutation.isPending}
-                          onClick={() => startUpcEdit(item)}
-                        >
-                          <Edit3 size={14} />
-                          修正UPC
-                        </button>
-                      ) : null}
-                      {!canForceConfirm && !canCorrectUpc && !isUpcEditing ? '-' : null}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {!records || records.items.length === 0 ? (
+        <div ref={recordsTableRef} className="inbound-records-table-wrap">
+          <table className="data-table inbound-records-table">
+            <thead>
               <tr>
-                <td colSpan={10}>暂无入库记录</td>
+                <th>批次</th>
+                <th>客户</th>
+                <th>UPC</th>
+                <th>IMEI/Serial</th>
+                <th>商品</th>
+                <th>UPS</th>
+                <th>状态</th>
+                <th>扫描时间</th>
+                <th>入库时间</th>
+                <th>操作人员</th>
+                <th>操作</th>
               </tr>
-            ) : null}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {records?.items.map((item) => {
+                const canForceConfirm =
+                  item.status === 'EXCEPTION' && Boolean(item.product) && !item.inventoryItemId;
+                const isEditing = recordEdit?.itemId === item.id;
+                const canCorrectRecord = canRecordBeCorrected(item);
+                return (
+                  <tr key={item.id} className={isEditing ? 'selected-record-row' : undefined}>
+                    <td className="mono">
+                      {item.batch?.batchNo ?? item.inboundBatch?.batchNo ?? '-'}
+                    </td>
+                    <td>{item.customer?.code ?? '-'}</td>
+                    <td className="mono">{item.upc}</td>
+                    <td className="mono">{item.imei ?? item.serial ?? '-'}</td>
+                    <td>{item.product?.name ?? '-'}</td>
+                    <td className="mono">{item.upsTrackingNo ?? '-'}</td>
+                    <td>
+                      <span className={statusClass(item.status)}>
+                        {item.forcedInbound ? 'FORCED' : item.status}
+                      </span>
+                    </td>
+                    <td>
+                      <TimeCell value={item.scannedAt ?? item.createdAt} />
+                    </td>
+                    <td>
+                      <TimeCell value={item.receivedAt ?? item.batch?.confirmedAt ?? null} />
+                    </td>
+                    <td>{formatOperator(item.batch?.operator ?? item.inboundBatch?.operator)}</td>
+                    <td>
+                      <div className="inbound-record-actions">
+                        {canCorrectRecord ? (
+                          <button
+                            type="button"
+                            className={
+                              isEditing
+                                ? 'table-action inbound-record-action-btn'
+                                : 'table-action secondary inbound-record-action-btn'
+                            }
+                            disabled={correctRecordMutation.isPending}
+                            onClick={() => (isEditing ? saveRecordEdit() : startRecordEdit(item))}
+                          >
+                            {isEditing ? <Save size={13} /> : <Edit3 size={13} />}
+                            {isEditing
+                              ? correctRecordMutation.isPending
+                                ? '保存中'
+                                : '保存'
+                              : '编辑'}
+                          </button>
+                        ) : null}
+                        {canForceConfirm ? (
+                          <button
+                            type="button"
+                            className="table-action inbound-record-action-btn"
+                            disabled={forceConfirmMutation.isPending}
+                            onClick={() => handleForceConfirm(item)}
+                          >
+                            <ShieldCheck size={13} />
+                            强制入库
+                          </button>
+                        ) : null}
+                        {!canCorrectRecord && !canForceConfirm ? '-' : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!records || records.items.length === 0 ? (
+                <tr>
+                  <td colSpan={10}>暂无入库记录</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+        <HorizontalScrollControl targetRef={recordsTableRef} />
       </section>
+
+      <aside className={`record-edit-drawer${recordEdit ? ' open' : ''}`} aria-hidden={!recordEdit}>
+        <div className="record-edit-drawer-head">
+          <div>
+            <p>编辑入库货物</p>
+            <h2>{editingRecord?.batch?.batchNo ?? editingRecord?.inboundBatch?.batchNo ?? '-'}</h2>
+          </div>
+          <button type="button" className="icon-button secondary" onClick={cancelRecordEdit}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {recordEdit ? (
+          <>
+            <div className="record-edit-summary">
+              <span>{editingRecord?.customer?.code ?? '-'}</span>
+              <strong>{editingRecord?.product?.name ?? '-'}</strong>
+              <span className={statusClass(editingRecord?.status ?? '')}>
+                {editingRecord?.forcedInbound ? 'FORCED' : (editingRecord?.status ?? '-')}
+              </span>
+            </div>
+
+            <div className="record-edit-form">
+              <label>
+                <span>货物单号</span>
+                <input
+                  value={recordEdit.upsTrackingNo}
+                  onChange={(event) => updateRecordEdit({ upsTrackingNo: event.target.value })}
+                  placeholder="UPS / USPS / FedEx"
+                />
+              </label>
+              <label>
+                <span>UPC</span>
+                <input
+                  value={recordEdit.upc}
+                  onChange={(event) => updateRecordEdit({ upc: event.target.value })}
+                  placeholder="输入正确 UPC"
+                />
+              </label>
+              <label>
+                <span>IMEI / Serial</span>
+                <input
+                  value={recordEdit.identityValue}
+                  onChange={(event) => updateRecordEdit({ identityValue: event.target.value })}
+                  placeholder="扫描或输入正确 IMEI"
+                />
+              </label>
+              <label>
+                <span>识别类型</span>
+                <select
+                  value={recordEdit.identityType}
+                  onChange={(event) =>
+                    updateRecordEdit({
+                      identityType: event.target.value as InboundRecordEdit['identityType'],
+                    })
+                  }
+                >
+                  <option value="IMEI">IMEI</option>
+                  <option value="SERIAL">Serial</option>
+                </select>
+              </label>
+              <label>
+                <span>修正备注</span>
+                <input
+                  value={recordEdit.reason}
+                  onChange={(event) => updateRecordEdit({ reason: event.target.value })}
+                  placeholder="用于审计记录"
+                />
+              </label>
+            </div>
+
+            <div className="record-edit-drawer-actions">
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={correctRecordMutation.isPending}
+                onClick={cancelRecordEdit}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={correctRecordMutation.isPending}
+                onClick={saveRecordEdit}
+              >
+                <Save size={16} />
+                {correctRecordMutation.isPending ? '保存中' : '保存入库'}
+              </button>
+            </div>
+          </>
+        ) : null}
+      </aside>
     </section>
   );
 }
@@ -387,6 +477,7 @@ type InboundRecord = {
   status: string;
   inventoryItemId?: string | null;
   inventoryStatus?: string | null;
+  receivedAt?: string | null;
   forcedInbound?: boolean;
   forceReason?: string | null;
   forcedAt?: string | null;
@@ -395,11 +486,37 @@ type InboundRecord = {
   createdAt: string;
   customer?: { code: string; name: string } | null;
   product?: { id?: string; name: string; modelCode?: string | null } | null;
-  batch?: { batchNo: string; operator?: OperatorSummary | null } | null;
-  inboundBatch?: { batchNo: string; operator?: OperatorSummary | null } | null;
+  batch?: {
+    batchNo: string;
+    confirmedAt?: string | null;
+    operator?: OperatorSummary | null;
+  } | null;
+  inboundBatch?: {
+    batchNo: string;
+    confirmedAt?: string | null;
+    operator?: OperatorSummary | null;
+  } | null;
+};
+type InboundRecordEdit = {
+  itemId: string;
+  upsTrackingNo: string;
+  upc: string;
+  identityType: 'IMEI' | 'SERIAL';
+  identityValue: string;
+  reason: string;
 };
 type OperatorSummary = { id: string; email: string; name: string };
 type InboundExportPreview = { estimatedRowCount: number };
+
+function canRecordBeCorrected(item: InboundRecord) {
+  if (item.status === 'CONFIRMED') {
+    return (
+      Boolean(item.inventoryItemId) &&
+      (item.inventoryStatus === 'IN_STOCK' || item.inventoryStatus === 'EXCEPTION')
+    );
+  }
+  return item.status === 'EXCEPTION' || item.status === 'PENDING';
+}
 
 function statusClass(status: string) {
   if (status === 'CONFIRMED') return 'badge badge-success';
@@ -407,8 +524,17 @@ function statusClass(status: string) {
   return 'badge badge-warning';
 }
 
-function formatDate(value?: string | null) {
-  return value ? new Date(value).toLocaleString() : '-';
+function TimeCell({ value }: { value?: string | null }) {
+  if (!value) {
+    return <span className="time-cell muted">-</span>;
+  }
+  const date = new Date(value);
+  return (
+    <span className="time-cell">
+      <strong>{date.toLocaleDateString()}</strong>
+      <span>{date.toLocaleTimeString()}</span>
+    </span>
+  );
 }
 
 function formatOperator(operator?: OperatorSummary | null) {

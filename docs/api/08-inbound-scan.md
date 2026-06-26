@@ -96,7 +96,10 @@ Rules:
 - If unmatched UPC exceptions are enabled, an `UPC_NOT_MATCHED` exception record is created.
 - In `STANDARD` mode, products with `requiresImei = true` require a valid IMEI. IMEI validation accepts 15-digit numeric phone IMEI values and 10-18 character uppercase alphanumeric iPad identifiers such as `SH9LRL91YFC`.
 - In `STANDARD` mode, products with `requiresImei = false` require either Serial or IMEI in this phase.
-- Duplicate IMEI or Serial creates an exception preview item when duplicate detection is enabled.
+- IMEI or Serial duplicated inside the same active draft is rejected immediately and must not create
+  another `PENDING` preview row.
+- IMEI or Serial duplicated against existing inventory creates an exception preview item when
+  duplicate detection is enabled.
 - If the latest non-voided preview item in the active draft is still `EXCEPTION`, the API rejects
   adding another item with a conflict error. The operator must correct or remove that latest
   exception row first.
@@ -126,6 +129,8 @@ Rules:
 - The request body follows the same fields and validation rules as `POST /drafts/:id/items`.
 - Saving a correction overwrites the original `InboundItem` row. It must not create a new inbound
   item.
+- If the corrected IMEI or Serial would duplicate another non-voided row in the same draft, the API
+  rejects the correction before saving.
 - Existing open exception records for the corrected row are marked `INVALID`, then the corrected row
   is validated again. If the corrected values are still invalid, a new open exception can be created
   for the same row.

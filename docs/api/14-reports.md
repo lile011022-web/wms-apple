@@ -29,11 +29,22 @@ Permission: `reports.export`
     "dateFrom": "2026-06-01T00:00:00.000Z",
     "dateTo": "2026-06-30T23:59:59.999Z"
   },
-  "fields": ["customerCode", "warehouseCode", "sku", "imei", "serial", "status"]
+  "fields": ["upsTrackingNo", "upc", "imei", "productName", "quantity"]
 }
 ```
 
 The response returns estimated row count, selected fields, available field whitelist, normalized filters, up to 10 formatted `sampleRows`, and whether the export should run as a background job. The frontend uses `sampleRows` to show a partial table before creating the export.
+
+`INVENTORY_DETAIL` uses the operator-facing fixed columns `单号`, `UPC`, `IMEI`, `商品名称`, and
+`数量`. The API field keys are `upsTrackingNo`, `upc`, `imei`, `productName`, and `quantity`.
+Inventory detail preview and export group rows by `单号 + UPC + 商品名称`, then sum `quantity`.
+The same UPC is accumulated only when it belongs to the same package tracking number. If the same
+UPC appears under different package tracking numbers, those rows stay separate. If one group has
+quantity greater than one or multiple IMEI/Serial values, the export writes a summary row first,
+then writes one indented-style detail row per IMEI with only the `IMEI` column populated. This keeps
+the quantity merged while still making each device identity easy to review. Current item-level
+inventory rows do not store a separate quantity column, so each raw item contributes one unit unless
+a quantity value is present on the report row.
 
 `filters.dateFrom` and `filters.dateTo` are optional ISO datetimes. They filter the report's primary business time: inbound `scannedAt`, outbound `packedAt`, inventory `receivedAt`, exception `createdAt`, customer-change log `createdAt`, and audit log `createdAt`.
 
@@ -87,6 +98,11 @@ Supported formats:
 The current implementation completes small exports synchronously. Reports over the configured synchronous row limit are rejected for background-job handling. A successful export writes an `AuditLog` with action `REPORT_EXPORT`.
 
 For sealed packing detail downloads, use `reportType = OUTBOUND_DETAIL` with `filters.outboundStatus = SEALED`. Search supports box number, customer, UPC, tracking number, IMEI, Serial, SKU, and product name. Include `boxNotes` when the download needs each box's remark, and include `shippingTrackingNo` when the download needs the uploaded outbound shipment or label number.
+
+For customer-service order creation before warehouse sealing, the outbound packing page can create an
+`OUTBOUND_DETAIL` Excel export with selected customer/warehouse filters, optionally narrowed by
+`filters.boxNo`, and no `filters.outboundStatus`. This returns open or sealed packing rows and does
+not bypass the later sealing evidence rule.
 
 When `reportType = OUTBOUND_DETAIL` and `format = EXCEL`, the generated workbook follows the customer reconciliation layout used for outbound packing:
 

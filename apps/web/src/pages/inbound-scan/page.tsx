@@ -163,10 +163,17 @@ export function InboundScanPage() {
     trackingWarning?.trackingNo === normalizedTrackingInput ? trackingWarning : null;
   const isTrackingWarningConfirmed = !!activeTrackingWarning?.confirmed;
   const isTrackingWarningBlocking = !!activeTrackingWarning && !activeTrackingWarning.confirmed;
+  const draftIdentityDuplicates = useMemo(
+    () => findDraftIdentityDuplicates(draft?.items ?? []),
+    [draft?.items],
+  );
+  const activeDraftIdentityDuplicate =
+    scanMode === 'STANDARD' ? findDraftIdentityDuplicate(draft?.items ?? [], imei) : null;
   const canAddCurrentScan =
     isCurrentSelectionLocked &&
     !blockingExceptionItem &&
     !isTrackingWarningBlocking &&
+    !activeDraftIdentityDuplicate &&
     !isCheckingTracking &&
     !!upsTrackingNo.trim() &&
     !!upc.trim() &&
@@ -330,6 +337,12 @@ export function InboundScanPage() {
         throw new Error('请先手动确认物流单号后再加入明细。');
       }
       const activeDraft = await ensureDraft();
+      const duplicateIdentity = findDraftIdentityDuplicate(activeDraft.items, imei);
+      if (scanMode === 'STANDARD' && duplicateIdentity) {
+        throw new Error(
+          `当前入库单内 IMEI 已重复: ${duplicateIdentity}。请修正或删除重复明细后再继续入库。`,
+        );
+      }
       const item = (await inboundApi.addItem(activeDraft.id, {
         upsTrackingNo: upsTrackingNo.trim() || undefined,
         upc: upc.trim(),
@@ -808,7 +821,12 @@ export function InboundScanPage() {
           </button>
           <button
             type="button"
-            disabled={!isDraftOpen || !!blockingExceptionItem || confirmMutation.isPending}
+            disabled={
+              !isDraftOpen ||
+              !!blockingExceptionItem ||
+              draftIdentityDuplicates.length > 0 ||
+              confirmMutation.isPending
+            }
             onClick={() => confirmMutation.mutate()}
           >
             <PackageCheck size={16} />
@@ -880,9 +898,29 @@ export function InboundScanPage() {
           ))}
           {importFailedRows.length > 5 ? (
             <div>另有 {importFailedRows.length - 5} 行失败</div>
-          ) : null}
-        </div>
-      ) : null}
+            ) : null}
+          </div>
+        ) : null}
+        {activeDraftIdentityDuplicate ? (
+          <div className="tracking-warning-bar">
+            <div>
+              <strong>IMEI 重复</strong>
+              <span>
+                当前入库单内已存在 {activeDraftIdentityDuplicate}，请修正或删除重复明细后再继续入库。
+              </span>
+            </div>
+          </div>
+        ) : null}
+        {draftIdentityDuplicates.length > 0 ? (
+          <div className="tracking-warning-bar">
+            <div>
+              <strong>入库单内有重复 IMEI/Serial</strong>
+              <span>
+                重复值：{draftIdentityDuplicates.join(', ')}。请删除或编辑重复明细后再确认入库。
+              </span>
+            </div>
+          </div>
+        ) : null}
       <DraftPanel
         draft={draft}
         blockingExceptionItemId={blockingExceptionItem?.id}
@@ -1408,6 +1446,48 @@ function buildInboundReviewSummary(draft: InboundDraft | null) {
 
 function normalizeTrackingInput(value: string) {
   return value.trim().replace(/\s+/g, '').toUpperCase();
+}
+
+function normalizeIdentityInput(value: string) {
+  return value.trim().replace(/\s+/g, '').toUpperCase();
+}
+
+function findDraftIdentityDuplicate(items: InboundDraftItem[], value: string) {
+  const normalized = normalizeIdentityInput(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const duplicate = items.find((item) => {
+    if (item.status === 'VOIDED') {
+      return false;
+    }
+
+    return normalizeIdentityInput(item.imei ?? item.serial ?? '') === normalized;
+  });
+
+  return duplicate ? normalized : null;
+}
+
+function findDraftIdentityDuplicates(items: InboundDraftItem[]) {
+  const counts = new Map<string, number>();
+
+  for (const item of items) {
+    if (item.status === 'VOIDED') {
+      continue;
+    }
+
+    const identity = normalizeIdentityInput(item.imei ?? item.serial ?? '');
+    if (!identity) {
+      continue;
+    }
+
+    counts.set(identity, (counts.get(identity) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([identity]) => identity);
 }
 
 function buildTrackingWarningReasons(result: TrackingScanResult) {

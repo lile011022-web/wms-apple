@@ -5,6 +5,7 @@ import {
   Box,
   Camera,
   ClipboardList,
+  Download,
   Eye,
   ImagePlus,
   PackagePlus,
@@ -22,8 +23,12 @@ import {
 import type { ReactNode, RefObject } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSystemSettings, listWarehouses } from '../../api/settings';
-import { customersApi, inventoryApi, outboundApi } from '../../api/workflow';
+import { customersApi, inventoryApi, outboundApi, reportsApi } from '../../api/workflow';
 import { selectDefaultWarehouseId } from '../../utils/default-warehouse';
+import {
+  getProductClassificationText,
+  getProductConditionFromText,
+} from '../../utils/product-classification';
 
 type Carrier = 'UPS' | 'FedEx' | 'USPS';
 type BoxStatus = 'draft' | 'sealed' | 'rework';
@@ -85,6 +90,14 @@ type PackingBox = {
   raw: OutboundBox;
 };
 
+type PackingBoxTaskGroup = {
+  label: string;
+  boxes: PackingBox[];
+  itemCount: number;
+  sealedCount: number;
+  openCount: number;
+};
+
 const defaultSizePreset: BoxSizePreset = {
   label: '12 × 12 × 12 in',
   length: 12,
@@ -105,6 +118,22 @@ const boxSizePresets: BoxSizePreset[] = [
 
 const customSizePreset = 'Custom';
 const defaultBoxWeight = 45;
+const allBoxesExportId = '__all_boxes__';
+const outboundBoxDataExportFields = [
+  'boxNo',
+  'boxName',
+  'shippingTrackingNo',
+  'boxNotes',
+  'boxStatus',
+  'customerName',
+  'productName',
+  'upc',
+  'upsTrackingNo',
+  'imei',
+  'serial',
+  'packedAt',
+  'sealedAt',
+];
 
 export function OutboundPackingPage() {
   const queryClient = useQueryClient();
@@ -150,10 +179,11 @@ export function OutboundPackingPage() {
   const [batchPackingOpen, setBatchPackingOpen] = useState(false);
   const [batchBoxCount, setBatchBoxCount] = useState('2');
   const [batchAllocationCounts, setBatchAllocationCounts] = useState<string[]>(['']);
+  const [batchBoxNameDrafts, setBatchBoxNameDrafts] = useState<string[]>(['']);
   const [batchItems, setBatchItems] = useState<PackingItem[]>([]);
   const [isBatchItemsLoading, setIsBatchItemsLoading] = useState(false);
   const [boxesPage, setBoxesPage] = useState(1);
-  const [boxesPageSize] = useState(8);
+  const [boxesPageSize] = useState(50);
   const [reworkBoxIds, setReworkBoxIds] = useState<Set<string>>(() => new Set());
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
   const [removedItemIds, setRemovedItemIds] = useState<Set<string>>(() => new Set());
@@ -162,6 +192,7 @@ export function OutboundPackingPage() {
   );
   const [bouncingBoxId, setBouncingBoxId] = useState<string | null>(null);
   const [uploadingPhotoBoxId, setUploadingPhotoBoxId] = useState<string | null>(null);
+  const [exportingBoxId, setExportingBoxId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -490,11 +521,15 @@ export function OutboundPackingPage() {
     setScanBlockReason('');
     setBatchPackingOpen(false);
     setBatchItems([]);
+    setBatchBoxNameDrafts([]);
   }, [customerId, warehouseId, currentBox?.id]);
 
   useEffect(() => {
     const nextCount = Math.max(1, Number(batchBoxCount) || 1);
     setBatchAllocationCounts((current) =>
+      Array.from({ length: nextCount }, (_, index) => current[index] ?? ''),
+    );
+    setBatchBoxNameDrafts((current) =>
       Array.from({ length: nextCount }, (_, index) => current[index] ?? ''),
     );
   }, [batchBoxCount]);
@@ -745,13 +780,20 @@ export function OutboundPackingPage() {
         throw new Error(`每箱数量合计必须等于当前可装箱总数 ${sourceItems.length}。`);
       }
 
+      const boxNameDrafts = batchBoxNameDrafts.slice(0, counts.length).map((name) => name.trim());
+      const customBoxNames = boxNameDrafts.filter(Boolean);
+      if (new Set(customBoxNames).size !== customBoxNames.length) {
+        throw new Error('批量箱名不能重复，请修改后再确认。');
+      }
+
       const groups = buildBatchGroups(sourceItems, counts);
       const packedInventoryIds: string[] = [];
       let latestBox: OutboundBox | null = null;
-      for (const group of groups) {
+      for (const [index, group] of groups.entries()) {
         const createdBox = (await outboundApi.createBox({
           customerId,
           warehouseId,
+          ...(boxNameDrafts[index] ? { boxName: boxNameDrafts[index] } : {}),
           ...toBackendBoxSize(sizeLabel, manualSize),
           weightLb: toWeightNumber(weight),
           notes: note.trim() || undefined,
@@ -1012,6 +1054,43 @@ export function OutboundPackingPage() {
       setErrorMessage('');
     },
     onError: (error) => setErrorMessage(toUserErrorMessage(error, '保存单号失败')),
+  });
+
+  const downloadBoxDataMutation = useMutation({
+    mutationFn: async (input: { box?: PackingBox }) => {
+      if (input.box && input.box.itemCount === 0) {
+        throw new Error('当前箱子没有货物，不能下载装箱明细。');
+      }
+      if (!customerId || !warehouseId) {
+        throw new Error('请先选择客户和仓库。');
+      }
+
+      setExportingBoxId(input.box?.id ?? allBoxesExportId);
+      const created = (await reportsApi.createExport({
+        reportType: 'OUTBOUND_DETAIL',
+        format: 'EXCEL',
+        filters: {
+          customerId,
+          warehouseId,
+          boxNo: input.box?.boxNo,
+        },
+        fields: outboundBoxDataExportFields,
+      })) as ReportExport;
+
+      if (created.status !== 'COMPLETED') {
+        throw new Error('装箱明细导出任务已创建但尚未完成，请到明细下载页面查看。');
+      }
+
+      return reportsApi.download(created.id) as Promise<ReportDownload>;
+    },
+    onSuccess: (file) => {
+      downloadReportFile(file);
+      queryClient.invalidateQueries({ queryKey: ['report-exports'], refetchType: 'none' });
+      setMessage(`已下载 ${file.fileName}，共 ${file.rowCount} 行，可发给客服出单。`);
+      setErrorMessage('');
+    },
+    onError: (error) => setErrorMessage(toUserErrorMessage(error, '下载装箱数据失败')),
+    onSettled: () => setExportingBoxId(null),
   });
 
   const deleteBoxesMutation = useMutation({
@@ -1308,6 +1387,7 @@ export function OutboundPackingPage() {
         isReopening={reopenMutation.isPending}
         isDeleting={deleteBoxesMutation.isPending}
         uploadingPhotoBoxId={uploadingPhotoBoxId}
+        exportingBoxId={exportingBoxId}
         selectedBoxIds={selectedCreatedBoxIds}
         onRefresh={() => boxesQuery.refetch()}
         onPageChange={setBoxesPage}
@@ -1335,6 +1415,8 @@ export function OutboundPackingPage() {
         onSaveShippingTrackingNo={(box, shippingTrackingNo) =>
           saveShippingTrackingNoMutation.mutate({ box, shippingTrackingNo })
         }
+        onDownloadAllData={() => downloadBoxDataMutation.mutate({})}
+        onDownloadData={(box) => downloadBoxDataMutation.mutate({ box })}
       />
 
       <DeleteBoxesConfirmModal
@@ -1350,6 +1432,7 @@ export function OutboundPackingPage() {
         items={batchModalItems}
         boxCount={batchBoxCount}
         allocationCounts={batchAllocationCounts}
+        boxNameDrafts={batchBoxNameDrafts}
         selectedCount={selectedAvailableItemIds.size}
         filterLabel={getProductFilterLabel(activeConditionFilter, activeDeviceFilter)}
         isLoadingItems={isBatchItemsLoading}
@@ -1361,6 +1444,14 @@ export function OutboundPackingPage() {
           setBatchAllocationCounts((current) =>
             current.map((item, itemIndex) => (itemIndex === index ? value : item)),
           )
+        }
+        onBoxNameChange={(index, value) =>
+          setBatchBoxNameDrafts((current) => {
+            const nextLength = Math.max(batchAllocationCounts.length, index + 1);
+            return Array.from({ length: nextLength }, (_, itemIndex) =>
+              itemIndex === index ? value : (current[itemIndex] ?? ''),
+            );
+          })
         }
         onSubmit={() => batchPackingMutation.mutate()}
       />
@@ -1378,7 +1469,11 @@ export function OutboundPackingPage() {
       <PrintDetailModal
         box={printDetailBox}
         onClose={() => setPrintDetailBox(null)}
-        onConfirmPrint={() => window.print()}
+        onConfirmPrint={() => {
+          if (printDetailBox) {
+            printBoxDetail(printDetailBox);
+          }
+        }}
       />
     </section>
   );
@@ -2111,6 +2206,8 @@ function CreatedBoxList(props: {
   isReopening: boolean;
   isDeleting: boolean;
   selectedBoxIds: Set<string>;
+  exportingBoxId: string | null;
+  onDownloadAllData: () => void;
   onRefresh: () => void;
   onPageChange: (page: number) => void;
   onSelectionChange: (value: Set<string>) => void;
@@ -2123,8 +2220,25 @@ function CreatedBoxList(props: {
   onUploadPhoto: (box: PackingBox, file: File) => void;
   onDeletePhoto: (box: PackingBox, photoId: string) => void;
   onSaveShippingTrackingNo: (box: PackingBox, shippingTrackingNo: string) => void;
+  onDownloadData: (box: PackingBox) => void;
 }) {
   const selectedCount = props.selectedBoxIds.size;
+  const [activeTaskGroup, setActiveTaskGroup] = useState('ALL');
+  const taskGroups = useMemo(() => groupBoxesByTaskHeader(props.boxes), [props.boxes]);
+  const visibleTaskGroups =
+    activeTaskGroup === 'ALL'
+      ? taskGroups
+      : taskGroups.filter((group) => group.label === activeTaskGroup);
+
+  useEffect(() => {
+    if (activeTaskGroup === 'ALL') {
+      return;
+    }
+    if (!taskGroups.some((group) => group.label === activeTaskGroup)) {
+      setActiveTaskGroup('ALL');
+    }
+  }, [activeTaskGroup, taskGroups]);
+
   const toggleBoxSelection = (boxId: string) => {
     const next = new Set(props.selectedBoxIds);
     if (next.has(boxId)) {
@@ -2157,6 +2271,15 @@ function CreatedBoxList(props: {
           <button
             type="button"
             className="outbound-btn outbound-btn-outline"
+            disabled={props.total === 0 || props.exportingBoxId === allBoxesExportId}
+            onClick={props.onDownloadAllData}
+          >
+            <Download size={16} />
+            {props.exportingBoxId === allBoxesExportId ? '生成中' : '下载全部数据'}
+          </button>
+          <button
+            type="button"
+            className="outbound-btn outbound-btn-outline"
             disabled={props.isRefreshing}
             onClick={props.onRefresh}
           >
@@ -2165,29 +2288,67 @@ function CreatedBoxList(props: {
           </button>
         </div>
       </div>
-      <div className="created-box-list">
-        {props.boxes.map((box) => (
-          <CreatedBoxCard
-            key={box.id}
-            box={box}
-            isCurrent={props.currentBoxId === box.id}
-            isSelected={props.selectedBoxIds.has(box.id)}
-            isBouncing={props.bouncingBoxId === box.id}
-            isSealing={props.isSealing}
-            isReopening={props.isReopening}
-            isUploadingPhoto={props.uploadingPhotoBoxId === box.id}
-            onToggleSelected={() => toggleBoxSelection(box.id)}
-            onOpenDetail={() => props.onOpenDetail(box)}
-            onSetCurrent={() => props.onSetCurrent(box)}
-            onEdit={() => props.onEdit(box)}
-            onSeal={() => props.onSeal(box)}
-            onReopen={() => props.onReopen(box)}
-            onUploadPhoto={(file) => props.onUploadPhoto(box, file)}
-            onDeletePhoto={(photoId) => props.onDeletePhoto(box, photoId)}
-            onSaveShippingTrackingNo={(shippingTrackingNo) =>
-              props.onSaveShippingTrackingNo(box, shippingTrackingNo)
-            }
-          />
+      {props.boxes.length > 0 ? (
+        <div className="created-box-group-tabs" aria-label="箱子任务分类">
+          <button
+            type="button"
+            className={activeTaskGroup === 'ALL' ? 'active' : ''}
+            onClick={() => setActiveTaskGroup('ALL')}
+          >
+            全部
+            <span>{props.boxes.length} 箱</span>
+          </button>
+          {taskGroups.map((group) => (
+            <button
+              key={group.label}
+              type="button"
+              className={activeTaskGroup === group.label ? 'active' : ''}
+              onClick={() => setActiveTaskGroup(group.label)}
+            >
+              {group.label}
+              <span>{group.boxes.length} 箱 · {group.itemCount} 件</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <div className="created-box-group-list">
+        {visibleTaskGroups.map((group) => (
+          <section key={group.label} className="created-box-group">
+            <div className="created-box-group-head">
+              <strong>{group.label}</strong>
+              <span>
+                {group.boxes.length} 箱 · {group.itemCount} 件 · 已封 {group.sealedCount} · 未封{' '}
+                {group.openCount}
+              </span>
+            </div>
+            <div className="created-box-list">
+              {group.boxes.map((box) => (
+                <CreatedBoxCard
+                  key={box.id}
+                  box={box}
+                  isCurrent={props.currentBoxId === box.id}
+                  isSelected={props.selectedBoxIds.has(box.id)}
+                  isBouncing={props.bouncingBoxId === box.id}
+                  isSealing={props.isSealing}
+                  isReopening={props.isReopening}
+                  isExportingData={props.exportingBoxId === box.id}
+                  isUploadingPhoto={props.uploadingPhotoBoxId === box.id}
+                  onToggleSelected={() => toggleBoxSelection(box.id)}
+                  onOpenDetail={() => props.onOpenDetail(box)}
+                  onSetCurrent={() => props.onSetCurrent(box)}
+                  onEdit={() => props.onEdit(box)}
+                  onSeal={() => props.onSeal(box)}
+                  onReopen={() => props.onReopen(box)}
+                  onDownloadData={() => props.onDownloadData(box)}
+                  onUploadPhoto={(file) => props.onUploadPhoto(box, file)}
+                  onDeletePhoto={(photoId) => props.onDeletePhoto(box, photoId)}
+                  onSaveShippingTrackingNo={(shippingTrackingNo) =>
+                    props.onSaveShippingTrackingNo(box, shippingTrackingNo)
+                  }
+                />
+              ))}
+            </div>
+          </section>
         ))}
         {props.boxes.length === 0 ? <div className="created-box-empty">暂无已创建箱子</div> : null}
       </div>
@@ -2195,7 +2356,7 @@ function CreatedBoxList(props: {
         total={props.total}
         page={props.page}
         pageSize={props.pageSize}
-        pageSizeOptions={[8]}
+        pageSizeOptions={[50]}
         onPageChange={props.onPageChange}
       />
     </section>
@@ -2209,6 +2370,7 @@ function CreatedBoxCard(props: {
   isBouncing: boolean;
   isSealing: boolean;
   isReopening: boolean;
+  isExportingData: boolean;
   isUploadingPhoto: boolean;
   onToggleSelected: () => void;
   onOpenDetail: () => void;
@@ -2216,6 +2378,7 @@ function CreatedBoxCard(props: {
   onEdit: () => void;
   onSeal: () => void;
   onReopen: () => void;
+  onDownloadData: () => void;
   onUploadPhoto: (file: File) => void;
   onDeletePhoto: (photoId: string) => void;
   onSaveShippingTrackingNo: (shippingTrackingNo: string) => void;
@@ -2424,6 +2587,17 @@ function CreatedBoxCard(props: {
         >
           查看明细
         </button>
+        <button
+          type="button"
+          disabled={props.box.itemCount === 0 || props.isExportingData}
+          onClick={(event) => {
+            event.stopPropagation();
+            props.onDownloadData();
+          }}
+        >
+          <Download size={14} />
+          {props.isExportingData ? '生成中' : '下载数据'}
+        </button>
         {props.box.status === 'draft' ? (
           <>
             <button
@@ -2577,6 +2751,7 @@ function BatchPackingModal(props: {
   items: PackingItem[];
   boxCount: string;
   allocationCounts: string[];
+  boxNameDrafts: string[];
   selectedCount: number;
   filterLabel: string;
   isLoadingItems: boolean;
@@ -2585,6 +2760,7 @@ function BatchPackingModal(props: {
   onRefreshItems: () => void;
   onBoxCountChange: (value: string) => void;
   onAllocationCountChange: (index: number, value: string) => void;
+  onBoxNameChange: (index: number, value: string) => void;
   onSubmit: () => void;
 }) {
   if (!props.open) {
@@ -2678,7 +2854,15 @@ function BatchPackingModal(props: {
           {previewGroups.map((group, index) => (
             <article key={index} className="outbound-batch-preview-box">
               <div className="outbound-batch-preview-head">
-                <strong>箱 {index + 1}</strong>
+                <label className="outbound-batch-box-name">
+                  <span>箱名</span>
+                  <input
+                    value={props.boxNameDrafts[index] ?? ''}
+                    placeholder={`箱 ${index + 1}`}
+                    maxLength={80}
+                    onChange={(event) => props.onBoxNameChange(index, event.target.value)}
+                  />
+                </label>
                 <span>{group.length} 件</span>
               </div>
               <div className="outbound-batch-preview-list">
@@ -3149,6 +3333,21 @@ type OutboundBoxPhoto = {
   uploadedBy?: { id: string; email: string; name: string };
 };
 
+type ReportExport = {
+  id: string;
+  status: string;
+  fileName?: string | null;
+  rowCount?: number;
+};
+
+type ReportDownload = {
+  id: string;
+  fileName: string;
+  contentType: string;
+  rowCount: number;
+  content: string;
+};
+
 function upsertBoxListResult(
   current: BoxListResult | undefined,
   box: OutboundBox,
@@ -3253,6 +3452,47 @@ function toPackingBox(box: OutboundBox, reworkBoxIds: Set<string>): PackingBox {
 
 function getBoxDisplayName(box: PackingBox) {
   return box.name || box.boxNo;
+}
+
+function groupBoxesByTaskHeader(boxes: PackingBox[]): PackingBoxTaskGroup[] {
+  const groups = new Map<string, PackingBoxTaskGroup>();
+
+  for (const box of boxes) {
+    const label = getBoxTaskHeader(box);
+    const group =
+      groups.get(label) ??
+      ({
+        label,
+        boxes: [],
+        itemCount: 0,
+        sealedCount: 0,
+        openCount: 0,
+      } satisfies PackingBoxTaskGroup);
+
+    group.boxes.push(box);
+    group.itemCount += box.itemCount || box.items.length;
+    if (box.status === 'sealed') {
+      group.sealedCount += 1;
+    } else {
+      group.openCount += 1;
+    }
+    groups.set(label, group);
+  }
+
+  return Array.from(groups.values());
+}
+
+function getBoxTaskHeader(box: PackingBox) {
+  const displayName = normalizeBoxTaskText(getBoxDisplayName(box));
+  const boxSequenceMatched = displayName.match(/^(.*?)\s*箱\s*\d+(?:\s*[-_#].*)?$/i);
+  if (boxSequenceMatched?.[1]?.trim()) {
+    return normalizeBoxTaskText(boxSequenceMatched[1]);
+  }
+  return displayName || '未分类任务';
+}
+
+function normalizeBoxTaskText(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 function toBoxStatus(box: OutboundBox, reworkBoxIds: Set<string>): BoxStatus {
@@ -3422,6 +3662,161 @@ function buildPrintDetailLines(box: PackingBox) {
   ];
 }
 
+function printBoxDetail(box: PackingBox) {
+  const lines = buildPrintDetailLines(box);
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.position = 'fixed';
+  frame.style.right = '0';
+  frame.style.bottom = '0';
+  frame.style.width = '0';
+  frame.style.height = '0';
+  frame.style.border = '0';
+  document.body.appendChild(frame);
+
+  const printDocument = frame.contentDocument;
+  if (!printDocument) {
+    document.body.removeChild(frame);
+    window.print();
+    return;
+  }
+
+  printDocument.open();
+  printDocument.write(buildPrintDetailDocument(lines, getBoxDisplayName(box)));
+  printDocument.close();
+
+  const printWindow = frame.contentWindow;
+  if (!printWindow) {
+    document.body.removeChild(frame);
+    window.print();
+    return;
+  }
+
+  const cleanup = () => {
+    window.setTimeout(() => {
+      if (frame.parentNode) {
+        frame.parentNode.removeChild(frame);
+      }
+    }, 500);
+  };
+
+  printWindow.onafterprint = cleanup;
+  printWindow.focus();
+  printWindow.print();
+  window.setTimeout(cleanup, 60000);
+}
+
+function buildPrintDetailDocument(lines: string[], title: string) {
+  const escapedTitle = escapeHtml(title || '打印明细');
+  const printableLines = lines.flatMap((line) => wrapPrintDetailLine(line, 34));
+  const maxLineLength = Math.max(1, ...printableLines.map((line) => line.length));
+  const fontSize = 22;
+  const lineHeight = 28;
+  const padding = 4;
+  const canvasWidth = Math.max(260, maxLineLength * 13 + padding * 2);
+  const canvasHeight = Math.max(120, printableLines.length * lineHeight + padding * 2);
+  const textLines = printableLines
+    .map(
+      (line, index) =>
+        `<text x="${padding}" y="${padding + fontSize + index * lineHeight}">${escapeHtml(
+          line,
+        )}</text>`,
+    )
+    .join('');
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapedTitle}</title>
+    <style>
+      @page {
+        margin: 3mm;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        background: #fff;
+        color: #000;
+        overflow: hidden;
+      }
+      .print-page {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        break-after: avoid;
+        break-before: avoid;
+        break-inside: avoid;
+        page-break-after: avoid;
+        page-break-before: avoid;
+        page-break-inside: avoid;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      text {
+        fill: #000;
+        font-family: Consolas, "SFMono-Regular", "Courier New", monospace;
+        font-size: ${fontSize}px;
+        font-weight: 900;
+        white-space: pre;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="print-page">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 ${canvasWidth} ${canvasHeight}"
+        preserveAspectRatio="xMinYMin meet"
+        role="img"
+        aria-label="${escapedTitle}"
+      >
+        ${textLines}
+      </svg>
+    </div>
+  </body>
+</html>`;
+}
+
+function wrapPrintDetailLine(line: string, maxLength: number) {
+  if (line.length <= maxLength) {
+    return [line];
+  }
+  const parts: string[] = [];
+  let remaining = line;
+  while (remaining.length > maxLength) {
+    let splitAt = remaining.lastIndexOf(' ', maxLength);
+    if (splitAt < Math.floor(maxLength * 0.6)) {
+      splitAt = maxLength;
+    }
+    parts.push(remaining.slice(0, splitAt).trimEnd());
+    remaining = remaining.slice(splitAt).trimStart();
+  }
+  if (remaining) {
+    parts.push(remaining);
+  }
+  return parts;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function buildPrintDetailTitle(box: PackingBox) {
   return [
     formatPrintMonthDay(box.createdAt || new Date().toISOString()),
@@ -3538,9 +3933,7 @@ function matchesProductFilters(
 
 function getProductCondition(item: PackingItem): Exclude<ProductConditionFilter, 'ALL'> {
   const text = getProductClassificationText(item);
-  return /(refurb|renewed|翻新|官翻|整备|rfb|certified pre-owned)/i.test(text)
-    ? 'REFURBISHED'
-    : 'NEW';
+  return getProductConditionFromText(text);
 }
 
 function getProductDevice(item: PackingItem): Exclude<ProductDeviceFilter, 'ALL'> | 'UNKNOWN' {
@@ -3552,18 +3945,6 @@ function getProductDevice(item: PackingItem): Exclude<ProductDeviceFilter, 'ALL'
     return 'IPHONE';
   }
   return 'UNKNOWN';
-}
-
-function getProductClassificationText(item: PackingItem) {
-  return [
-    item.upc,
-    item.productSku,
-    item.productName,
-    item.productModel,
-    item.productCategory,
-  ]
-    .filter(Boolean)
-    .join(' ');
 }
 
 function getProductClassLabel(item: PackingItem) {
@@ -3625,6 +4006,22 @@ function formatShortDateTime(value?: string | null) {
     minute: '2-digit',
     second: '2-digit',
   });
+}
+
+function downloadReportFile(file: ReportDownload) {
+  const blob = new globalThis.Blob([file.content], { type: file.contentType });
+  const url = globalThis.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = file.fileName;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+
+  window.setTimeout(() => {
+    anchor.remove();
+    globalThis.URL.revokeObjectURL(url);
+  }, 0);
 }
 
 function toUserErrorMessage(error: unknown, fallback: string) {

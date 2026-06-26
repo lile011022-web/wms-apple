@@ -99,6 +99,15 @@ export class InboundController {
     return this.inboundService.correctRecordUpc(id, dto, user);
   }
 
+  @Patch('records/:id/correction')
+  correctRecord(
+    @Param('id') id: string,
+    @Body() dto: CorrectInboundRecordUpcDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inboundService.correctRecordUpc(id, dto, user);
+  }
+
   @Get('records')
   listRecords(@Query() query: ListInboundRecordsQueryDto) {
     return this.inboundService.listRecords(query);

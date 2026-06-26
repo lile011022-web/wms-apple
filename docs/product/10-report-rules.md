@@ -24,7 +24,13 @@ Reports provide traceable downloads for operational review, customer reconciliat
 
 - `INBOUND_DETAIL`: item-level inbound rows with customer, warehouse, product, scan, and linked inventory status.
 - `OUTBOUND_DETAIL`: packed item rows with box, box note, customer, warehouse, product, tracking number, packing time, and sealed time. When operators need sealed box downloads, the report must filter `outboundStatus = SEALED`.
-- `INVENTORY_DETAIL`: current item inventory rows with ownership, warehouse, product, IMEI, Serial, status, and latest box.
+- `INVENTORY_DETAIL`: current item inventory rows exported for operators with the fixed headers
+  `单号`, `UPC`, `IMEI`, `商品名称`, and `数量`. Rows should be grouped by `单号 + UPC + 商品名称`, with
+  `数量` summed only across matching rows inside the same tracking number. The same UPC under
+  different tracking numbers must remain separate. If a group has quantity greater than one or
+  contains multiple IMEI/Serial values, the export should show one summary row followed by one
+  detail row per IMEI/Serial value. Detail rows leave `单号`, `UPC`, `商品名称`, and `数量` blank so
+  operators can scan the identities under the merged summary without losing the total.
 - `EXCEPTION_DETAIL`: exception rows with type, status, raw value, ownership, product, and resolution fields.
 - `CUSTOMER_CHANGE_LOG`: batch customer-change logs with old customer, new customer, operator, reason, and affected count.
 - `AUDIT_LOG`: critical operation logs with action, resource, operator, request ID, and timestamp.
@@ -44,6 +50,11 @@ The detail-download page should:
 
 For 装箱明细, the default page workflow should offer `仅已封箱` so customer-facing downloads do not include open boxes still being edited.
 When 装箱明细 is exported as Excel, the export uses a fixed customer-facing workbook layout rather than the selected-field table layout. Operators should use this Excel file for customer reconciliation because it groups SN/IMEI by box, includes each box's uploaded outbound shipment or label number, and includes per-box and whole-shipment UPC/model totals.
+
+The outbound packing page may also provide `下载全部数据` for the selected customer/warehouse and a
+per-box `下载数据` shortcut for customer-service order creation before final sealing. These shortcuts
+should export `OUTBOUND_DETAIL` Excel without requiring `outboundStatus = SEALED`; the sealing
+workflow still requires photo or video evidence.
 
 For 入库明细, the page should offer an 入库批次 selector. Operators can download all inbound detail rows or restrict the export to one confirmed batch; selected-batch downloads should be named by batch number.
 

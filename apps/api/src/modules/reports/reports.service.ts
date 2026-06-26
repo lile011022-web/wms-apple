@@ -60,6 +60,14 @@ type ProductSummary = {
   count: number;
 };
 
+type InventoryDetailSummaryRow = {
+  upsTrackingNo: string;
+  upc: string;
+  imei: string;
+  productName: string;
+  quantity: number | string;
+};
+
 const MAX_SYNC_EXPORT_ROWS = 5000;
 
 @Injectable()
@@ -93,10 +101,17 @@ export class ReportsService {
   async preview(dto: PreviewReportDto) {
     const filters = this.normalizeFilters(dto.filters);
     const fields = this.resolveFields(dto.reportType, dto.fields);
-    const [estimatedRowCount, sampleRows] = await Promise.all([
+    const previewTake =
+      dto.reportType === ReportType.INVENTORY_DETAIL ? MAX_SYNC_EXPORT_ROWS + 1 : 10;
+    const [rawEstimatedRowCount, rawSampleRows] = await Promise.all([
       this.reportsRepository.countRows(dto.reportType, filters),
-      this.reportsRepository.findRows(dto.reportType, filters, 10),
+      this.reportsRepository.findRows(dto.reportType, filters, previewTake),
     ]);
+    const normalizedRows = this.normalizeRowsForReport(dto.reportType, rawSampleRows);
+    const estimatedRowCount =
+      dto.reportType === ReportType.INVENTORY_DETAIL
+        ? normalizedRows.length
+        : rawEstimatedRowCount;
 
     return {
       reportType: dto.reportType,
@@ -106,8 +121,8 @@ export class ReportsService {
         key: column.key,
         title: column.title,
       })),
-      sampleRows: this.toPreviewRows(dto.reportType, fields, sampleRows),
-      shouldRunInBackground: estimatedRowCount > MAX_SYNC_EXPORT_ROWS,
+      sampleRows: this.toPreviewRows(dto.reportType, fields, normalizedRows.slice(0, 10)),
+      shouldRunInBackground: rawEstimatedRowCount > MAX_SYNC_EXPORT_ROWS,
       filters,
     };
   }
@@ -147,13 +162,14 @@ export class ReportsService {
         throw new BadRequestException('Large reports must be handled by a background job.');
       }
 
-      const batchFileNamePart = await this.resolveBatchFileNamePart(reportType, filters, rows);
+      const normalizedRows = this.normalizeRowsForReport(reportType, rows);
+      const batchFileNamePart = await this.resolveExportFileNamePart(reportType, filters, rows);
       const metadata = this.buildExportMetadata({
         reportType,
         format,
         fields,
         filters,
-        rows,
+        rows: normalizedRows,
         exportId: created.id,
         batchFileNamePart,
       });
@@ -752,6 +768,106 @@ export class ReportsService {
     });
   }
 
+  private normalizeRowsForReport(reportType: ReportType, rows: unknown[]) {
+    if (reportType !== ReportType.INVENTORY_DETAIL) {
+      return rows;
+    }
+    return this.toInventoryDetailSummaryRows(rows);
+  }
+
+  private toInventoryDetailSummaryRows(rows: unknown[]): InventoryDetailSummaryRow[] {
+    const groups = new Map<
+      string,
+      {
+        upc: string;
+        productName: string;
+        trackingNumbers: Set<string>;
+        identities: Set<string>;
+        quantity: number;
+      }
+    >();
+
+    for (const row of rows) {
+      const upc = this.formatValue(this.readPath(row, 'upc'));
+      const productName = this.formatValue(
+        this.readPath(row, 'product', 'name') || this.readPath(row, 'productName'),
+      );
+      const trackingNo = this.formatValue(this.readPath(row, 'upsTrackingNo'));
+      const key = `${trackingNo}::${upc}::${productName}`;
+      const group =
+        groups.get(key) ??
+        ({
+          upc,
+          productName,
+          trackingNumbers: new Set<string>(),
+          identities: new Set<string>(),
+          quantity: 0,
+        } satisfies {
+          upc: string;
+          productName: string;
+          trackingNumbers: Set<string>;
+          identities: Set<string>;
+          quantity: number;
+        });
+
+      if (trackingNo) {
+        group.trackingNumbers.add(trackingNo);
+      }
+      const identity = this.formatValue(this.readPath(row, 'imei') || this.readPath(row, 'serial'));
+      if (identity) {
+        group.identities.add(identity);
+      }
+      group.quantity += this.readQuantity(row);
+      groups.set(key, group);
+    }
+
+    return Array.from(groups.values()).flatMap((group) => {
+      const identities = this.toCleanValues(group.identities);
+      const shouldExpand = group.quantity > 1 || identities.length > 1;
+      const summaryRow = {
+        upsTrackingNo: this.formatAggregatedValues(group.trackingNumbers),
+        upc: group.upc,
+        imei: shouldExpand
+          ? this.formatInventorySummaryIdentity(group.quantity, identities.length)
+          : (identities[0] ?? ''),
+        productName: group.productName,
+        quantity: group.quantity,
+      };
+
+      if (!shouldExpand) {
+        return [summaryRow];
+      }
+
+      return [
+        summaryRow,
+        ...identities.map((identity) => ({
+          upsTrackingNo: '',
+          upc: '',
+          imei: identity,
+          productName: '',
+          quantity: '',
+        })),
+      ];
+    });
+  }
+
+  private formatInventorySummaryIdentity(quantity: number, identityCount: number) {
+    if (quantity === identityCount) {
+      return `共 ${quantity} 个 IMEI`;
+    }
+    return `共 ${quantity} 台，已列 ${identityCount} 个 IMEI`;
+  }
+
+  private formatAggregatedValues(values: Set<string>) {
+    return this.toCleanValues(values).join(' / ');
+  }
+
+  private toCleanValues(values: Set<string>) {
+    return Array.from(values)
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+
   private toPreviewRows(reportType: ReportType, fields: string[], rows: unknown[]) {
     const columns = this.getSelectedColumns(reportType, fields);
 
@@ -765,6 +881,15 @@ export class ReportsService {
       key,
       title,
       read: (row) => this.readPath(row, ...path),
+    });
+    const computedField = (
+      key: string,
+      title: string,
+      read: (row: unknown) => unknown,
+    ): ReportColumn => ({
+      key,
+      title,
+      read,
     });
     const columns: Record<ReportType, ReportColumn[]> = {
       [ReportType.INBOUND_DETAIL]: [
@@ -802,18 +927,23 @@ export class ReportsService {
         field('sealedAt', 'Sealed At', 'outboundBox', 'sealedAt'),
       ],
       [ReportType.INVENTORY_DETAIL]: [
-        field('customerCode', 'Customer Code', 'customer', 'code'),
-        field('warehouseCode', 'Warehouse Code', 'warehouse', 'code'),
-        field('sku', 'SKU', 'product', 'sku'),
-        field('productName', 'Product Name', 'product', 'name'),
+        field('upsTrackingNo', '单号', 'upsTrackingNo'),
         field('upc', 'UPC', 'upc'),
-        field('imei', 'IMEI', 'imei'),
-        field('serial', 'Serial', 'serial'),
-        field('upsTrackingNo', 'UPS Tracking No', 'upsTrackingNo'),
-        field('status', 'Inventory Status', 'status'),
-        field('batchNo', 'Inbound Batch', 'inboundBatch', 'batchNo'),
-        field('latestBoxNo', 'Latest Box No', 'outboundBoxItems', 0, 'outboundBox', 'boxNo'),
-        field('receivedAt', 'Received At', 'receivedAt'),
+        computedField(
+          'imei',
+          'IMEI',
+          (row) => this.readPath(row, 'imei') || this.readPath(row, 'serial'),
+        ),
+        computedField(
+          'productName',
+          '商品名称',
+          (row) => this.readPath(row, 'product', 'name') || this.readPath(row, 'productName'),
+        ),
+        computedField(
+          'quantity',
+          '数量',
+          (row) => this.readPath(row, 'quantity') ?? this.readQuantity(row),
+        ),
       ],
       [ReportType.EXCEPTION_DETAIL]: [
         field('type', 'Exception Type', 'type'),
@@ -885,11 +1015,15 @@ export class ReportsService {
     return normalized;
   }
 
-  private async resolveBatchFileNamePart(
+  private async resolveExportFileNamePart(
     reportType: ReportType,
     filters: ReportFilterDto,
     rows: unknown[],
   ) {
+    if (reportType === ReportType.OUTBOUND_DETAIL && filters.boxNo) {
+      return this.sanitizeFileNamePart(filters.boxNo);
+    }
+
     if (reportType !== ReportType.INBOUND_DETAIL || !filters.batchId) {
       return undefined;
     }
@@ -955,6 +1089,27 @@ export class ReportsService {
       fileContent: typeof metadata?.fileContent === 'string' ? metadata.fileContent : '',
       generatedAt: typeof raw?.generatedAt === 'string' ? raw.generatedAt : '',
     };
+  }
+
+  private readQuantity(row: unknown) {
+    const directQuantity = this.readNumericPath(row, 'quantity');
+    if (directQuantity !== undefined) {
+      return directQuantity;
+    }
+    const directCount = this.readNumericPath(row, 'count');
+    if (directCount !== undefined) {
+      return directCount;
+    }
+    const allCount = this.readNumericPath(row, '_count', '_all');
+    if (allCount !== undefined) {
+      return allCount;
+    }
+    return 1;
+  }
+
+  private readNumericPath(row: unknown, ...path: Array<string | number>) {
+    const value = this.readPath(row, ...path);
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
   }
 
   private toStoredPayload(metadata: ExportMetadata): Prisma.InputJsonValue {

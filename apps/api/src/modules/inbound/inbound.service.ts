@@ -145,7 +145,7 @@ export class InboundService {
     }
 
     const settings = await this.settingsService.getSettings();
-    const prepared = await this.prepareInboundItemInput(draft, dto, settings);
+    const prepared = await this.prepareInboundItemInput(draft, dto, settings, item.id);
     const updated = await this.inboundRepository.updateItem(
       item.id,
       this.toInboundItemUpdateInput(prepared),
@@ -326,29 +326,24 @@ export class InboundService {
     if (!item) {
       throw new NotFoundException('Inbound record not found.');
     }
-    if (item.inboundBatch.status !== InboundBatchStatus.CONFIRMED) {
-      throw new ConflictException('Only records from confirmed inbound batches can be corrected.');
-    }
-    if (item.status !== InboundItemStatus.CONFIRMED) {
-      throw new ConflictException('Only confirmed inbound records can have UPC corrected.');
-    }
-    if (!item.inventoryItemId || !item.inventoryItem) {
-      throw new ConflictException('Inbound record has no linked inventory to correct.');
-    }
-    if (
-      item.inventoryItem.status !== InventoryStatus.IN_STOCK &&
-      item.inventoryItem.status !== InventoryStatus.EXCEPTION
-    ) {
-      throw new ConflictException('Packed or outbound inventory cannot have UPC corrected.');
-    }
 
     const nextUpc = this.normalizeUpc(dto.upc);
+    const nextUpsTrackingNo =
+      dto.upsTrackingNo === undefined
+        ? (item.upsTrackingNo ?? undefined)
+        : this.normalizeOptionalUps(dto.upsTrackingNo);
+    const nextImei =
+      dto.imei === undefined ? (item.imei ?? undefined) : this.normalizeOptionalImei(dto.imei);
+    const nextSerial =
+      dto.serial === undefined
+        ? (item.serial ?? undefined)
+        : this.normalizeOptionalSerial(dto.serial);
     const reason = dto.reason.trim();
     if (!reason) {
-      throw new BadRequestException('UPC correction reason is required.');
+      throw new BadRequestException('Inbound record correction reason is required.');
     }
-    if (nextUpc === item.upc) {
-      throw new ConflictException('New UPC is the same as the current UPC.');
+    if (nextImei && nextSerial) {
+      throw new BadRequestException('Use either IMEI or Serial for one inbound item, not both.');
     }
 
     const productUpc = await this.inboundRepository.findProductByUpc(nextUpc);
@@ -359,12 +354,42 @@ export class InboundService {
     ) {
       throw new ConflictException('New UPC does not match an active product.');
     }
+    if (productUpc.product.requiresImei && !nextImei) {
+      throw new BadRequestException('This product requires IMEI before inbound confirmation.');
+    }
+    if (!productUpc.product.requiresImei && !nextImei && !nextSerial) {
+      throw new BadRequestException('Serial or IMEI is required for this inbound item.');
+    }
+
+    if (item.inventoryItem) {
+      if (
+        item.inventoryItem.status !== InventoryStatus.IN_STOCK &&
+        item.inventoryItem.status !== InventoryStatus.EXCEPTION
+      ) {
+        throw new ConflictException('Packed or outbound inventory cannot be corrected here.');
+      }
+    } else if (
+      item.status !== InboundItemStatus.EXCEPTION &&
+      item.status !== InboundItemStatus.PENDING
+    ) {
+      throw new ConflictException(
+        'Only exception or pending records can be corrected into inbound.',
+      );
+    }
+
+    const duplicate = await this.findDuplicateIdentity(nextImei, nextSerial);
+    if (duplicate && duplicate.id !== item.inventoryItemId) {
+      throw new ConflictException('Cannot save correction with duplicated IMEI or Serial.');
+    }
 
     const corrected = await this.inboundRepository.correctRecordUpc({
       itemId: item.id,
-      inventoryItemId: item.inventoryItemId,
+      inventoryItemId: item.inventoryItemId ?? undefined,
       operatorId: operator.id,
+      upsTrackingNo: nextUpsTrackingNo,
       upc: nextUpc,
+      imei: nextImei,
+      serial: nextSerial,
       productId: productUpc.product.id,
       reason,
     });
@@ -410,6 +435,7 @@ export class InboundService {
     draft: InboundDraftRecord,
     dto: AddInboundItemDto,
     settings: Awaited<ReturnType<SettingsService['getSettings']>>,
+    excludeItemId?: string,
   ): Promise<PreparedInboundItemInput> {
     const scanMode = dto.scanMode ?? 'STANDARD';
     const upc = this.normalizeUpc(dto.upc);
@@ -458,6 +484,10 @@ export class InboundService {
     }
     if (scanMode === 'STANDARD' && !productUpc.product.requiresImei && !imei && !serial) {
       throw new BadRequestException('Serial or IMEI is required for this inbound item.');
+    }
+
+    if (settings.scanRules.detectDuplicateImei) {
+      this.assertNoDuplicateIdentityInDraft(draft, imei, serial, excludeItemId);
     }
 
     const duplicate = await this.findDuplicateIdentity(imei, serial);
@@ -557,6 +587,37 @@ export class InboundService {
     return null;
   }
 
+  private assertNoDuplicateIdentityInDraft(
+    draft: InboundDraftRecord,
+    imei?: string,
+    serial?: string,
+    excludeItemId?: string,
+  ) {
+    const duplicate = draft.inboundItems.find((item) => {
+      if (item.id === excludeItemId || item.status === InboundItemStatus.VOIDED) {
+        return false;
+      }
+
+      return Boolean((imei && item.imei === imei) || (serial && item.serial === serial));
+    });
+
+    if (!duplicate) {
+      return;
+    }
+
+    if (imei) {
+      throw new BadRequestException(
+        `当前入库单内 IMEI 已重复: ${imei}。请修正或删除重复明细后再继续入库。`,
+      );
+    }
+
+    if (serial) {
+      throw new BadRequestException(
+        `当前入库单内 Serial 已重复: ${serial}。请修正或删除重复明细后再继续入库。`,
+      );
+    }
+  }
+
   private assertNoDuplicateDraftIdentity(
     items: Array<Pick<InboundDraftRecord['inboundItems'][number], 'imei' | 'serial'>>,
   ) {
@@ -648,6 +709,11 @@ export class InboundService {
     return normalized;
   }
 
+  private normalizeOptionalUps(value: string) {
+    const normalized = value.trim();
+    return normalized ? this.normalizeUps(normalized, true) : undefined;
+  }
+
   private normalizeImei(value: string) {
     const normalized = value.trim().toUpperCase();
     if (!isValidImei(normalized)) {
@@ -656,12 +722,22 @@ export class InboundService {
     return normalized;
   }
 
+  private normalizeOptionalImei(value: string) {
+    const normalized = value.trim();
+    return normalized ? this.normalizeImei(normalized) : undefined;
+  }
+
   private normalizeSerial(value: string) {
     const normalized = value.trim().toUpperCase();
     if (!isValidSerial(normalized)) {
       throw new BadRequestException('Invalid Serial format.');
     }
     return normalized;
+  }
+
+  private normalizeOptionalSerial(value: string) {
+    const normalized = value.trim();
+    return normalized ? this.normalizeSerial(normalized) : undefined;
   }
 
   private trimOptional(value?: string) {
@@ -779,6 +855,7 @@ export class InboundService {
       inventoryStatus: item.inventoryItem?.status ?? null,
       selectableForCustomerChange: item.status !== InboundItemStatus.VOIDED,
       scannedAt: item.scannedAt,
+      receivedAt: item.inventoryItem?.receivedAt ?? null,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
       exceptions: item.exceptions.map((exception) => ({

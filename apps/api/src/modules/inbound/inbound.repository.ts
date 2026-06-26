@@ -458,9 +458,12 @@ export class InboundRepository {
 
   async correctRecordUpc(input: {
     itemId: string;
-    inventoryItemId: string;
+    inventoryItemId?: string;
     operatorId: string;
+    upsTrackingNo?: string;
     upc: string;
+    imei?: string;
+    serial?: string;
     productId: string;
     reason: string;
   }) {
@@ -469,55 +472,121 @@ export class InboundRepository {
         where: { id: input.itemId },
         include: inboundItemInclude,
       });
-      const inventoryItem = await tx.inventoryItem.findUniqueOrThrow({
-        where: { id: input.inventoryItemId },
-        include: { product: true },
+      const existingInventoryItem = input.inventoryItemId
+        ? await tx.inventoryItem.findUniqueOrThrow({
+            where: { id: input.inventoryItemId },
+            include: { product: true },
+          })
+        : null;
+
+      const inventoryItem =
+        existingInventoryItem ??
+        (await tx.inventoryItem.create({
+          data: {
+            customerId: item.customerId,
+            warehouseId: item.inboundBatch.warehouseId,
+            productId: input.productId,
+            inboundBatchId: item.inboundBatchId,
+            imei: input.imei,
+            serial: input.serial,
+            upc: input.upc,
+            upsTrackingNo: input.upsTrackingNo,
+          },
+        }));
+
+      if (existingInventoryItem) {
+        await tx.inventoryItem.update({
+          where: { id: existingInventoryItem.id },
+          data: {
+            upsTrackingNo: input.upsTrackingNo,
+            upc: input.upc,
+            imei: input.imei ?? null,
+            serial: input.serial ?? null,
+            productId: input.productId,
+          },
+        });
+      }
+
+      const correctedAt = new Date();
+      await tx.exceptionRecord.updateMany({
+        where: {
+          inboundItemId: item.id,
+          status: ExceptionStatus.OPEN,
+        },
+        data: {
+          status: ExceptionStatus.RESOLVED,
+          resolutionNote: `Inbound record corrected: ${input.reason}`,
+          resolvedById: input.operatorId,
+          resolvedAt: correctedAt,
+        },
       });
 
-      const [updatedItem] = await Promise.all([
-        tx.inboundItem.update({
-          where: { id: input.itemId },
+      if (item.inboundBatch.status === InboundBatchStatus.DRAFT) {
+        await tx.inboundBatch.update({
+          where: { id: item.inboundBatchId },
           data: {
-            upc: input.upc,
-            productId: input.productId,
+            status: InboundBatchStatus.CONFIRMED,
+            confirmedAt: item.inboundBatch.confirmedAt ?? correctedAt,
           },
-          include: inboundItemInclude,
-        }),
-        tx.inventoryItem.update({
-          where: { id: input.inventoryItemId },
-          data: {
-            upc: input.upc,
-            productId: input.productId,
-          },
-        }),
-      ]);
+        });
+      }
+
+      const updatedItem = await tx.inboundItem.update({
+        where: { id: input.itemId },
+        data: {
+          upsTrackingNo: input.upsTrackingNo,
+          upc: input.upc,
+          imei: input.imei ?? null,
+          serial: input.serial ?? null,
+          productId: input.productId,
+          inventoryItemId: inventoryItem.id,
+          status: InboundItemStatus.CONFIRMED,
+        },
+        include: inboundItemInclude,
+      });
 
       await tx.auditLog.create({
         data: {
-          action: AuditAction.INBOUND_UPC_CORRECTION,
+          action: AuditAction.INBOUND_RECORD_CORRECTION,
           resourceType: 'inbound-item',
           resourceId: item.id,
           operatorId: input.operatorId,
           beforeSnapshot: {
             inboundItem: {
+              upsTrackingNo: item.upsTrackingNo,
               upc: item.upc,
+              imei: item.imei,
+              serial: item.serial,
+              status: item.status,
               productId: item.productId,
             },
-            inventoryItem: {
-              id: inventoryItem.id,
-              upc: inventoryItem.upc,
-              productId: inventoryItem.productId,
-              status: inventoryItem.status,
-            },
+            inventoryItem: existingInventoryItem
+              ? {
+                  id: existingInventoryItem.id,
+                  upsTrackingNo: existingInventoryItem.upsTrackingNo,
+                  upc: existingInventoryItem.upc,
+                  imei: existingInventoryItem.imei,
+                  serial: existingInventoryItem.serial,
+                  productId: existingInventoryItem.productId,
+                  status: existingInventoryItem.status,
+                }
+              : null,
           },
           afterSnapshot: {
             inboundItem: {
+              upsTrackingNo: updatedItem.upsTrackingNo,
               upc: updatedItem.upc,
+              imei: updatedItem.imei,
+              serial: updatedItem.serial,
+              status: updatedItem.status,
               productId: updatedItem.productId,
             },
             inventoryItem: {
-              id: input.inventoryItemId,
+              id: inventoryItem.id,
+              upsTrackingNo: input.upsTrackingNo,
               upc: input.upc,
+              imei: input.imei,
+              serial: input.serial,
               productId: input.productId,
               status: inventoryItem.status,
             },
@@ -527,7 +596,8 @@ export class InboundRepository {
             batchId: item.inboundBatchId,
             customerId: item.customerId,
             warehouseId: item.inboundBatch.warehouseId,
-            inventoryItemId: input.inventoryItemId,
+            inventoryItemId: inventoryItem.id,
+            createdInventory: !existingInventoryItem,
             beforeProductName: item.product?.name,
             afterProductId: input.productId,
           },

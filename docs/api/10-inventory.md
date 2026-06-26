@@ -120,6 +120,11 @@ Allowed sort fields:
 
 Rows include customer, warehouse, product, inbound batch, inbound item, latest outbound box, exception summary, and timestamps.
 
+Customer inventory IMEI detail rows should show both time anchors:
+
+- `inboundItem.scannedAt`: scan time from the original inbound detail row.
+- `receivedAt`: inventory inbound time, created when the item became inventory.
+
 Customer inventory item tables should display the returned tracking context and expose the `search`
 filter in the IMEI detail section:
 
