@@ -12,6 +12,10 @@ Query parameters:
 
 - `customerId`: required. The customer whose inventory should be counted.
 - `warehouseId`: optional warehouse filter.
+- `status`: optional inventory status for a drill-down summary.
+- `dateFrom`, `dateTo`: optional business date range. Date-only values such as `2026-06-28` are expanded to the full UTC day.
+
+Date filters are status-aware. `PACKED` uses `packedAt`, `OUTBOUND` uses `outboundAt`, and other inventory states use `receivedAt`. Without a status filter, the API combines those status-specific date anchors so daily packed and outbound counts match the action date.
 
 Response data:
 
@@ -41,6 +45,8 @@ Query parameters:
 - `customerId`: required.
 - `warehouseId`: optional.
 - `search`: optional UPC, SKU, product name, IMEI, Serial, or UPS search.
+- `status`: optional `IN_STOCK`, `PACKED`, `OUTBOUND`, `EXCEPTION`, or `VOIDED` status filter.
+- `dateFrom`, `dateTo`: optional business date range using the same status-aware date anchors as `GET /inventory/customer-summary`.
 - `page`, `pageSize`, `sortBy`, `sortOrder`: standard pagination and sorting.
 
 Allowed sort fields:
@@ -129,6 +135,7 @@ Query parameters:
 - `search`: optional search across UPC, IMEI, Serial, UPS, inbound batch number, outbound box
   number/name, SKU, and product name.
 - `availableForOutbound`: optional boolean. When true, only `IN_STOCK` rows are returned.
+- `dateFrom`, `dateTo`: optional business date range using status-aware date anchors. Packed rows are filtered by `packedAt`, outbound rows by `outboundAt`, and other rows by `receivedAt`.
 - `page`, `pageSize`, `sortBy`, `sortOrder`: standard pagination and sorting.
 
 Allowed sort fields:

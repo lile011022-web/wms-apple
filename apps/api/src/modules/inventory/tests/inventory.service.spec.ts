@@ -233,6 +233,71 @@ describe('InventoryService', () => {
     );
   });
 
+  it('filters packed inventory by packed date for daily drill-downs', async () => {
+    const { repository, service } = createService({});
+
+    await service.listItems({
+      customerId: 'customer-1',
+      status: InventoryStatus.PACKED,
+      dateFrom: '2026-06-28',
+      dateTo: '2026-06-28',
+      page: 1,
+      pageSize: 20,
+      sortOrder: 'desc',
+    });
+
+    expect(repository.findItems).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          customerId: 'customer-1',
+          status: InventoryStatus.PACKED,
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              status: InventoryStatus.PACKED,
+              packedAt: expect.objectContaining({
+                gte: new Date('2026-06-28T00:00:00.000Z'),
+                lte: new Date('2026-06-28T23:59:59.999Z'),
+              }),
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('uses status-aware activity dates for dated customer inventory summaries', async () => {
+    const { repository, service } = createService({});
+
+    await service.getCustomerSummary({
+      customerId: 'customer-1',
+      dateFrom: '2026-06-28',
+      dateTo: '2026-06-28',
+    });
+
+    expect(repository.getCustomerStatusCounts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: 'customer-1',
+        AND: expect.arrayContaining([
+          expect.objectContaining({
+            OR: expect.arrayContaining([
+              expect.objectContaining({
+                status: InventoryStatus.PACKED,
+                packedAt: expect.any(Object),
+              }),
+              expect.objectContaining({
+                status: InventoryStatus.OUTBOUND,
+                outboundAt: expect.any(Object),
+              }),
+              expect.objectContaining({
+                receivedAt: expect.any(Object),
+              }),
+            ]),
+          }),
+        ]),
+      }),
+    );
+  });
+
   it('builds customer inventory search across visible detail columns', () => {
     const repository = new InventoryRepository({} as never);
 

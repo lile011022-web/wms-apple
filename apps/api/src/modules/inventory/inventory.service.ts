@@ -17,6 +17,9 @@ export class InventoryService {
     const where = this.toBaseWhere({
       customerId,
       warehouseId: this.trimOptional(query.warehouseId),
+      status: query.status,
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
     });
     const [statusCounts, skuRows] = await Promise.all([
       this.inventoryRepository.getCustomerStatusCounts(where),
@@ -47,6 +50,9 @@ export class InventoryService {
       customerId,
       warehouseId: this.trimOptional(query.warehouseId),
       search: this.trimOptional(query.search),
+      status: query.status,
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
     });
     const result = await this.inventoryRepository.findProductSummaries({
       where,
@@ -218,6 +224,8 @@ export class InventoryService {
       upsTrackingNo: query.upsTrackingNo?.trim().toUpperCase(),
       search: this.trimOptional(query.search),
       availableForOutbound: query.availableForOutbound,
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
     };
   }
 
@@ -232,13 +240,19 @@ export class InventoryService {
     upsTrackingNo?: string;
     search?: string;
     availableForOutbound?: boolean;
+    dateFrom?: string;
+    dateTo?: string;
   }): Prisma.InventoryItemWhereInput {
     const searchWhere = this.inventoryRepository.toSearchWhere(params.search);
     const outboundWhere = params.availableForOutbound
       ? this.inventoryRepository.toOutboundAvailableWhere()
       : undefined;
+    const activityDateWhere = this.toActivityDateWhere(
+      this.normalizeDateRange(params.dateFrom, params.dateTo),
+      params.status,
+    );
 
-    const andFilters = [searchWhere, outboundWhere].filter(
+    const andFilters = [searchWhere, outboundWhere, activityDateWhere].filter(
       (where): where is Prisma.InventoryItemWhereInput => Boolean(where),
     );
 
@@ -254,6 +268,77 @@ export class InventoryService {
       upsTrackingNo: params.upsTrackingNo
         ? { contains: params.upsTrackingNo, mode: 'insensitive' }
         : undefined,
+    };
+  }
+
+  private normalizeDateRange(dateFrom?: string, dateTo?: string) {
+    const from = this.parseDateBoundary(dateFrom, false);
+    const to = this.parseDateBoundary(dateTo, true);
+    if (from && to && from > to) {
+      throw new BadRequestException('dateTo must be greater than or equal to dateFrom.');
+    }
+    if (!from && !to) {
+      return undefined;
+    }
+    return { from, to };
+  }
+
+  private parseDateBoundary(value: string | undefined, endOfDay: boolean) {
+    const normalized = this.trimOptional(value);
+    if (!normalized) {
+      return undefined;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      const suffix = endOfDay ? 'T23:59:59.999Z' : 'T00:00:00.000Z';
+      return new Date(`${normalized}${suffix}`);
+    }
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('Invalid inventory date filter.');
+    }
+    return date;
+  }
+
+  private toActivityDateWhere(
+    range: { from?: Date; to?: Date } | undefined,
+    status?: InventoryStatus,
+  ): Prisma.InventoryItemWhereInput | undefined {
+    if (!range) {
+      return undefined;
+    }
+    const dateFilter = {
+      gte: range.from,
+      lte: range.to,
+    };
+    const buildStatusDateWhere = (
+      statusValue: InventoryStatus,
+      field: 'receivedAt' | 'packedAt' | 'outboundAt',
+    ): Prisma.InventoryItemWhereInput => ({
+      status: statusValue,
+      [field]: dateFilter,
+    });
+
+    if (status === InventoryStatus.PACKED) {
+      return buildStatusDateWhere(InventoryStatus.PACKED, 'packedAt');
+    }
+    if (status === InventoryStatus.OUTBOUND) {
+      return buildStatusDateWhere(InventoryStatus.OUTBOUND, 'outboundAt');
+    }
+    if (status) {
+      return buildStatusDateWhere(status, 'receivedAt');
+    }
+
+    return {
+      OR: [
+        buildStatusDateWhere(InventoryStatus.PACKED, 'packedAt'),
+        buildStatusDateWhere(InventoryStatus.OUTBOUND, 'outboundAt'),
+        {
+          status: {
+            in: [InventoryStatus.IN_STOCK, InventoryStatus.EXCEPTION, InventoryStatus.VOIDED],
+          },
+          receivedAt: dateFilter,
+        },
+      ],
     };
   }
 

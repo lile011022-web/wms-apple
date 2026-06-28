@@ -806,6 +806,8 @@ export class InboundService {
       serial: item.serial,
       status: item.status,
       scannedAt: item.scannedAt,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
       product: item.product ? this.toProductResponse(item.product) : null,
       inventoryItemId: item.inventoryItemId,
       forcedInbound: item.forcedInbound,

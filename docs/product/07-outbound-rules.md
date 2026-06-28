@@ -120,7 +120,8 @@ Detailed scan packing:
 - The operator works against the current open box.
 - The scan input accepts either UPC or IMEI / Serial in any order.
 - The scan input should keep focus while an open current box is available, so the operator can keep
-  using the scanner without clicking the field again.
+  using the scanner without clicking the field again. Focus restoration must run after page updates
+  and retry briefly so scanner operators do not lose focus during high-volume packing.
 - After the first value is scanned, the scan input clears and refocuses, but the visible UPC or
   IMEI / Serial review value remains on screen for checking.
 - The item is added to the current box only after UPC and IMEI / Serial identify the same `IN_STOCK` inventory row for the selected customer and warehouse.
@@ -128,6 +129,8 @@ Detailed scan packing:
   successfully added to the current box.
 - If the UPC and IMEI / Serial do not match, or the item is missing, already packed, or otherwise unavailable, scanning stops until the operator clears or fixes the scan values.
 - Successful detailed scans immediately add the item to the current box and refresh the box detail.
+- Current box detail rows must display in scan/pack-time ascending order: earlier packed rows stay
+  above later rows, and the newest scan appears at the bottom of the current box review sequence.
 
 Bulk box packing:
 

@@ -24,6 +24,7 @@ Product-level inventory summaries are derived from `inventory_items` grouped by 
 The customer inventory page should show:
 
 - Customer-level totals for total inventory, SKU count, in-stock, available outbound, packed, outbound, exception, and voided quantities.
+- A business-date locator so operators can review a selected day, including today's current inventory activity, packed items, and outbound items without leaving the customer inventory page.
 - SKU and product identity from the product catalog.
 - Count of distinct related package tracking numbers for that SKU. In the customer inventory page, `单号` means the inbound logistics number stored as `upsTrackingNo`, but SKU summary rows show only the count instead of listing every tracking number.
 - Total quantity.
@@ -32,6 +33,23 @@ The customer inventory page should show:
 - Outbound quantity.
 - Exception quantity.
 - Available-for-outbound quantity.
+
+Customer-level summary cards are operational drill-down buttons:
+
+- Clicking total inventory or SKU count shows all SKU and IMEI detail rows for the selected customer, warehouse, and optional business date.
+- Clicking in-stock or available outbound shows `IN_STOCK` rows.
+- Clicking packed shows `PACKED` rows.
+- Clicking outbound shows `OUTBOUND` rows.
+- Clicking exception or voided shows the matching blocked or cleanup rows.
+- The click should reset SKU/detail pagination and move the operator to the matching detail data.
+
+When a business date is selected, date filters are status-aware:
+
+- `PACKED` rows use `packedAt`.
+- `OUTBOUND` rows use `outboundAt`.
+- `IN_STOCK`, `EXCEPTION`, and `VOIDED` rows use `receivedAt`.
+
+This keeps "today packed" and "today outbound" aligned with the actual warehouse action instead of the original inbound date.
 
 ## IMEI And Serial Details
 

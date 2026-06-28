@@ -82,6 +82,7 @@ export function InboundScanPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [trackingWarning, setTrackingWarning] = useState<TrackingWarning | null>(null);
   const [isCheckingTracking, setIsCheckingTracking] = useState(false);
+  const [pendingScanFocus, setPendingScanFocus] = useState<InboundScanField | null>(null);
   const [importRows, setImportRows] = useState<ImportInboundItemRow[]>([]);
   const [importFileName, setImportFileName] = useState('');
   const [importFailedRows, setImportFailedRows] = useState<ImportFailedRow[]>([]);
@@ -161,8 +162,16 @@ export function InboundScanPage() {
   const normalizedTrackingInput = normalizeTrackingInput(upsTrackingNo);
   const activeTrackingWarning =
     trackingWarning?.trackingNo === normalizedTrackingInput ? trackingWarning : null;
-  const isTrackingWarningConfirmed = !!activeTrackingWarning?.confirmed;
-  const isTrackingWarningBlocking = !!activeTrackingWarning && !activeTrackingWarning.confirmed;
+  const isReusableTrackingWarningConfirmed =
+    reuseTrackingNo &&
+    !!activeTrackingWarning &&
+    isCurrentDraftDuplicateTrackingOnly(activeTrackingWarning.reasons);
+  const isTrackingWarningConfirmed =
+    !!activeTrackingWarning?.confirmed || isReusableTrackingWarningConfirmed;
+  const isTrackingWarningBlocking =
+    !!activeTrackingWarning &&
+    !activeTrackingWarning.confirmed &&
+    !isReusableTrackingWarningConfirmed;
   const draftIdentityDuplicates = useMemo(
     () => findDraftIdentityDuplicates(draft?.items ?? []),
     [draft?.items],
@@ -197,8 +206,8 @@ export function InboundScanPage() {
     };
   };
 
-  const focusScanInput = useCallback((field: InboundScanField) => {
-    window.setTimeout(() => {
+  const focusScanInput = useCallback((field: InboundScanField, options?: { retry?: boolean }) => {
+    const focus = () => {
       const input =
         field === 'tracking'
           ? trackingInputRef.current
@@ -207,11 +216,19 @@ export function InboundScanPage() {
             : imeiInputRef.current;
       input?.focus();
       input?.select();
-    }, 0);
+    };
+
+    window.setTimeout(focus, 0);
+    if (options?.retry) {
+      window.setTimeout(focus, 60);
+      window.setTimeout(focus, 180);
+    }
   }, []);
 
   const focusNextScanStart = useCallback(() => {
-    focusScanInput(reuseTrackingNo ? 'upc' : 'tracking');
+    const nextField = reuseTrackingNo ? 'upc' : 'tracking';
+    setPendingScanFocus(nextField);
+    focusScanInput(nextField, { retry: true });
   }, [focusScanInput, reuseTrackingNo]);
 
   const clearScanInputs = (options?: { keepTrackingNo?: boolean }) => {
@@ -266,7 +283,10 @@ export function InboundScanPage() {
     if (!normalized) {
       throw new Error('请先扫描物流单号');
     }
-    if (activeTrackingWarning?.trackingNo === normalized && activeTrackingWarning.confirmed) {
+    if (
+      activeTrackingWarning?.trackingNo === normalized &&
+      (activeTrackingWarning.confirmed || isReusableTrackingWarningConfirmed)
+    ) {
       return true;
     }
     if (blockingExceptionItem) {
@@ -288,8 +308,11 @@ export function InboundScanPage() {
       setTrackingWarning({
         trackingNo: scanResult.upsTrackingNo,
         reasons,
-        confirmed: false,
+        confirmed: reuseTrackingNo && isCurrentDraftDuplicateTrackingOnly(reasons),
       });
+      if (reuseTrackingNo && isCurrentDraftDuplicateTrackingOnly(reasons)) {
+        return true;
+      }
       setMessage('');
       setErrorMessage('该物流单号需要手动确认后才能继续入库。');
       focusScanInput('tracking');
@@ -303,8 +326,10 @@ export function InboundScanPage() {
     customerId,
     draft,
     focusScanInput,
+    isReusableTrackingWarningConfirmed,
     isCurrentSelectionLocked,
     isDraftOpen,
+    reuseTrackingNo,
     upsTrackingNo,
     warehouseId,
   ]);
@@ -363,9 +388,11 @@ export function InboundScanPage() {
       persistLockedContext({ customerId, warehouseId, draftId: updated.id });
       setLastInboundItem(data.item);
       const keepTrackingNo = reuseTrackingNo && data.item.status !== 'EXCEPTION';
+      const nextFocusField =
+        data.item.status === 'EXCEPTION' ? null : keepTrackingNo ? 'upc' : 'tracking';
       clearScanInputs({ keepTrackingNo });
       lastAutoAddKeyRef.current = '';
-      focusScanInput(keepTrackingNo ? 'upc' : 'tracking');
+      setPendingScanFocus(nextFocusField);
       setMessage(
         data.item.status === 'EXCEPTION'
           ? '已加入异常明细，请点击下方异常定位查看'
@@ -373,6 +400,7 @@ export function InboundScanPage() {
       );
     },
     onError: (error) => {
+      lastAutoAddKeyRef.current = '';
       setErrorMessage(toUserErrorMessage(error, '添加入库明细失败'));
     },
   });
@@ -496,6 +524,19 @@ export function InboundScanPage() {
   });
 
   useEffect(() => {
+    if (!pendingScanFocus || blockingExceptionItem) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      focusScanInput(pendingScanFocus, { retry: true });
+      setPendingScanFocus(null);
+    }, 30);
+
+    return () => window.clearTimeout(timer);
+  }, [blockingExceptionItem, focusScanInput, imei, pendingScanFocus, scanMode, upc, upsTrackingNo]);
+
+  useEffect(() => {
     const normalized = normalizeTrackingInput(upsTrackingNo);
     if (
       !normalized ||
@@ -527,7 +568,7 @@ export function InboundScanPage() {
           setTrackingWarning({
             trackingNo: scanResult.upsTrackingNo,
             reasons,
-            confirmed: false,
+            confirmed: reuseTrackingNo && isCurrentDraftDuplicateTrackingOnly(reasons),
           });
         })
         .catch((error) => {
@@ -631,7 +672,75 @@ export function InboundScanPage() {
     }, 350);
 
     return () => window.clearTimeout(timer);
-  }, [addItemMutation.isPending, canAddCurrentScan, imei, scanMode, upc, upsTrackingNo]);
+  }, [
+    addItemMutation.isPending,
+    canAddCurrentScan,
+    imei,
+    isTrackingWarningConfirmed,
+    scanMode,
+    upc,
+    upsTrackingNo,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isCurrentSelectionLocked ||
+      blockingExceptionItem ||
+      addItemMutation.isPending ||
+      !isLikelyCompleteTrackingInput(upsTrackingNo) ||
+      upc.trim()
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (document.activeElement === trackingInputRef.current) {
+        focusScanInput('upc', { retry: true });
+      }
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    addItemMutation.isPending,
+    blockingExceptionItem,
+    focusScanInput,
+    isCurrentSelectionLocked,
+    upc,
+    upsTrackingNo,
+  ]);
+
+  useEffect(() => {
+    if (
+      scanMode !== 'STANDARD' ||
+      !isCurrentSelectionLocked ||
+      blockingExceptionItem ||
+      isTrackingWarningBlocking ||
+      addItemMutation.isPending ||
+      !upsTrackingNo.trim() ||
+      upc.trim().length < 12 ||
+      imei.trim()
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (document.activeElement === upcInputRef.current) {
+        focusScanInput('imei', { retry: true });
+      }
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    addItemMutation.isPending,
+    blockingExceptionItem,
+    focusScanInput,
+    imei,
+    isCurrentSelectionLocked,
+    isTrackingWarningBlocking,
+    scanMode,
+    upc,
+    upsTrackingNo,
+  ]);
 
   useEffect(() => {
     hasFocusedLockedDraftRef.current = false;
@@ -860,12 +969,18 @@ export function InboundScanPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    const nextField = upc.trim()
+                      ? scanMode === 'STANDARD'
+                        ? 'imei'
+                        : 'upc'
+                      : 'upc';
                     setTrackingWarning((current) =>
                       current?.trackingNo === activeTrackingWarning.trackingNo
                         ? { ...current, confirmed: true }
                         : current,
                     );
-                    focusScanInput(upc.trim() ? (scanMode === 'STANDARD' ? 'imei' : 'upc') : 'upc');
+                    setPendingScanFocus(nextField);
+                    focusScanInput(nextField, { retry: true });
                   }}
                 >
                   继续入库
@@ -898,29 +1013,29 @@ export function InboundScanPage() {
           ))}
           {importFailedRows.length > 5 ? (
             <div>另有 {importFailedRows.length - 5} 行失败</div>
-            ) : null}
+          ) : null}
+        </div>
+      ) : null}
+      {activeDraftIdentityDuplicate ? (
+        <div className="tracking-warning-bar">
+          <div>
+            <strong>IMEI 重复</strong>
+            <span>
+              当前入库单内已存在 {activeDraftIdentityDuplicate}，请修正或删除重复明细后再继续入库。
+            </span>
           </div>
-        ) : null}
-        {activeDraftIdentityDuplicate ? (
-          <div className="tracking-warning-bar">
-            <div>
-              <strong>IMEI 重复</strong>
-              <span>
-                当前入库单内已存在 {activeDraftIdentityDuplicate}，请修正或删除重复明细后再继续入库。
-              </span>
-            </div>
+        </div>
+      ) : null}
+      {draftIdentityDuplicates.length > 0 ? (
+        <div className="tracking-warning-bar">
+          <div>
+            <strong>入库单内有重复 IMEI/Serial</strong>
+            <span>
+              重复值：{draftIdentityDuplicates.join(', ')}。请删除或编辑重复明细后再确认入库。
+            </span>
           </div>
-        ) : null}
-        {draftIdentityDuplicates.length > 0 ? (
-          <div className="tracking-warning-bar">
-            <div>
-              <strong>入库单内有重复 IMEI/Serial</strong>
-              <span>
-                重复值：{draftIdentityDuplicates.join(', ')}。请删除或编辑重复明细后再确认入库。
-              </span>
-            </div>
-          </div>
-        ) : null}
+        </div>
+      ) : null}
       <DraftPanel
         draft={draft}
         blockingExceptionItemId={blockingExceptionItem?.id}
@@ -950,7 +1065,16 @@ type InboundDraftItem = {
   imei: string | null;
   serial?: string | null;
   status: string;
+  scannedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   product?: { name: string; modelCode?: string | null } | null;
+  exceptions?: Array<{
+    id: string;
+    type: string;
+    status: string;
+    rawValue?: string | null;
+  }>;
 };
 type EditInboundItemValues = {
   upsTrackingNo: string;
@@ -1030,7 +1154,7 @@ function DraftPanel({
   });
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
   const reviewSummary = useMemo(() => buildInboundReviewSummary(draft), [draft]);
-  const items = draft?.items ?? [];
+  const items = useMemo(() => sortInboundDraftItems(draft?.items ?? []), [draft?.items]);
   const paginatedItems = paginateItems(items, page, pageSize);
   const blockingExceptionItem = blockingExceptionItemId
     ? items.find((item) => item.id === blockingExceptionItemId)
@@ -1204,7 +1328,12 @@ function DraftPanel({
                   <strong>{item.product?.name ?? '-'}</strong>
                   {item.product?.modelCode ? <span>型号代码 {item.product.modelCode}</span> : null}
                 </td>
-                <td>{item.status}</td>
+                <td>
+                  <span>{formatInboundItemStatus(item.status)}</span>
+                  {item.status === 'EXCEPTION' ? (
+                    <small>{formatInboundExceptionSummary(item)}</small>
+                  ) : null}
+                </td>
                 <td>
                   {isEditing ? (
                     <>
@@ -1388,6 +1517,12 @@ function LastInboundNotice({
           onChange={(event) => updateValue('imei', event.target.value)}
         />
       </label>
+      {item.status === 'EXCEPTION' ? (
+        <div className="last-inbound-exception-message">
+          <strong>异常</strong>
+          <span>{formatInboundExceptionSummary(item)}</span>
+        </div>
+      ) : null}
       {isEditing ? (
         <>
           <button type="button" disabled={!canSave} onClick={() => void saveEdit()}>
@@ -1410,27 +1545,35 @@ function LastInboundNotice({
 }
 
 function buildInboundReviewSummary(draft: InboundDraft | null) {
-  const items = draft?.items ?? [];
+  const items = sortInboundDraftItems(draft?.items ?? []);
   const trackingNumbers = new Set<string>();
   const productNames = new Set<string>();
-  const upcRows = new Map<string, { upc: string; productName: string; count: number }>();
+  const upcRows = new Map<
+    string,
+    { upc: string; productName: string; count: number; firstScannedAt: number; firstIndex: number }
+  >();
 
-  for (const item of items) {
+  for (const [index, item] of items.entries()) {
     if (item.upsTrackingNo) {
       trackingNumbers.add(item.upsTrackingNo);
     }
 
     const productName = item.product?.name ?? '未匹配商品';
     productNames.add(productName);
+    const scannedAt = getInboundItemSortTime(item);
 
     const existing = upcRows.get(item.upc);
     if (existing) {
       existing.count += 1;
+      existing.firstScannedAt = Math.min(existing.firstScannedAt, scannedAt);
+      existing.firstIndex = Math.min(existing.firstIndex, index);
     } else {
       upcRows.set(item.upc, {
         upc: item.upc,
         productName,
         count: 1,
+        firstScannedAt: scannedAt,
+        firstIndex: index,
       });
     }
   }
@@ -1440,8 +1583,86 @@ function buildInboundReviewSummary(draft: InboundDraft | null) {
     upcCount: upcRows.size,
     productCount: productNames.size,
     trackingCount: trackingNumbers.size,
-    upcRows: Array.from(upcRows.values()).sort((left, right) => left.upc.localeCompare(right.upc)),
+    upcRows: Array.from(upcRows.values()).sort(
+      (left, right) =>
+        left.firstScannedAt - right.firstScannedAt ||
+        left.firstIndex - right.firstIndex ||
+        left.upc.localeCompare(right.upc),
+    ),
   };
+}
+
+function sortInboundDraftItems(items: InboundDraftItem[]) {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort(
+      (left, right) =>
+        getInboundItemSortTime(left.item) - getInboundItemSortTime(right.item) ||
+        left.index - right.index,
+    )
+    .map(({ item }) => item);
+}
+
+function getInboundItemSortTime(item: InboundDraftItem) {
+  const value = item.scannedAt ?? item.createdAt ?? item.updatedAt;
+  const time = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function isLikelyCompleteTrackingInput(value: string) {
+  const normalized = normalizeTrackingInput(value);
+  if (!normalized) {
+    return false;
+  }
+  if (/^1Z[0-9A-Z]{16}$/i.test(normalized)) {
+    return true;
+  }
+  if (/^9622[0-9]{18,30}$/.test(normalized)) {
+    return true;
+  }
+  if (/^[0-9]{12}$/.test(normalized) || /^[0-9]{15}$/.test(normalized)) {
+    return true;
+  }
+  if (/^[0-9]{20,34}$/.test(normalized)) {
+    return true;
+  }
+
+  return normalized.length >= 8 && !upcLikeValue(normalized);
+}
+
+function upcLikeValue(value: string) {
+  return /^[0-9]{8,14}$/.test(value);
+}
+
+function formatInboundItemStatus(status: string) {
+  const labels: Record<string, string> = {
+    PENDING: '待确认',
+    CONFIRMED: '已入库',
+    EXCEPTION: '异常',
+    VOIDED: '已删除',
+  };
+  return labels[status] ?? status;
+}
+
+function formatInboundExceptionSummary(item: InboundDraftItem) {
+  const openException = item.exceptions?.find((exception) => exception.status === 'OPEN');
+  const exception = openException ?? item.exceptions?.[0];
+  const type = exception?.type;
+  const labels: Record<string, string> = {
+    UPC_NOT_MATCHED: 'UPC 未匹配商品库',
+    IMEI_DUPLICATED: 'IMEI/Serial 已存在库存',
+    UPS_DUPLICATED: '物流单号已确认入库过',
+    CUSTOMER_OWNERSHIP_MISMATCH: '客户归属不一致',
+    IMEI_NOT_INBOUNDED: 'IMEI 未入库',
+  };
+
+  if (type) {
+    return labels[type] ?? type;
+  }
+  if (!item.product) {
+    return 'UPC 未匹配商品库';
+  }
+  return '请修正后再继续入库';
 }
 
 function normalizeTrackingInput(value: string) {
@@ -1485,9 +1706,7 @@ function findDraftIdentityDuplicates(items: InboundDraftItem[]) {
     counts.set(identity, (counts.get(identity) ?? 0) + 1);
   }
 
-  return [...counts.entries()]
-    .filter(([, count]) => count > 1)
-    .map(([identity]) => identity);
+  return [...counts.entries()].filter(([, count]) => count > 1).map(([identity]) => identity);
 }
 
 function buildTrackingWarningReasons(result: TrackingScanResult) {
@@ -1502,6 +1721,12 @@ function buildTrackingWarningReasons(result: TrackingScanResult) {
     reasons.push(`当前入库单已扫过该物流单号 ${result.currentDraftDuplicateCount ?? 1} 次`);
   }
   return reasons;
+}
+
+function isCurrentDraftDuplicateTrackingOnly(reasons: string[]) {
+  return (
+    reasons.length > 0 && reasons.every((reason) => reason.startsWith('当前入库单已扫过该物流单号'))
+  );
 }
 
 function toUserErrorMessage(error: unknown, fallback: string) {

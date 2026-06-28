@@ -56,6 +56,11 @@ Before confirmation, the inbound scan page should show an always-current review 
 active draft. The summary must help the operator verify the number of scanned product units, unique
 UPC values, product styles, package tracking numbers, pending rows, exception rows, and the count
 per UPC/product.
+The draft detail table and UPC review must follow scan-time ascending order: earlier scanned rows
+stay above later rows, and the newest scan appears at the bottom of the current review sequence.
+Exception rows must show the operator-facing abnormal reason, such as unmatched UPC, duplicate
+IMEI/Serial, or duplicated package tracking number, rather than only showing the generic
+`EXCEPTION` status.
 
 The system must:
 
@@ -110,12 +115,23 @@ place; saving must overwrite the original preview row and must not create anothe
 
 After a row is automatically or manually added, the scan entry form should restore keyboard focus to
 the next receiving input so operators can continue with a scanner without clicking the mouse again.
+After the package tracking input receives a complete tracking value, focus should move to UPC
+automatically even when the scanner does not send an Enter key. Abnormal package tracking values may
+still require the operator to confirm continuing before the row can be saved.
+In standard mode, after the package tracking number is present and the UPC input receives a complete
+UPC value, focus should move to IMEI automatically even when the scanner does not send an Enter key.
 The default loop starts the next row at the package tracking field. When the operator enables the
 same-package continuous option, the page must first review the current package tracking number.
 Duplicate tracking numbers and tracking numbers outside the UPS/9622-prefixed FedEx auto-accept
 rules must be confirmed before the option becomes active. After confirmation, the current package
 tracking number is retained after a successful row and focus moves back to UPC for the next item.
+While same-package continuous scanning is active, repeated use of that retained tracking number
+inside the current draft is treated as already confirmed for the next item. Other abnormal tracking
+signals, such as unsupported format or historical confirmed duplicates, still require explicit
+operator confirmation.
 Exception rows must pause this focus loop until the abnormal row is corrected or removed.
+Focus restoration must run after the page has rendered the updated draft row so scanner operators do
+not need to click the next input during high-volume receiving.
 
 If the active draft contains exception rows, the exception summary should help the operator jump to
 the exception row and edit that row in place. Saving the correction must overwrite the original

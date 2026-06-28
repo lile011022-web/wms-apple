@@ -134,7 +134,7 @@ The backend delegates to `GET /inventory/available-for-outbound`, forces `status
 
 Frontend packing modes reuse this endpoint:
 
-- Detailed scan packing searches available inventory by scanned IMEI / Serial, then verifies the scanned UPC before adding the row to the current box.
+- Detailed scan packing searches available inventory by scanned IMEI / Serial, then verifies the scanned UPC before adding the row to the current box. The frontend keeps the scanner input focused after each partial scan and after successful add, and renders current box rows in `packedAt` ascending order so the newest packed item appears below older items.
 - Bulk box packing reads available rows for the selected customer and warehouse, lets the frontend
   filter them into 全新 iPhone, 全新 iPad, 翻新 iPhone, and 翻新 iPad buckets from product/UPC text,
   tolerates common refurbished spelling mistakes such as `Reurbished`, remembers manual row

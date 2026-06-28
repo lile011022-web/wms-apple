@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw, Search, Trash2 } from 'lucide-react';
+import { CalendarDays, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { getSystemSettings, listWarehouses } from '../../api/settings';
 import { customersApi, inventoryApi } from '../../api/workflow';
@@ -16,6 +16,9 @@ export function CustomerInventoryPage() {
   const [detailPage, setDetailPage] = useState(1);
   const [detailPageSize, setDetailPageSize] = useState(50);
   const [detailSearch, setDetailSearch] = useState('');
+  const [activityDate, setActivityDate] = useState(() => toDateInputValue(new Date()));
+  const [statusFilter, setStatusFilter] = useState<InventoryStatusFilter>('');
+  const [activeMetricLabel, setActiveMetricLabel] = useState('库存总数');
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const detailTableRef = useRef<HTMLDivElement | null>(null);
   const customersQuery = useQuery({
@@ -46,18 +49,35 @@ export function CustomerInventoryPage() {
   }, [customerId, customers, settingsQuery.data, warehouseId, warehouses]);
 
   const customerSummaryQuery = useQuery({
-    queryKey: ['inventory-customer-summary', customerId, warehouseId],
-    queryFn: () => inventoryApi.customerSummary({ customerId, warehouseId }),
+    queryKey: ['inventory-customer-summary', customerId, warehouseId, activityDate],
+    queryFn: () =>
+      inventoryApi.customerSummary({
+        customerId,
+        warehouseId,
+        dateFrom: activityDate || undefined,
+        dateTo: activityDate || undefined,
+      }),
     enabled: Boolean(customerId),
   });
   const customerSummary = customerSummaryQuery.data as CustomerInventorySummary | undefined;
 
   const productSummaryQuery = useQuery({
-    queryKey: ['inventory-products', customerId, warehouseId, summaryPage, summaryPageSize],
+    queryKey: [
+      'inventory-products',
+      customerId,
+      warehouseId,
+      activityDate,
+      statusFilter,
+      summaryPage,
+      summaryPageSize,
+    ],
     queryFn: () =>
       inventoryApi.products({
         customerId,
         warehouseId,
+        status: statusFilter || undefined,
+        dateFrom: activityDate || undefined,
+        dateTo: activityDate || undefined,
         page: summaryPage,
         pageSize: summaryPageSize,
       }),
@@ -70,6 +90,8 @@ export function CustomerInventoryPage() {
       'inventory-items',
       customerId,
       warehouseId,
+      activityDate,
+      statusFilter,
       detailSearch,
       detailPage,
       detailPageSize,
@@ -78,6 +100,9 @@ export function CustomerInventoryPage() {
       inventoryApi.items({
         customerId,
         warehouseId,
+        status: statusFilter || undefined,
+        dateFrom: activityDate || undefined,
+        dateTo: activityDate || undefined,
         search: detailSearch.trim() || undefined,
         page: detailPage,
         pageSize: detailPageSize,
@@ -85,6 +110,8 @@ export function CustomerInventoryPage() {
     enabled: Boolean(customerId),
   });
   const inventory = inventoryQuery.data as InventoryResult | undefined;
+  const skuSectionTitle = getSkuSectionTitle(activeMetricLabel);
+  const detailSectionTitle = getDetailSectionTitle(activeMetricLabel);
   const currentPageProductIds = productSummary?.items.map((row) => row.product.id) ?? [];
   const selectedOnCurrentPage = currentPageProductIds.filter((id) =>
     selectedProductIds.includes(id),
@@ -116,7 +143,18 @@ export function CustomerInventoryPage() {
 
   useEffect(() => {
     setSelectedProductIds([]);
-  }, [customerId, warehouseId, summaryPage, summaryPageSize]);
+  }, [customerId, warehouseId, summaryPage, summaryPageSize, activityDate, statusFilter]);
+
+  const applyMetricFilter = (label: string, status: InventoryStatusFilter) => {
+    setActiveMetricLabel(label);
+    setStatusFilter(status);
+    setSummaryPage(1);
+    setDetailPage(1);
+    setDetailSearch('');
+    window.setTimeout(() => {
+      detailTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  };
 
   const toggleCurrentPageProducts = () => {
     setSelectedProductIds((current) => {
@@ -204,35 +242,130 @@ export function CustomerInventoryPage() {
         </button>
       </section>
 
+      <section className="panel inventory-date-panel">
+        <div className="inventory-date-title">
+          <CalendarDays size={18} />
+          <div>
+            <h2>按日期定位</h2>
+            <span>
+              {activityDate
+                ? `${activityDate} 的 ${activeMetricLabel} 数据`
+                : `全部日期的 ${activeMetricLabel} 数据`}
+            </span>
+          </div>
+        </div>
+        <div className="inventory-date-actions">
+          <label>
+            <span>业务日期</span>
+            <input
+              type="date"
+              value={activityDate}
+              onChange={(event) => {
+                setActivityDate(event.target.value);
+                setSummaryPage(1);
+                setDetailPage(1);
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn secondary"
+            onClick={() => {
+              setActivityDate(toDateInputValue(new Date()));
+              setSummaryPage(1);
+              setDetailPage(1);
+            }}
+          >
+            今天
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => {
+              setActivityDate('');
+              setSummaryPage(1);
+              setDetailPage(1);
+            }}
+          >
+            <X size={16} />
+            全部日期
+          </button>
+        </div>
+      </section>
+
       <section className="panel data-panel">
         <div className="section-title">
           <h2>库存汇总</h2>
-          <span>{customerSummaryQuery.isFetching ? '正在读取' : '按当前客户统计'}</span>
+          <span>
+            {customerSummaryQuery.isFetching
+              ? '正在读取'
+              : activityDate
+                ? '按当前客户和日期统计'
+                : '按当前客户统计'}
+          </span>
         </div>
         <div className="inbound-review-grid">
-          <SummaryMetric label="库存总数" value={customerSummary?.totalQuantity ?? 0} />
-          <SummaryMetric label="SKU 款数" value={customerSummary?.skuCount ?? 0} />
-          <SummaryMetric label="在库" value={customerSummary?.inStockQuantity ?? 0} />
+          <SummaryMetric
+            label="库存总数"
+            value={customerSummary?.totalQuantity ?? 0}
+            active={statusFilter === '' && activeMetricLabel === '库存总数'}
+            onClick={() => applyMetricFilter('库存总数', '')}
+          />
+          <SummaryMetric
+            label="SKU 款数"
+            value={customerSummary?.skuCount ?? 0}
+            active={statusFilter === '' && activeMetricLabel === 'SKU 款数'}
+            onClick={() => applyMetricFilter('SKU 款数', '')}
+          />
+          <SummaryMetric
+            label="在库"
+            value={customerSummary?.inStockQuantity ?? 0}
+            active={statusFilter === 'IN_STOCK' && activeMetricLabel === '在库'}
+            onClick={() => applyMetricFilter('在库', 'IN_STOCK')}
+          />
           <SummaryMetric
             label="可出库"
             value={customerSummary?.availableForOutboundQuantity ?? 0}
+            active={statusFilter === 'IN_STOCK' && activeMetricLabel === '可出库'}
+            onClick={() => applyMetricFilter('可出库', 'IN_STOCK')}
           />
-          <SummaryMetric label="已装箱" value={customerSummary?.packedQuantity ?? 0} />
-          <SummaryMetric label="已出库" value={customerSummary?.outboundQuantity ?? 0} />
+          <SummaryMetric
+            label="已装箱"
+            value={customerSummary?.packedQuantity ?? 0}
+            active={statusFilter === 'PACKED' && activeMetricLabel === '已装箱'}
+            onClick={() => applyMetricFilter('已装箱', 'PACKED')}
+          />
+          <SummaryMetric
+            label="已出库"
+            value={customerSummary?.outboundQuantity ?? 0}
+            active={statusFilter === 'OUTBOUND' && activeMetricLabel === '已出库'}
+            onClick={() => applyMetricFilter('已出库', 'OUTBOUND')}
+          />
           <SummaryMetric
             label="异常"
             value={customerSummary?.exceptionQuantity ?? 0}
             tone="warning"
+            active={statusFilter === 'EXCEPTION' && activeMetricLabel === '异常'}
+            onClick={() => applyMetricFilter('异常', 'EXCEPTION')}
           />
-          <SummaryMetric label="作废" value={customerSummary?.voidedQuantity ?? 0} />
+          <SummaryMetric
+            label="作废"
+            value={customerSummary?.voidedQuantity ?? 0}
+            active={statusFilter === 'VOIDED' && activeMetricLabel === '作废'}
+            onClick={() => applyMetricFilter('作废', 'VOIDED')}
+          />
         </div>
       </section>
 
       <section className="panel data-panel">
         <div className="section-title inventory-section-title">
           <div>
-            <h2>SKU 汇总明细</h2>
-            <span>共 {productSummary?.total ?? 0} 款，已选 {selectedProductIds.length} 款</span>
+            <h2>{skuSectionTitle}</h2>
+            <span>
+              {activityDate ? `${activityDate}，` : ''}
+              {activeMetricLabel}：共 {productSummary?.total ?? 0} 款，已选{' '}
+              {selectedProductIds.length} 款
+            </span>
           </div>
           <div className="inventory-bulk-actions">
             <button
@@ -325,8 +458,11 @@ export function CustomerInventoryPage() {
 
       <section className="panel data-panel">
         <div className="section-title">
-          <h2>IMEI 明细</h2>
-          <span>共 {inventory?.total ?? 0} 条</span>
+          <h2>{detailSectionTitle}</h2>
+          <span>
+            {activityDate ? `${activityDate}，` : ''}
+            {activeMetricLabel}：共 {inventory?.total ?? 0} 条
+          </span>
         </div>
         <PaginationControls
           page={detailPage}
@@ -403,6 +539,7 @@ export function CustomerInventoryPage() {
 }
 
 type CustomerOption = { id: string; label: string };
+type InventoryStatusFilter = '' | 'IN_STOCK' | 'PACKED' | 'OUTBOUND' | 'EXCEPTION' | 'VOIDED';
 type CustomerInventorySummary = {
   totalQuantity: number;
   skuCount: number;
@@ -462,17 +599,60 @@ function SummaryMetric({
   label,
   value,
   tone = 'default',
+  active = false,
+  onClick,
 }: {
   label: string;
   value: number;
   tone?: 'default' | 'warning';
+  active?: boolean;
+  onClick?: () => void;
 }) {
+  const className = [
+    'summary-metric',
+    tone === 'warning' ? 'warning' : '',
+    onClick ? 'metric-button' : '',
+    active ? 'active' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  if (onClick) {
+    return (
+      <button type="button" className={className} onClick={onClick}>
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </button>
+    );
+  }
+
   return (
-    <div className={`summary-metric ${tone === 'warning' ? 'warning' : ''}`}>
+    <div className={className}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
   );
+}
+
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getSkuSectionTitle(metricLabel: string) {
+  if (metricLabel === '库存总数' || metricLabel === 'SKU 款数') {
+    return 'SKU 汇总明细';
+  }
+  return `${metricLabel} SKU 汇总`;
+}
+
+function getDetailSectionTitle(metricLabel: string) {
+  if (metricLabel === '库存总数' || metricLabel === 'SKU 款数') {
+    return '客户库存明细';
+  }
+  return `${metricLabel}明细`;
 }
 
 function TimeCell({ value }: { value?: string | null }) {

@@ -50,4 +50,14 @@ export class ListInventoryItemsQueryDto extends PaginationQueryDto {
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   availableForOutbound?: boolean;
+
+  @ApiPropertyOptional({ example: '2026-06-28' })
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({ example: '2026-06-28' })
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
 }

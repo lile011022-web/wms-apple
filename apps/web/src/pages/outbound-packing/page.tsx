@@ -310,11 +310,13 @@ export function OutboundPackingPage() {
     const items = currentBox?.items ?? [];
     const query = boxSearch.trim().toLowerCase();
     if (!query) {
-      return items;
+      return sortPackingItemsByAddedAt(items);
     }
-    return items.filter((item) =>
-      [item.trackingNumber, item.imeiOrSerial, item.upc, item.productName, item.carrier].some(
-        (value) => value?.toLowerCase().includes(query),
+    return sortPackingItemsByAddedAt(
+      items.filter((item) =>
+        [item.trackingNumber, item.imeiOrSerial, item.upc, item.productName, item.carrier].some(
+          (value) => value?.toLowerCase().includes(query),
+        ),
       ),
     );
   }, [boxSearch, currentBox?.items]);
@@ -419,11 +421,17 @@ export function OutboundPackingPage() {
       setIsBatchItemsLoading(false);
     }
   };
-  const focusDetailedScanInput = useCallback(() => {
-    window.setTimeout(() => {
+  const focusDetailedScanInput = useCallback((options?: { retry?: boolean }) => {
+    const focus = () => {
       scanInputRef.current?.focus();
       scanInputRef.current?.select();
-    }, 0);
+    };
+
+    window.setTimeout(focus, 0);
+    if (options?.retry) {
+      window.setTimeout(focus, 60);
+      window.setTimeout(focus, 180);
+    }
   }, []);
   const resetDetailedScan = () => {
     if (scanAutoSubmitTimerRef.current) {
@@ -436,7 +444,7 @@ export function OutboundPackingPage() {
     setScanBlockReason('');
     setMessage('已清空扫码');
     setErrorMessage('');
-    focusDetailedScanInput();
+    focusDetailedScanInput({ retry: true });
   };
   const applyScannedValue = (value: string) => {
     if (scanBlockReason || scanPackMutation.isPending) {
@@ -458,7 +466,7 @@ export function OutboundPackingPage() {
       setMessage('已扫描 IMEI / Serial，等待 UPC');
     }
     setErrorMessage('');
-    focusDetailedScanInput();
+    focusDetailedScanInput({ retry: true });
 
     if (nextUpc && nextImeiOrSerial) {
       scanPackMutation.mutate({ upc: nextUpc, imeiOrSerial: nextImeiOrSerial });
@@ -703,6 +711,14 @@ export function OutboundPackingPage() {
       if (!currentBox || !canMutateCurrentBox) {
         throw new Error('请先选择一个未封箱箱子。');
       }
+      const alreadyPackedInCurrentBox = currentBox.items.find(
+        (item) =>
+          normalizeScanText(item.upc) === normalizeScanText(payload.upc) &&
+          normalizeScanText(item.imeiOrSerial) === normalizeScanText(payload.imeiOrSerial),
+      );
+      if (alreadyPackedInCurrentBox) {
+        throw new Error('该货物已经在当前箱子中。');
+      }
       const searchedItems = await fetchAvailablePackingItems({ search: payload.imeiOrSerial });
       const candidates = mergePackingItems(availableItems, searchedItems);
       const exactMatch = candidates.find(
@@ -740,7 +756,7 @@ export function OutboundPackingPage() {
       setScanBlockReason('');
       setMessage(`已扫码装箱：${item.imeiOrSerial ?? item.upc ?? item.trackingNumber}`);
       setErrorMessage('');
-      focusDetailedScanInput();
+      focusDetailedScanInput({ retry: true });
     },
     onError: (error) => {
       const messageText = toUserErrorMessage(error, '扫码装箱失败');
@@ -877,7 +893,7 @@ export function OutboundPackingPage() {
     ) {
       return;
     }
-    focusDetailedScanInput();
+    focusDetailedScanInput({ retry: true });
   }, [
     canMutateCurrentBox,
     currentBox?.id,
@@ -1293,8 +1309,8 @@ export function OutboundPackingPage() {
           }
           canBulkPackAll={Boolean(
             customerId &&
-              warehouseId &&
-              (selectedAvailableItemIds.size > 0 || (!activeInventorySearch && availableTotal > 0)),
+            warehouseId &&
+            (selectedAvailableItemIds.size > 0 || (!activeInventorySearch && availableTotal > 0)),
           )}
           selectedItemIds={selectedAvailableItemIds}
           selectedTotal={selectedAvailableItemIds.size}
@@ -2306,7 +2322,9 @@ function CreatedBoxList(props: {
               onClick={() => setActiveTaskGroup(group.label)}
             >
               {group.label}
-              <span>{group.boxes.length} 箱 · {group.itemCount} 件</span>
+              <span>
+                {group.boxes.length} 箱 · {group.itemCount} 件
+              </span>
             </button>
           ))}
         </div>
@@ -2775,7 +2793,10 @@ function BatchPackingModal(props: {
     props.items.length > 0 &&
     counts.length === props.allocationCounts.length &&
     allocationTotal === props.items.length;
-  const previewGroups = buildBatchGroups(props.items, props.allocationCounts.map((value) => Math.max(0, Number(value) || 0)));
+  const previewGroups = buildBatchGroups(
+    props.items,
+    props.allocationCounts.map((value) => Math.max(0, Number(value) || 0)),
+  );
 
   return (
     <div className="outbound-modal-backdrop" role="presentation" onClick={props.onClose}>
@@ -2996,7 +3017,9 @@ function BoxDetailModal(props: {
                       <td className="mono">{item.upc ?? '-'}</td>
                       <td>
                         <strong>{item.productName ?? '-'}</strong>
-                        {item.productModelCode ? <span>型号代码 {item.productModelCode}</span> : null}
+                        {item.productModelCode ? (
+                          <span>型号代码 {item.productModelCode}</span>
+                        ) : null}
                       </td>
                       <td className="mono">{item.imeiOrSerial ?? '-'}</td>
                       <td>{item.customerName}</td>
@@ -3115,7 +3138,11 @@ function PrintDetailModal(props: {
           <pre>{lines.join('\n')}</pre>
         </div>
         <div className="outbound-confirm-actions">
-          <button type="button" className="outbound-btn outbound-btn-outline" onClick={props.onClose}>
+          <button
+            type="button"
+            className="outbound-btn outbound-btn-outline"
+            onClick={props.onClose}
+          >
             取消
           </button>
           <button
@@ -3424,25 +3451,27 @@ function toPackingBox(box: OutboundBox, reworkBoxIds: Set<string>): PackingBox {
     shippingTrackingNo: box.shippingTrackingNo ?? undefined,
     itemCount: box.itemCount,
     photos: box.photos ?? [],
-    items: box.items.map((item) => ({
-      id: item.inventoryItem.id,
-      boxItemId: item.id,
-      carrier: detectCarrier(item.inventoryItem.upsTrackingNo),
-      trackingNumber: item.inventoryItem.upsTrackingNo ?? '',
-      upc: item.inventoryItem.upc,
-      productName: item.inventoryItem.product.name,
-      productSku: item.inventoryItem.product.sku,
-      productModel: item.inventoryItem.product.model,
-      productModelCode: item.inventoryItem.product.modelCode,
-      productCategory: item.inventoryItem.product.category,
-      imeiOrSerial: item.inventoryItem.imei ?? item.inventoryItem.serial ?? undefined,
-      customerId: item.inventoryItem.customer?.id ?? box.customer?.id ?? '',
-      customerName: item.inventoryItem.customer?.name ?? box.customer?.name ?? '-',
-      status: 'packed',
-      receivedAt: item.inventoryItem.receivedAt,
-      addedAt: item.packedAt,
-      raw: item,
-    })),
+    items: sortPackingItemsByAddedAt(
+      box.items.map((item) => ({
+        id: item.inventoryItem.id,
+        boxItemId: item.id,
+        carrier: detectCarrier(item.inventoryItem.upsTrackingNo),
+        trackingNumber: item.inventoryItem.upsTrackingNo ?? '',
+        upc: item.inventoryItem.upc,
+        productName: item.inventoryItem.product.name,
+        productSku: item.inventoryItem.product.sku,
+        productModel: item.inventoryItem.product.model,
+        productModelCode: item.inventoryItem.product.modelCode,
+        productCategory: item.inventoryItem.product.category,
+        imeiOrSerial: item.inventoryItem.imei ?? item.inventoryItem.serial ?? undefined,
+        customerId: item.inventoryItem.customer?.id ?? box.customer?.id ?? '',
+        customerName: item.inventoryItem.customer?.name ?? box.customer?.name ?? '-',
+        status: 'packed',
+        receivedAt: item.inventoryItem.receivedAt,
+        addedAt: item.packedAt,
+        raw: item,
+      })),
+    ),
     createdAt: box.createdAt ?? '',
     updatedAt: box.updatedAt ?? box.createdAt ?? '',
     sealedAt: box.sealedAt,
@@ -3654,12 +3683,7 @@ function buildPrintDetailLines(box: PackingBox) {
   );
   const total = Array.from(productCounts.values()).reduce((sum, count) => sum + count, 0);
 
-  return [
-    buildPrintDetailTitle(box),
-    getPrintBoxLabel(box),
-    ...productLines,
-    `|Total: ${total}|`,
-  ];
+  return [buildPrintDetailTitle(box), getPrintBoxLabel(box), ...productLines, `|Total: ${total}|`];
 }
 
 function printBoxDetail(box: PackingBox) {
@@ -3866,9 +3890,9 @@ function isCompleteOutboundScanValue(value: string) {
     return false;
   }
   if (/^\d+$/.test(normalized)) {
-    return normalized.length >= 8;
+    return normalized.length >= 12;
   }
-  return normalized.length >= 6;
+  return normalized.length >= 10;
 }
 
 function normalizeScanText(value?: string | null) {
@@ -3883,6 +3907,20 @@ function mergePackingItems(...groups: PackingItem[][]) {
     }
   }
   return Array.from(byId.values());
+}
+
+function sortPackingItemsByAddedAt(items: PackingItem[]) {
+  return [...items].sort(
+    (left, right) =>
+      getPackingItemAddedTime(left) - getPackingItemAddedTime(right) ||
+      left.id.localeCompare(right.id),
+  );
+}
+
+function getPackingItemAddedTime(item: PackingItem) {
+  const value = item.addedAt ?? item.receivedAt;
+  const time = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isFinite(time) ? time : 0;
 }
 
 function normalizeBatchCounts(values: string[]) {
@@ -3950,16 +3988,14 @@ function getProductDevice(item: PackingItem): Exclude<ProductDeviceFilter, 'ALL'
 function getProductClassLabel(item: PackingItem) {
   const conditionLabel = getProductCondition(item) === 'REFURBISHED' ? '翻新' : '全新';
   const device = getProductDevice(item);
-  const deviceLabel =
-    device === 'IPHONE' ? 'iPhone' : device === 'IPAD' ? 'iPad' : '未识别品类';
+  const deviceLabel = device === 'IPHONE' ? 'iPhone' : device === 'IPAD' ? 'iPad' : '未识别品类';
   return `${conditionLabel} / ${deviceLabel}`;
 }
 
 function getProductFilterLabel(condition: ProductConditionFilter, device: ProductDeviceFilter) {
   const conditionLabel =
     condition === 'REFURBISHED' ? '翻新' : condition === 'NEW' ? '全新' : '全部成色';
-  const deviceLabel =
-    device === 'IPHONE' ? 'iPhone' : device === 'IPAD' ? 'iPad' : '全部品类';
+  const deviceLabel = device === 'IPHONE' ? 'iPhone' : device === 'IPAD' ? 'iPad' : '全部品类';
   return `${conditionLabel} / ${deviceLabel}`;
 }
 

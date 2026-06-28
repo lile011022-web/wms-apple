@@ -33,6 +33,9 @@ Returns the draft header, locked customer, warehouse, preview summary, and non-v
 The web client uses this response to compute the confirmation review panel in real time, including
 unique UPC count, product count, package tracking count, total product units, exception count, and
 per-UPC product counts. No separate summary endpoint is required for this draft-level review.
+Preview items include `scannedAt`, `createdAt`, `updatedAt`, and linked `exceptions` so the web
+client can keep scan-time ascending review order and show a readable exception reason beside any
+`EXCEPTION` row.
 
 ## Scan Package Tracking Number
 
@@ -108,6 +111,8 @@ The web client shows the latest added row below the scanner inputs. When excepti
 active draft, clicking the exception metric locates the first exception row and opens that row for
 inline editing. Saving the row overwrites the original preview item and re-runs the same validation
 rules; it does not create a second preview item.
+The draft detail table stays in scan-time ascending order, so earlier rows remain at the top and
+the newest scan is shown at the bottom.
 
 ## Update Preview Item
 

@@ -197,8 +197,9 @@ export function InboundRecordsPage() {
           >
             <option value="">全部</option>
             <option value="PENDING">待确认</option>
-            <option value="CONFIRMED">已确认</option>
+            <option value="CONFIRMED">已入库</option>
             <option value="EXCEPTION">异常</option>
+            <option value="VOIDED">已作废</option>
           </select>
         </label>
         <label>
@@ -306,7 +307,7 @@ export function InboundRecordsPage() {
                     <td className="mono">{item.upsTrackingNo ?? '-'}</td>
                     <td>
                       <span className={statusClass(item.status)}>
-                        {item.forcedInbound ? 'FORCED' : item.status}
+                        {formatInboundRecordStatus(item)}
                       </span>
                     </td>
                     <td>
@@ -382,7 +383,7 @@ export function InboundRecordsPage() {
               <span>{editingRecord?.customer?.code ?? '-'}</span>
               <strong>{editingRecord?.product?.name ?? '-'}</strong>
               <span className={statusClass(editingRecord?.status ?? '')}>
-                {editingRecord?.forcedInbound ? 'FORCED' : (editingRecord?.status ?? '-')}
+                {editingRecord ? formatInboundRecordStatus(editingRecord) : '-'}
               </span>
             </div>
 
@@ -521,7 +522,19 @@ function canRecordBeCorrected(item: InboundRecord) {
 function statusClass(status: string) {
   if (status === 'CONFIRMED') return 'badge badge-success';
   if (status === 'EXCEPTION') return 'badge badge-danger';
+  if (status === 'VOIDED') return 'badge badge-danger';
   return 'badge badge-warning';
+}
+
+function formatInboundRecordStatus(item: Pick<InboundRecord, 'status' | 'forcedInbound'>) {
+  if (item.forcedInbound) return '强制入库';
+  const labels: Record<string, string> = {
+    PENDING: '待确认',
+    CONFIRMED: '已入库',
+    EXCEPTION: '异常',
+    VOIDED: '已作废',
+  };
+  return labels[item.status] ?? item.status;
 }
 
 function TimeCell({ value }: { value?: string | null }) {
