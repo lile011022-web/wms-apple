@@ -12,6 +12,16 @@ const reportTypes = [
   { value: 'AUDIT_LOG', label: '审计日志' },
 ];
 
+const outboundExcelLayouts = [
+  { value: 'STANDARD', label: '现有客户核对表' },
+  { value: 'PACKED_SUMMARY', label: '已装箱汇总表格' },
+];
+
+const inventoryExcelLayouts = [
+  { value: 'STANDARD', label: '现有库存明细表' },
+  { value: 'WAREHOUSE_HOLD', label: '留仓汇总表格' },
+];
+
 export function DetailDownloadPage() {
   const queryClient = useQueryClient();
   const [reportType, setReportType] = useState('INVENTORY_DETAIL');
@@ -22,6 +32,7 @@ export function DetailDownloadPage() {
   const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
   const [sealedOnly, setSealedOnly] = useState(true);
+  const [exportLayout, setExportLayout] = useState('STANDARD');
   const [preview, setPreview] = useState<ReportPreview | null>(null);
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [message, setMessage] = useState('');
@@ -52,8 +63,12 @@ export function DetailDownloadPage() {
       dateTo: toIsoDateTime(dateTo),
       search: search || undefined,
       outboundStatus: reportType === 'OUTBOUND_DETAIL' && sealedOnly ? 'SEALED' : undefined,
+      inventoryStatus:
+        reportType === 'INVENTORY_DETAIL' && format === 'EXCEL' && exportLayout === 'WAREHOUSE_HOLD'
+          ? 'IN_STOCK'
+          : undefined,
     }),
-    [batchId, customerId, dateFrom, dateTo, reportType, sealedOnly, search],
+    [batchId, customerId, dateFrom, dateTo, exportLayout, format, reportType, sealedOnly, search],
   );
 
   const exportsQuery = useQuery({
@@ -87,6 +102,11 @@ export function DetailDownloadPage() {
       return reportsApi.createExport({
         reportType,
         format,
+        exportLayout:
+          (reportType === 'OUTBOUND_DETAIL' || reportType === 'INVENTORY_DETAIL') &&
+          format === 'EXCEL'
+            ? exportLayout
+            : undefined,
         filters,
         fields: selectedFields,
       });
@@ -133,6 +153,32 @@ export function DetailDownloadPage() {
   useEffect(() => {
     setBatchId('');
   }, [customerId, reportType]);
+
+  useEffect(() => {
+    if (
+      (reportType !== 'OUTBOUND_DETAIL' && reportType !== 'INVENTORY_DETAIL') ||
+      format !== 'EXCEL'
+    ) {
+      setExportLayout('STANDARD');
+    }
+  }, [format, reportType]);
+
+  const excelLayouts =
+    reportType === 'OUTBOUND_DETAIL'
+      ? outboundExcelLayouts
+      : reportType === 'INVENTORY_DETAIL'
+        ? inventoryExcelLayouts
+        : [];
+
+  useEffect(() => {
+    if (
+      format === 'EXCEL' &&
+      excelLayouts.length > 0 &&
+      !excelLayouts.some((layout) => layout.value === exportLayout)
+    ) {
+      setExportLayout('STANDARD');
+    }
+  }, [excelLayouts, exportLayout, format]);
 
   const toggleField = (field: string) => {
     setSelectedFields((current) =>
@@ -231,6 +277,19 @@ export function DetailDownloadPage() {
             </select>
           </label>
         ) : null}
+        {(reportType === 'OUTBOUND_DETAIL' || reportType === 'INVENTORY_DETAIL') &&
+        format === 'EXCEL' ? (
+          <label>
+            <span>表格模式</span>
+            <select value={exportLayout} onChange={(event) => setExportLayout(event.target.value)}>
+              {excelLayouts.map((layout) => (
+                <option key={layout.value} value={layout.value}>
+                  {layout.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <button
           type="button"
           className="btn"
@@ -269,6 +328,10 @@ export function DetailDownloadPage() {
           <div className="summary-strip">
             <span>类型 {reportTypes.find((item) => item.value === reportType)?.label}</span>
             <span>格式 {format}</span>
+            {(reportType === 'OUTBOUND_DETAIL' || reportType === 'INVENTORY_DETAIL') &&
+            format === 'EXCEL' ? (
+              <span>模式 {excelLayouts.find((item) => item.value === exportLayout)?.label}</span>
+            ) : null}
             <span>{preview?.shouldRunInBackground ? '需后台任务' : '可同步生成'}</span>
           </div>
           <div className="detail-list">

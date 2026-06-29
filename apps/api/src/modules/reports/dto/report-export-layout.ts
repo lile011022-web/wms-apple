@@ -1,0 +1,5 @@
+export enum ReportExportLayout {
+  STANDARD = 'STANDARD',
+  PACKED_SUMMARY = 'PACKED_SUMMARY',
+  WAREHOUSE_HOLD = 'WAREHOUSE_HOLD',
+}

@@ -18,7 +18,9 @@ Reports provide traceable downloads for operational review, customer reconciliat
 - Every successful export must create a `REPORT_EXPORT` audit log.
 - 入库明细导出必须支持按已确认入库批次筛选下载，避免多天、多批次扫描后只能靠日期或搜索词定位。
 - 当入库明细按批次导出时，下载文件名必须包含批次号，方便操作员从浏览器下载记录和导出历史里辨认文件。
-- 装箱明细的 Excel 导出必须按客户核对样表排版，固定输出 `出库信息`、`SN&IMEI`、`各箱型号汇总`、`出库详情` 四个业务工作表；CSV 导出仍按用户勾选字段输出普通明细行。
+- 装箱明细的 Excel 导出默认必须按客户核对样表排版，固定输出 `出库信息`、`SN&IMEI`、`各箱型号汇总`、`出库详情` 四个业务工作表；CSV 导出仍按用户勾选字段输出普通明细行。
+- 装箱明细的 Excel 导出可选择 `已装箱汇总表格`，使用与留仓表相同的左侧明细、右侧按箱汇总逻辑；该模式只改变表格布局，不改变 `OUTBOUND_DETAIL` 数据来源或筛选规则。
+- 库存明细的 Excel 导出可选择 `留仓汇总表格`，该模式只导出 `IN_STOCK` 留仓库存，并按每 24 台自动生成 `留仓箱1`、`留仓箱2` 等虚拟箱号，右侧按 `箱号 + UPC + 型号` 汇总数量。
 
 ## Supported Report Types
 
@@ -50,6 +52,15 @@ The detail-download page should:
 
 For 装箱明细, the default page workflow should offer `仅已封箱` so customer-facing downloads do not include open boxes still being edited.
 When 装箱明细 is exported as Excel, the export uses a fixed customer-facing workbook layout rather than the selected-field table layout. Operators should use this Excel file for customer reconciliation because it groups SN/IMEI by box, includes each box's uploaded outbound shipment or label number, and includes per-box and whole-shipment UPC/model totals.
+If operators need an already-packed internal summary, they may choose the `已装箱汇总表格` Excel
+layout. This layout lists each packed device as `箱数 / upc / 型号 / imei`, labels boxes as
+`已装箱1`, `已装箱2`, and summarizes `箱号 + UPC + 型号` quantities on the right side with a final
+total.
+
+For 留仓明细, operators should choose `库存明细` + `Excel` + `留仓汇总表格`. The page sends
+`inventoryStatus = IN_STOCK`, then the export groups the selected inventory rows into 24-unit
+virtual boxes named `留仓箱1`, `留仓箱2`, and so on. This gives the same table shape as the manual
+留仓 worksheet while keeping the source data in customer inventory.
 
 The outbound packing page may also provide `下载全部数据` for the selected customer/warehouse and a
 per-box `下载数据` shortcut for customer-service order creation before final sealing. These shortcuts

@@ -46,6 +46,13 @@ the quantity merged while still making each device identity easy to review. Curr
 inventory rows do not store a separate quantity column, so each raw item contributes one unit unless
 a quantity value is present on the report row.
 
+When `reportType = INVENTORY_DETAIL`, `format = EXCEL`, and `exportLayout = "WAREHOUSE_HOLD"`, the
+export generates a `留仓汇总` workbook layout for in-warehouse stock review. The frontend pairs this
+layout with `filters.inventoryStatus = "IN_STOCK"` so packed, outbound, exception, and voided
+inventory are excluded. The workbook auto-groups the selected inventory rows into virtual
+`留仓箱1`, `留仓箱2`, ... buckets with 24 devices per box, then uses the same left detail and right
+UPC/model summary structure as the packed-summary layout.
+
 `filters.dateFrom` and `filters.dateTo` are optional ISO datetimes. They filter the report's primary business time: inbound `scannedAt`, outbound `packedAt`, inventory `receivedAt`, exception `createdAt`, customer-change log `createdAt`, and audit log `createdAt`.
 
 For inbound detail downloads, pass `filters.batchId` to download one confirmed inbound batch. When a batch is selected, generated files use the batch number in the file name, for example `inbound_detail-INB-20260622-001-export_01H.csv`.
@@ -112,6 +119,16 @@ When `reportType = OUTBOUND_DETAIL` and `format = EXCEL`, the generated workbook
 - `出库详情`: actual scanned outbound summary with box count, total count, and UPC/model totals.
 
 This outbound Excel layout is fixed so it can match customer-facing packing detail sheets. The selected `fields` list still controls preview and CSV exports, but outbound Excel exports use the complete row data needed to build the four-sheet workbook.
+
+Outbound detail Excel exports can also pass `exportLayout = "PACKED_SUMMARY"` to generate the
+already-packed summary layout. This alternate workbook keeps the same `OUTBOUND_DETAIL` data source
+and filters, but outputs one `已装箱汇总` sheet:
+
+- left table: `箱数`, `upc`, `型号`, `imei`, with one row per packed device and merged box/UPC labels.
+- right table: `箱数 + UPC + 型号` grouped counts, plus a green `总数` row.
+
+When `exportLayout` is omitted or set to `STANDARD`, the existing four-sheet customer reconciliation
+workbook is generated.
 
 To re-download with the same report type, filters, fields, and format, call the same endpoint with:
 

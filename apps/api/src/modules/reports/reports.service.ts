@@ -11,6 +11,7 @@ import { ListInboundBatchOptionsQueryDto } from './dto/list-inbound-batch-option
 import { ListReportExportsQueryDto } from './dto/list-report-exports-query.dto';
 import { PreviewReportDto } from './dto/preview-report.dto';
 import { ReportExportFormat } from './dto/report-export-format';
+import { ReportExportLayout } from './dto/report-export-layout';
 import { ReportFilterDto } from './dto/report-filter.dto';
 import { ReportType } from './dto/report-type';
 import { ReportExportRecord, ReportsRepository } from './reports.repository';
@@ -25,6 +26,7 @@ type ExportMetadata = {
   filters: ReportFilterDto;
   fields: string[];
   format: ReportExportFormat;
+  exportLayout: ReportExportLayout;
   rowCount: number;
   fileName: string;
   contentType: string;
@@ -58,6 +60,17 @@ type ProductSummary = {
   upc: string;
   productName: string;
   count: number;
+};
+
+type HoldSummaryRow = {
+  upc: string;
+  productName: string;
+  imei: string;
+};
+
+type HoldSummaryGroup = {
+  boxLabel: string;
+  rows: HoldSummaryRow[];
 };
 
 type InventoryDetailSummaryRow = {
@@ -109,9 +122,7 @@ export class ReportsService {
     ]);
     const normalizedRows = this.normalizeRowsForReport(dto.reportType, rawSampleRows);
     const estimatedRowCount =
-      dto.reportType === ReportType.INVENTORY_DETAIL
-        ? normalizedRows.length
-        : rawEstimatedRowCount;
+      dto.reportType === ReportType.INVENTORY_DETAIL ? normalizedRows.length : rawEstimatedRowCount;
 
     return {
       reportType: dto.reportType,
@@ -134,6 +145,8 @@ export class ReportsService {
     const sourceMetadata = source ? this.readMetadata(source) : undefined;
     const reportType = source ? (source.reportType as ReportType) : dto.reportType;
     const format = sourceMetadata?.format ?? dto.format;
+    const exportLayout =
+      sourceMetadata?.exportLayout ?? dto.exportLayout ?? ReportExportLayout.STANDARD;
     const filters = sourceMetadata?.filters ?? this.normalizeFilters(dto.filters);
     const fields = sourceMetadata?.fields ?? this.resolveFields(reportType, dto.fields);
 
@@ -144,6 +157,7 @@ export class ReportsService {
         filters,
         fields,
         format,
+        exportLayout,
         rowCount: 0,
         fileName: '',
         contentType: '',
@@ -162,7 +176,7 @@ export class ReportsService {
         throw new BadRequestException('Large reports must be handled by a background job.');
       }
 
-      const normalizedRows = this.normalizeRowsForReport(reportType, rows);
+      const normalizedRows = this.normalizeRowsForReport(reportType, rows, exportLayout);
       const batchFileNamePart = await this.resolveExportFileNamePart(reportType, filters, rows);
       const metadata = this.buildExportMetadata({
         reportType,
@@ -171,6 +185,7 @@ export class ReportsService {
         filters,
         rows: normalizedRows,
         exportId: created.id,
+        exportLayout,
         batchFileNamePart,
       });
       const completed = await this.reportsRepository.updateExport({
@@ -265,6 +280,7 @@ export class ReportsService {
     filters: ReportFilterDto;
     rows: unknown[];
     exportId: string;
+    exportLayout: ReportExportLayout;
     batchFileNamePart?: string;
   }): ExportMetadata {
     const columns = this.getSelectedColumns(input.reportType, input.fields);
@@ -272,8 +288,13 @@ export class ReportsService {
       input.format === ReportExportFormat.CSV
         ? this.toCsv(columns, input.rows)
         : input.reportType === ReportType.OUTBOUND_DETAIL
-          ? this.toOutboundDetailExcelXml(input.rows, input.exportId)
-          : this.toExcelXml(columns, input.rows);
+          ? input.exportLayout === ReportExportLayout.PACKED_SUMMARY
+            ? this.toPackedSummaryExcelXml(input.rows, input.exportId)
+            : this.toOutboundDetailExcelXml(input.rows, input.exportId)
+          : input.reportType === ReportType.INVENTORY_DETAIL &&
+              input.exportLayout === ReportExportLayout.WAREHOUSE_HOLD
+            ? this.toWarehouseHoldExcelXml(input.rows, input.exportId)
+            : this.toExcelXml(columns, input.rows);
     const extension = input.format === ReportExportFormat.CSV ? 'csv' : 'xls';
     const contentType =
       input.format === ReportExportFormat.CSV
@@ -284,9 +305,16 @@ export class ReportsService {
       filters: input.filters,
       fields: input.fields,
       format: input.format,
+      exportLayout: input.exportLayout,
       rowCount: input.rows.length,
       fileName:
-        [input.reportType.toLowerCase(), input.batchFileNamePart, input.exportId]
+        [
+          input.reportType.toLowerCase(),
+          input.exportLayout === ReportExportLayout.PACKED_SUMMARY ? 'packed_summary' : undefined,
+          input.exportLayout === ReportExportLayout.WAREHOUSE_HOLD ? 'warehouse_hold' : undefined,
+          input.batchFileNamePart,
+          input.exportId,
+        ]
           .filter(Boolean)
           .join('-') + `.${extension}`,
       contentType,
@@ -329,6 +357,203 @@ export class ReportsService {
    <Row>${header}</Row>
    ${body}
   </Table>
+ </Worksheet>
+</Workbook>`;
+  }
+
+  private toPackedSummaryExcelXml(rows: unknown[], exportId: string) {
+    const detailRows = this.toOutboundDetailRows(rows);
+    const boxGroups = this.groupOutboundRowsByBox(detailRows);
+    const holdGroups = boxGroups.map((box, boxIndex) => ({
+      boxLabel: `已装箱${boxIndex + 1}`,
+      rows: box.rows.map((row) => ({
+        upc: row.upc,
+        productName: row.productName,
+        imei: row.imei || row.serial,
+      })),
+    }));
+
+    return this.toHoldSummaryExcelXml({
+      exportId,
+      sheetName: '已装箱汇总',
+      groups: holdGroups,
+    });
+  }
+
+  private toWarehouseHoldExcelXml(rows: unknown[], exportId: string) {
+    const detailRows = this.toInventoryHoldRows(rows);
+    const boxGroups = this.chunkHoldRows(detailRows, 24).map((groupRows, index) => ({
+      boxLabel: `留仓箱${index + 1}`,
+      rows: groupRows,
+    }));
+
+    return this.toHoldSummaryExcelXml({
+      exportId,
+      sheetName: '留仓汇总',
+      groups: boxGroups,
+    });
+  }
+
+  private toHoldSummaryExcelXml(input: {
+    exportId: string;
+    sheetName: string;
+    groups: HoldSummaryGroup[];
+  }) {
+    const summaryRows = input.groups.flatMap((box) => {
+      const summaries = this.summarizeProducts(box.rows);
+      return summaries.map((item, summaryIndex) => ({
+        boxLabel: box.boxLabel,
+        boxGroupSize: summaries.length,
+        isFirstBoxSummary: summaryIndex === 0,
+        upc: item.upc,
+        productName: item.productName,
+        count: item.count,
+      }));
+    });
+    const detailDisplayRows = input.groups.flatMap((box) => {
+      const displayRows: Array<{
+        boxLabel: string;
+        boxSize: number;
+        isFirstBoxRow: boolean;
+        upc: string;
+        upcGroupSize: number;
+        isFirstUpcRow: boolean;
+        productName: string;
+        imei: string;
+      }> = [];
+      let cursor = 0;
+      while (cursor < box.rows.length) {
+        const current = box.rows[cursor];
+        if (!current) {
+          break;
+        }
+        const nextDifferentIndex = box.rows
+          .slice(cursor)
+          .findIndex((row) => row.upc !== current.upc || row.productName !== current.productName);
+        const size = nextDifferentIndex === -1 ? box.rows.length - cursor : nextDifferentIndex;
+        for (let index = cursor; index < cursor + size; index += 1) {
+          const row = box.rows[index];
+          if (!row) {
+            continue;
+          }
+          displayRows.push({
+            boxLabel: box.boxLabel,
+            boxSize: box.rows.length,
+            isFirstBoxRow: index === 0,
+            upc: row.upc,
+            upcGroupSize: size,
+            isFirstUpcRow: index === cursor,
+            productName: row.productName,
+            imei: row.imei,
+          });
+        }
+        cursor += size;
+      }
+      return displayRows;
+    });
+
+    const totalCount = input.groups.reduce((sum, group) => sum + group.rows.length, 0);
+    const bodyRowCount = Math.max(detailDisplayRows.length, summaryRows.length + 1);
+    const rowsXml = [
+      this.excelRow([
+        this.excelCell('箱数', 'HoldHeader', { index: 1 }),
+        this.excelCell('upc', 'HoldHeader'),
+        this.excelCell('型号', 'HoldHeader'),
+        this.excelCell('imei', 'HoldHeader'),
+        this.excelCell('箱数', 'HoldHeader', { index: 8 }),
+        this.excelCell('upc', 'HoldHeader'),
+        this.excelCell('型号', 'HoldHeader'),
+        this.excelCell('数量', 'HoldHeader'),
+      ]),
+    ];
+
+    for (let index = 0; index < bodyRowCount; index += 1) {
+      const cells: string[] = [];
+      const detail = detailDisplayRows[index];
+      if (detail) {
+        if (detail.isFirstBoxRow) {
+          cells.push(
+            this.excelCell(detail.boxLabel, 'CenterCell', {
+              index: 1,
+              mergeDown: detail.boxSize > 1 ? detail.boxSize - 1 : undefined,
+            }),
+          );
+        }
+        if (detail.isFirstUpcRow) {
+          cells.push(
+            this.excelCell(detail.upc, 'Cell', {
+              index: detail.isFirstBoxRow ? undefined : 2,
+              mergeDown: detail.upcGroupSize > 1 ? detail.upcGroupSize - 1 : undefined,
+            }),
+          );
+        }
+        cells.push(
+          this.excelCell(detail.productName, 'Cell', {
+            index: detail.isFirstUpcRow ? undefined : 3,
+          }),
+          this.excelCell(detail.imei, 'Cell'),
+        );
+      }
+
+      const summary = summaryRows[index];
+      if (summary) {
+        if (summary.isFirstBoxSummary) {
+          cells.push(
+            this.excelCell(summary.boxLabel, 'CenterCell', {
+              index: 8,
+              mergeDown: summary.boxGroupSize > 1 ? summary.boxGroupSize - 1 : undefined,
+            }),
+          );
+        }
+        cells.push(
+          this.excelCell(summary.upc, 'Cell', {
+            index: summary.isFirstBoxSummary ? undefined : 9,
+          }),
+          this.excelCell(summary.productName, 'Cell'),
+          this.excelCell(summary.count, 'CenterCell', { type: 'Number' }),
+        );
+      } else if (index === summaryRows.length) {
+        cells.push(
+          this.excelCell('', 'HoldTotal', { index: 8 }),
+          this.excelCell('', 'HoldTotal'),
+          this.excelCell('总数', 'HoldTotal'),
+          this.excelCell(totalCount, 'HoldTotal', { type: 'Number' }),
+        );
+      }
+      rowsXml.push(this.excelRow(cells));
+    }
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ ${this.outboundWorkbookStyles()}
+ <Worksheet ss:Name="${this.escapeXml(input.sheetName)}">
+  <Table>
+   <Column ss:Width="76"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="260"/>
+   <Column ss:Width="145"/>
+   <Column ss:Width="25"/>
+   <Column ss:Width="25"/>
+   <Column ss:Width="25"/>
+   <Column ss:Width="76"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="260"/>
+   <Column ss:Width="70"/>
+   ${rowsXml.join('\n   ')}
+  </Table>
+ </Worksheet>
+ <Worksheet ss:Name="_metadata">
+  <Table>
+   <Row>${this.excelCell('Export ID', 'Header')}</Row>
+   <Row>${this.excelCell(input.exportId)}</Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <Visible>SheetHidden</Visible>
+  </WorksheetOptions>
  </Worksheet>
 </Workbook>`;
   }
@@ -417,6 +642,12 @@ export class ReportsService {
    <Interior ss:Color="#BFDBFE" ss:Pattern="Solid"/>
    <Borders>${this.thinBorders()}</Borders>
   </Style>
+  <Style ss:ID="HoldHeader">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>
+   <Interior ss:Color="#FFFF00" ss:Pattern="Solid"/>
+   <Borders>${this.thinBorders()}</Borders>
+  </Style>
   <Style ss:ID="Cell">
    <Alignment ss:Vertical="Center"/>
    <Borders>${this.thinBorders()}</Borders>
@@ -429,6 +660,12 @@ export class ReportsService {
    <Alignment ss:Vertical="Center"/>
    <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>
    <Interior ss:Color="#E0F2FE" ss:Pattern="Solid"/>
+   <Borders>${this.thinBorders()}</Borders>
+  </Style>
+  <Style ss:ID="HoldTotal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>
+   <Interior ss:Color="#00B050" ss:Pattern="Solid"/>
    <Borders>${this.thinBorders()}</Borders>
   </Style>
  </Styles>`;
@@ -657,11 +894,18 @@ export class ReportsService {
   private excelCell(
     value: string | number,
     styleId = 'Cell',
-    options: { type?: 'String' | 'Number'; mergeAcross?: number } = {},
+    options: {
+      type?: 'String' | 'Number';
+      mergeAcross?: number;
+      mergeDown?: number;
+      index?: number;
+    } = {},
   ) {
     const type = options.type ?? (typeof value === 'number' ? 'Number' : 'String');
+    const indexAttr = options.index ? ` ss:Index="${options.index}"` : '';
     const mergeAttr = options.mergeAcross ? ` ss:MergeAcross="${options.mergeAcross}"` : '';
-    return `<Cell ss:StyleID="${styleId}"${mergeAttr}><Data ss:Type="${type}">${this.escapeXml(
+    const mergeDownAttr = options.mergeDown ? ` ss:MergeDown="${options.mergeDown}"` : '';
+    return `<Cell${indexAttr} ss:StyleID="${styleId}"${mergeAttr}${mergeDownAttr}><Data ss:Type="${type}">${this.escapeXml(
       String(value),
     )}</Data></Cell>`;
   }
@@ -677,9 +921,7 @@ export class ReportsService {
     return rows.map((row) => ({
       boxNo: this.formatValue(this.readPath(row, 'outboundBox', 'boxNo')),
       boxName: this.formatValue(this.readPath(row, 'outboundBox', 'boxName')),
-      shippingTrackingNo: this.formatValue(
-        this.readPath(row, 'outboundBox', 'shippingTrackingNo'),
-      ),
+      shippingTrackingNo: this.formatValue(this.readPath(row, 'outboundBox', 'shippingTrackingNo')),
       customerCode: this.formatValue(this.readPath(row, 'outboundBox', 'customer', 'code')),
       customerName: this.formatValue(this.readPath(row, 'outboundBox', 'customer', 'name')),
       warehouseCode: this.formatValue(this.readPath(row, 'outboundBox', 'warehouse', 'code')),
@@ -716,7 +958,7 @@ export class ReportsService {
     return [...groups.values()];
   }
 
-  private summarizeProducts(rows: OutboundDetailExportRow[]): ProductSummary[] {
+  private summarizeProducts(rows: Array<{ upc: string; productName: string }>): ProductSummary[] {
     const summaries = new Map<string, ProductSummary>();
     rows.forEach((row) => {
       const key = `${row.upc}::${row.productName}`;
@@ -768,11 +1010,36 @@ export class ReportsService {
     });
   }
 
-  private normalizeRowsForReport(reportType: ReportType, rows: unknown[]) {
-    if (reportType !== ReportType.INVENTORY_DETAIL) {
+  private normalizeRowsForReport(
+    reportType: ReportType,
+    rows: unknown[],
+    exportLayout = ReportExportLayout.STANDARD,
+  ) {
+    if (
+      reportType !== ReportType.INVENTORY_DETAIL ||
+      exportLayout === ReportExportLayout.WAREHOUSE_HOLD
+    ) {
       return rows;
     }
     return this.toInventoryDetailSummaryRows(rows);
+  }
+
+  private toInventoryHoldRows(rows: unknown[]): HoldSummaryRow[] {
+    return rows.map((row) => ({
+      upc: this.formatValue(this.readPath(row, 'upc')),
+      productName: this.formatValue(
+        this.readPath(row, 'product', 'name') || this.readPath(row, 'productName'),
+      ),
+      imei: this.formatValue(this.readPath(row, 'imei') || this.readPath(row, 'serial')),
+    }));
+  }
+
+  private chunkHoldRows(rows: HoldSummaryRow[], size: number) {
+    const chunks: HoldSummaryRow[][] = [];
+    for (let index = 0; index < rows.length; index += size) {
+      chunks.push(rows.slice(index, index + size));
+    }
+    return chunks;
   }
 
   private toInventoryDetailSummaryRows(rows: unknown[]): InventoryDetailSummaryRow[] {
@@ -1059,6 +1326,7 @@ export class ReportsService {
       filters: metadata.filters,
       fields: metadata.fields,
       format: metadata.format,
+      exportLayout: metadata.exportLayout,
       rowCount: metadata.rowCount,
       fileName: metadata.fileName || null,
       fileUrl: reportExport.fileUrl,
@@ -1083,6 +1351,8 @@ export class ReportsService {
       filters: (raw?.filters as ReportFilterDto | undefined) ?? {},
       fields: Array.isArray(raw?.fields) ? (raw.fields as string[]) : [],
       format: (raw?.format as ReportExportFormat | undefined) ?? ReportExportFormat.CSV,
+      exportLayout:
+        (raw?.exportLayout as ReportExportLayout | undefined) ?? ReportExportLayout.STANDARD,
       rowCount: typeof raw?.rowCount === 'number' ? raw.rowCount : 0,
       fileName: typeof raw?.fileName === 'string' ? raw.fileName : '',
       contentType: typeof raw?.contentType === 'string' ? raw.contentType : '',
@@ -1117,6 +1387,7 @@ export class ReportsService {
       filters: metadata.filters as Prisma.InputJsonObject,
       fields: metadata.fields,
       format: metadata.format,
+      exportLayout: metadata.exportLayout,
       rowCount: metadata.rowCount,
       fileName: metadata.fileName,
       contentType: metadata.contentType,

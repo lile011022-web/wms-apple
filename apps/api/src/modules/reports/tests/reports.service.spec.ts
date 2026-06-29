@@ -3,6 +3,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ReportsRepository } from '../reports.repository';
 import { ReportsService } from '../reports.service';
 import { ReportExportFormat } from '../dto/report-export-format';
+import { ReportExportLayout } from '../dto/report-export-layout';
 import { ReportType } from '../dto/report-type';
 
 const now = new Date('2026-06-17T00:00:00Z');
@@ -299,18 +300,12 @@ describe('ReportsService', () => {
     expect(completedPayload.metadata.fileContent).toContain(
       '1Z999AA10123456784,194253149189,共 5 台，已列 2 个 IMEI,iPhone 16 Pro,5',
     );
-    expect(completedPayload.metadata.fileContent).toContain(
-      ',,356789012345678,,',
-    );
-    expect(completedPayload.metadata.fileContent).toContain(
-      ',,356789012345679,,',
-    );
+    expect(completedPayload.metadata.fileContent).toContain(',,356789012345678,,');
+    expect(completedPayload.metadata.fileContent).toContain(',,356789012345679,,');
     expect(completedPayload.metadata.fileContent).toContain(
       '1Z999AA10123456785,194253149189,共 4 台，已列 1 个 IMEI,iPhone 16 Pro,4',
     );
-    expect(completedPayload.metadata.fileContent).toContain(
-      ',,356789012345680,,',
-    );
+    expect(completedPayload.metadata.fileContent).toContain(',,356789012345680,,');
   });
 
   it('includes box notes and uploaded tracking number in outbound detail downloads', async () => {
@@ -376,6 +371,89 @@ describe('ReportsService', () => {
     expect(completedPayload.metadata.fileContent).toContain('实际扫描总数：');
     expect(completedPayload.metadata.fileContent).toContain(
       '<Cell ss:StyleID="Total"><Data ss:Type="Number">2</Data></Cell>',
+    );
+  });
+
+  it('formats outbound detail Excel as the packed summary workbook layout', async () => {
+    const { repository, service } = createService({
+      findRows: jest.fn().mockResolvedValue([outboundRowSecondBox, outboundRow]),
+    });
+
+    await expect(
+      service.createExport(
+        {
+          reportType: ReportType.OUTBOUND_DETAIL,
+          format: ReportExportFormat.EXCEL,
+          exportLayout: ReportExportLayout.PACKED_SUMMARY,
+          filters: { outboundStatus: 'SEALED' },
+          fields: ['boxNo', 'imei'],
+        },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      fileName: 'outbound_detail-packed_summary-export-1.xls',
+      rowCount: 2,
+    });
+
+    const completedCall = repository.updateExport.mock.calls[0];
+    expect(completedCall).toBeDefined();
+    const completedPayload = completedCall![0].filters as {
+      contentType: string;
+      metadata: { fileContent: string };
+    };
+
+    expect(completedPayload.contentType).toBe('application/vnd.ms-excel; charset=utf-8');
+    expect(completedPayload.metadata.fileContent).toContain('<Worksheet ss:Name="已装箱汇总">');
+    expect(completedPayload.metadata.fileContent).not.toContain('<Worksheet ss:Name="出库信息">');
+    expect(completedPayload.metadata.fileContent).toContain('箱数');
+    expect(completedPayload.metadata.fileContent).toContain('已装箱1');
+    expect(completedPayload.metadata.fileContent).toContain('已装箱2');
+    expect(completedPayload.metadata.fileContent).toContain('SH9LRL91YFC');
+    expect(completedPayload.metadata.fileContent).toContain('356789012345679');
+    expect(completedPayload.metadata.fileContent).toContain('总数');
+    expect(completedPayload.metadata.fileContent).toContain(
+      '<Cell ss:StyleID="HoldTotal"><Data ss:Type="Number">2</Data></Cell>',
+    );
+  });
+
+  it('formats inventory detail Excel as the warehouse hold summary workbook layout', async () => {
+    const { repository, service } = createService({
+      findRows: jest.fn().mockResolvedValue([inventoryRow, inventoryRowSameProduct]),
+    });
+
+    await expect(
+      service.createExport(
+        {
+          reportType: ReportType.INVENTORY_DETAIL,
+          format: ReportExportFormat.EXCEL,
+          exportLayout: ReportExportLayout.WAREHOUSE_HOLD,
+          filters: { inventoryStatus: 'IN_STOCK' },
+          fields: ['upc', 'imei', 'productName', 'quantity'],
+        },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      fileName: 'inventory_detail-warehouse_hold-export-1.xls',
+      rowCount: 2,
+    });
+
+    const completedCall = repository.updateExport.mock.calls[0];
+    expect(completedCall).toBeDefined();
+    const completedPayload = completedCall![0].filters as {
+      contentType: string;
+      metadata: { fileContent: string };
+    };
+
+    expect(completedPayload.contentType).toBe('application/vnd.ms-excel; charset=utf-8');
+    expect(completedPayload.metadata.fileContent).toContain('<Worksheet ss:Name="留仓汇总">');
+    expect(completedPayload.metadata.fileContent).toContain('留仓箱1');
+    expect(completedPayload.metadata.fileContent).toContain('194253149189');
+    expect(completedPayload.metadata.fileContent).toContain('iPhone 16 Pro');
+    expect(completedPayload.metadata.fileContent).toContain('356789012345678');
+    expect(completedPayload.metadata.fileContent).toContain('356789012345679');
+    expect(completedPayload.metadata.fileContent).toContain('总数');
+    expect(completedPayload.metadata.fileContent).toContain(
+      '<Cell ss:StyleID="HoldTotal"><Data ss:Type="Number">2</Data></Cell>',
     );
   });
 
