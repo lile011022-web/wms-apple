@@ -40,7 +40,7 @@ Rules:
 - Generated box numbers and names do not use random suffixes.
 - Custom visible box names cannot be empty and must stay unique among non-voided boxes inside the
   same warehouse.
-- `sizePreset` supports `12*12*12`, `14*14*14`, and `CUSTOM`.
+- `sizePreset` supports `12*12*12`, `16*16*12`, `18*18*12`, `18*18*16`, and `CUSTOM`.
 - `customSize` is required when `sizePreset` is `CUSTOM`.
 - `weightLb` defaults to `45` and is stored in pounds.
 - Box creation writes an `OUTBOUND_BOX_CREATE` audit log.
@@ -81,6 +81,8 @@ Query parameters:
 - `customerId`: optional.
 - `warehouseId`: optional.
 - `status`: optional `OPEN`, `SEALED`, or `VOIDED`.
+- `createdFrom`: optional ISO datetime lower bound for box `createdAt`.
+- `createdTo`: optional ISO datetime upper bound for box `createdAt`.
 - `search`: optional box number, customer code, or customer name search.
 - `page`, `pageSize`, `sortBy`, `sortOrder`: standard pagination and sorting.
 
@@ -114,9 +116,21 @@ The outbound packing page can create an `OUTBOUND_DETAIL` Excel export for the s
 warehouse, or for one box by adding `filters.boxNo = <boxNo>`, without `filters.outboundStatus`.
 This is a customer-service data handoff only and does not change any box status.
 
+When operators tick multiple created boxes on the outbound packing page, the page can create one
+`OUTBOUND_DETAIL` Excel export by sending `filters.boxNos = ["BOX-...", "BOX-..."]`. The backend
+filters exact box numbers and returns one workbook containing only those selected boxes.
+
 The created-box list groups boxes on the frontend by the visible box name's task header. The task
 header is derived from the text before the trailing `箱{SEQUENCE}` pattern, so no extra API field is
 required for existing boxes to appear under task groups.
+
+The outbound packing page uses these filters to keep the created-box area from growing endlessly:
+
+- Default view sends `status = OPEN` and shows only unfinished boxes.
+- `仓库今日` and `近7仓库日` send `createdFrom` / `createdTo` ranges calculated from the selected
+  warehouse timezone.
+- `已封箱` sends `status = SEALED`.
+- `全部历史` omits `status` and date range, except voided boxes remain excluded by default.
 
 ## GET /outbound/available-items
 
@@ -126,7 +140,7 @@ Query parameters:
 
 - `customerId`: required.
 - `warehouseId`: optional.
-- `search`: optional search across UPS, UPC, IMEI, Serial, SKU, and product name.
+- `search`: optional search across customer code/name, UPS, UPC, IMEI, Serial, SKU, and product name.
 - `upc`, `imei`, `serial`, `upsTrackingNo`: optional field filters.
 - `page`, `pageSize`, `sortBy`, `sortOrder`: standard inventory pagination and sorting.
 
@@ -142,8 +156,15 @@ Frontend packing modes reuse this endpoint:
   filtered total, allows operators to edit each planned box's visible name in the preview, then
   creates boxes and calls `POST /outbound/boxes/:id/items` for each assigned row.
 
-Available-item rows include the inventory `receivedAt` time. The outbound packing page displays it
-as 入库时间 in the customer inventory table and in the batch packing per-box preview.
+Available-item rows include the inventory `receivedAt` time and customer block. The outbound packing
+page displays them as 入库时间 and 客户 in the customer inventory table and uses received time in the
+batch packing per-box preview.
+
+For the outbound packing page's all-customer lookup mode, the frontend does not call
+`GET /outbound/available-items` because that endpoint remains customer-scoped for packing safety.
+Instead it calls `GET /inventory/items` without `customerId`, with optional `search`, then renders
+the returned customer/status/box context as read-only global lookup results. Packing actions still
+use the customer-scoped outbound endpoints after the operator switches to a specific customer.
 
 ## POST /outbound/boxes/:id/items
 

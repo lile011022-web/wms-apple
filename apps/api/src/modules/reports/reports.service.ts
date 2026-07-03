@@ -8,6 +8,7 @@ import { Prisma, ReportExportStatus } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { CreateReportExportDto } from './dto/create-report-export.dto';
 import { ListInboundBatchOptionsQueryDto } from './dto/list-inbound-batch-options-query.dto';
+import { ListOutboundBoxOptionsQueryDto } from './dto/list-outbound-box-options-query.dto';
 import { ListReportExportsQueryDto } from './dto/list-report-exports-query.dto';
 import { PreviewReportDto } from './dto/preview-report.dto';
 import { ReportExportFormat } from './dto/report-export-format';
@@ -38,11 +39,13 @@ type OutboundDetailExportRow = {
   boxNo: string;
   boxName: string;
   shippingTrackingNo: string;
+  destinationAddress: string;
   customerCode: string;
   customerName: string;
   warehouseCode: string;
   productName: string;
   upc: string;
+  upsTrackingNo: string;
   imei: string;
   serial: string;
   packedAt: Date | null;
@@ -75,6 +78,7 @@ type HoldSummaryGroup = {
 
 type InventoryDetailSummaryRow = {
   upsTrackingNo: string;
+  receivedAt: Date | string | null;
   upc: string;
   imei: string;
   productName: string;
@@ -111,6 +115,42 @@ export class ReportsService {
     };
   }
 
+  async listOutboundBoxOptions(query: ListOutboundBoxOptionsQueryDto) {
+    const [total, boxes] = await this.reportsRepository.findOutboundBoxOptions({
+      customerId: this.trimOptional(query.customerId),
+      warehouseId: this.trimOptional(query.warehouseId),
+      outboundStatus: query.outboundStatus,
+      sizePreset: this.trimOptional(query.sizePreset),
+      dateFrom: this.trimOptional(query.dateFrom),
+      dateTo: this.trimOptional(query.dateTo),
+      search: this.trimOptional(query.search),
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    });
+
+    return {
+      items: boxes.map((box) => ({
+        id: box.id,
+        boxNo: box.boxNo,
+        boxName: box.boxName,
+        sizePreset: box.sizePreset,
+        customSize: box.customSize,
+        shippingTrackingNo: box.shippingTrackingNo,
+        status: box.status,
+        sealedAt: box.sealedAt,
+        createdAt: box.createdAt,
+        updatedAt: box.updatedAt,
+        customer: box.customer,
+        warehouse: box.warehouse,
+        itemCount: box._count.items,
+        label: `${box.boxNo}${box.boxName ? ` / ${box.boxName}` : ''} / ${box.customer.code} / ${box._count.items} 件`,
+      })),
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+    };
+  }
+
   async preview(dto: PreviewReportDto) {
     const filters = this.normalizeFilters(dto.filters);
     const fields = this.resolveFields(dto.reportType, dto.fields);
@@ -120,7 +160,10 @@ export class ReportsService {
       this.reportsRepository.countRows(dto.reportType, filters),
       this.reportsRepository.findRows(dto.reportType, filters, previewTake),
     ]);
-    const normalizedRows = this.normalizeRowsForReport(dto.reportType, rawSampleRows);
+    const normalizedRows = this.normalizeRowsForReport(dto.reportType, rawSampleRows, {
+      exportLayout: ReportExportLayout.STANDARD,
+      fields,
+    });
     const estimatedRowCount =
       dto.reportType === ReportType.INVENTORY_DETAIL ? normalizedRows.length : rawEstimatedRowCount;
 
@@ -176,7 +219,10 @@ export class ReportsService {
         throw new BadRequestException('Large reports must be handled by a background job.');
       }
 
-      const normalizedRows = this.normalizeRowsForReport(reportType, rows, exportLayout);
+      const normalizedRows = this.normalizeRowsForReport(reportType, rows, {
+        exportLayout,
+        fields,
+      });
       const batchFileNamePart = await this.resolveExportFileNamePart(reportType, filters, rows);
       const metadata = this.buildExportMetadata({
         reportType,
@@ -287,14 +333,17 @@ export class ReportsService {
     const content =
       input.format === ReportExportFormat.CSV
         ? this.toCsv(columns, input.rows)
-        : input.reportType === ReportType.OUTBOUND_DETAIL
-          ? input.exportLayout === ReportExportLayout.PACKED_SUMMARY
-            ? this.toPackedSummaryExcelXml(input.rows, input.exportId)
-            : this.toOutboundDetailExcelXml(input.rows, input.exportId)
-          : input.reportType === ReportType.INVENTORY_DETAIL &&
-              input.exportLayout === ReportExportLayout.WAREHOUSE_HOLD
-            ? this.toWarehouseHoldExcelXml(input.rows, input.exportId)
-            : this.toExcelXml(columns, input.rows);
+        : input.reportType === ReportType.INBOUND_DETAIL &&
+            input.exportLayout === ReportExportLayout.INBOUND_REGISTRATION
+          ? this.toExcelXml(this.getInboundRegistrationColumns(), input.rows)
+          : input.reportType === ReportType.OUTBOUND_DETAIL
+            ? input.exportLayout === ReportExportLayout.PACKED_SUMMARY
+              ? this.toPackedSummaryExcelXml(input.rows, input.exportId)
+              : this.toOutboundDetailExcelXml(input.rows, input.exportId)
+            : input.reportType === ReportType.INVENTORY_DETAIL &&
+                input.exportLayout === ReportExportLayout.WAREHOUSE_HOLD
+              ? this.toWarehouseHoldExcelXml(input.rows, input.exportId)
+              : this.toExcelXml(columns, input.rows);
     const extension = input.format === ReportExportFormat.CSV ? 'csv' : 'xls';
     const contentType =
       input.format === ReportExportFormat.CSV
@@ -310,6 +359,9 @@ export class ReportsService {
       fileName:
         [
           input.reportType.toLowerCase(),
+          input.exportLayout === ReportExportLayout.INBOUND_REGISTRATION
+            ? 'inbound_registration'
+            : undefined,
           input.exportLayout === ReportExportLayout.PACKED_SUMMARY ? 'packed_summary' : undefined,
           input.exportLayout === ReportExportLayout.WAREHOUSE_HOLD ? 'warehouse_hold' : undefined,
           input.batchFileNamePart,
@@ -331,6 +383,41 @@ export class ReportsService {
       ),
     ];
     return lines.join('\n');
+  }
+
+  private getInboundRegistrationColumns(): ReportColumn[] {
+    return [
+      {
+        key: 'scannedAt',
+        title: '入库时间',
+        read: (row) => this.readPath(row, 'scannedAt'),
+      },
+      {
+        key: 'upsTrackingNo',
+        title: '单号',
+        read: (row) => this.readPath(row, 'upsTrackingNo'),
+      },
+      {
+        key: 'upc',
+        title: 'UPC',
+        read: (row) => this.readPath(row, 'upc'),
+      },
+      {
+        key: 'imei',
+        title: 'IMEI',
+        read: (row) => this.readPath(row, 'imei') || this.readPath(row, 'serial'),
+      },
+      {
+        key: 'productName',
+        title: '商品名称',
+        read: (row) => this.readPath(row, 'product', 'name'),
+      },
+      {
+        key: 'quantity',
+        title: '数量',
+        read: () => 1,
+      },
+    ];
   }
 
   private toExcelXml(columns: ReportColumn[], rows: unknown[]) {
@@ -566,6 +653,7 @@ export class ReportsService {
     const customerName = this.joinUnique(
       detailRows.map((row) => row.customerName || row.customerCode).filter(Boolean),
     );
+    const destinationAddress = '';
     const productSummaries = this.summarizeProducts(detailRows);
 
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -578,6 +666,7 @@ export class ReportsService {
  ${this.outboundInfoWorksheet({
    outboundId,
    customerName,
+   destinationAddress,
    outboundDate,
    totalCount: detailRows.length,
    productSummaries,
@@ -607,7 +696,7 @@ export class ReportsService {
   private outboundWorkbookStyles() {
     return `<Styles>
   <Style ss:ID="Default" ss:Name="Normal">
-   <Alignment ss:Vertical="Center"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
    <Font ss:FontName="Calibri" ss:Size="11"/>
   </Style>
   <Style ss:ID="Title">
@@ -621,18 +710,18 @@ export class ReportsService {
    <Interior ss:Color="#1D4ED8" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="InfoLabel">
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
    <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>
    <Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/>
    <Borders>${this.thinBorders()}</Borders>
   </Style>
   <Style ss:ID="InfoValue">
-   <Alignment ss:Vertical="Center"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
    <Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/>
    <Borders>${this.thinBorders()}</Borders>
   </Style>
   <Style ss:ID="BoxTitle">
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
    <Font ss:FontName="Calibri" ss:Size="12" ss:Bold="1" ss:Color="#FFFFFF"/>
    <Interior ss:Color="#1E3A5F" ss:Pattern="Solid"/>
   </Style>
@@ -649,7 +738,7 @@ export class ReportsService {
    <Borders>${this.thinBorders()}</Borders>
   </Style>
   <Style ss:ID="Cell">
-   <Alignment ss:Vertical="Center"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
    <Borders>${this.thinBorders()}</Borders>
   </Style>
   <Style ss:ID="CenterCell">
@@ -657,13 +746,13 @@ export class ReportsService {
    <Borders>${this.thinBorders()}</Borders>
   </Style>
   <Style ss:ID="Total">
-   <Alignment ss:Vertical="Center"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
    <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>
    <Interior ss:Color="#E0F2FE" ss:Pattern="Solid"/>
    <Borders>${this.thinBorders()}</Borders>
   </Style>
   <Style ss:ID="HoldTotal">
-   <Alignment ss:Vertical="Center"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
    <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>
    <Interior ss:Color="#00B050" ss:Pattern="Solid"/>
    <Borders>${this.thinBorders()}</Borders>
@@ -674,6 +763,7 @@ export class ReportsService {
   private outboundInfoWorksheet(input: {
     outboundId: string;
     customerName: string;
+    destinationAddress: string;
     outboundDate: string;
     totalCount: number;
     productSummaries: ProductSummary[];
@@ -681,8 +771,8 @@ export class ReportsService {
     const rows = [
       this.excelRow([this.excelCell('出库记录详情', 'Title', { mergeAcross: 3 })], 28),
       this.infoRow('出库ID：', input.outboundId, 2),
-      this.infoRow('销售客户：', input.customerName, 2),
-      this.infoRow('目的地：', '', 2),
+      this.infoRow('归属客户：', input.customerName, 2),
+      this.infoRow('实际送到地址：', input.destinationAddress, 2),
       this.infoRow('出库日期：', input.outboundDate, 2),
       this.infoRow('出库总数量：', input.totalCount, 2),
       this.excelRow([]),
@@ -723,7 +813,7 @@ export class ReportsService {
       this.excelRow(
         [
           this.excelCell(`SN & IMEI 明细  -  ${input.outboundId}`, 'SheetTitle', {
-            mergeAcross: 3,
+            mergeAcross: 4,
           }),
         ],
         25,
@@ -738,16 +828,17 @@ export class ReportsService {
         this.excelRow(
           [
             this.excelCell(`第 ${boxIndex + 1} 箱  （${box.rows.length} 件）`, 'BoxTitle', {
-              mergeAcross: 3,
+              mergeAcross: 4,
             }),
           ],
           22,
         ),
-        this.infoRow('上传单号：', box.shippingTrackingNo || '-', 2),
+        this.infoRow('上传单号：', box.shippingTrackingNo || '-', 3),
       );
       rows.push(
         this.excelRow([
           this.excelCell('序号', 'Header'),
+          this.excelCell('单号', 'Header'),
           this.excelCell('UPC', 'Header'),
           this.excelCell('SN', 'Header'),
           this.excelCell('IMEI', 'Header'),
@@ -757,6 +848,7 @@ export class ReportsService {
         rows.push(
           this.excelRow([
             this.excelCell(rowIndex + 1, 'CenterCell', { type: 'Number' }),
+            this.excelCell(row.upsTrackingNo, 'Cell'),
             this.excelCell(row.upc, 'Cell'),
             this.excelCell(row.serial, 'Cell'),
             this.excelCell(row.imei, 'Cell'),
@@ -768,6 +860,7 @@ export class ReportsService {
     return `<Worksheet ss:Name="SN&amp;IMEI">
   <Table>
    <Column ss:Width="54"/>
+   <Column ss:Width="145"/>
    <Column ss:Width="145"/>
    <Column ss:Width="159"/>
    <Column ss:Width="159"/>
@@ -846,7 +939,7 @@ export class ReportsService {
         25,
       ),
       this.infoRow('出库ID：', input.outboundId, 1),
-      this.infoRow('销售客户：', input.customerName, 1),
+      this.infoRow('归属客户：', input.customerName, 1),
       this.infoRow('出库日期：', input.outboundDate, 1),
       this.infoRow('箱数：', input.boxCount, 1),
       this.infoRow('实际扫描总数：', input.totalCount, 1),
@@ -922,11 +1015,13 @@ export class ReportsService {
       boxNo: this.formatValue(this.readPath(row, 'outboundBox', 'boxNo')),
       boxName: this.formatValue(this.readPath(row, 'outboundBox', 'boxName')),
       shippingTrackingNo: this.formatValue(this.readPath(row, 'outboundBox', 'shippingTrackingNo')),
+      destinationAddress: '',
       customerCode: this.formatValue(this.readPath(row, 'outboundBox', 'customer', 'code')),
       customerName: this.formatValue(this.readPath(row, 'outboundBox', 'customer', 'name')),
       warehouseCode: this.formatValue(this.readPath(row, 'outboundBox', 'warehouse', 'code')),
       productName: this.formatValue(this.readPath(row, 'inventoryItem', 'product', 'name')),
       upc: this.formatValue(this.readPath(row, 'inventoryItem', 'upc')),
+      upsTrackingNo: this.formatValue(this.readPath(row, 'inventoryItem', 'upsTrackingNo')),
       imei: this.formatValue(this.readPath(row, 'inventoryItem', 'imei')),
       serial: this.formatValue(this.readPath(row, 'inventoryItem', 'serial')),
       packedAt: this.toDateOrNull(this.readPath(row, 'packedAt')),
@@ -991,12 +1086,20 @@ export class ReportsService {
     const allowed = new Set(columns.map((column) => column.key));
     const fields = requestedFields?.length
       ? [...new Set(requestedFields.map((field) => field.trim()).filter(Boolean))]
-      : columns.map((column) => column.key);
+      : this.getDefaultFields(reportType);
     const rejected = fields.filter((field) => !allowed.has(field));
     if (rejected.length) {
       throw new BadRequestException(`Unsupported report fields: ${rejected.join(', ')}.`);
     }
     return fields;
+  }
+
+  private getDefaultFields(reportType: ReportType) {
+    if (reportType === ReportType.INVENTORY_DETAIL) {
+      return ['upsTrackingNo', 'receivedAt', 'upc', 'imei', 'productName', 'quantity'];
+    }
+
+    return this.getColumns(reportType).map((column) => column.key);
   }
 
   private getSelectedColumns(reportType: ReportType, fields: string[]) {
@@ -1013,15 +1116,29 @@ export class ReportsService {
   private normalizeRowsForReport(
     reportType: ReportType,
     rows: unknown[],
-    exportLayout = ReportExportLayout.STANDARD,
+    options: {
+      exportLayout?: ReportExportLayout;
+      fields?: string[];
+    } = {},
   ) {
     if (
       reportType !== ReportType.INVENTORY_DETAIL ||
-      exportLayout === ReportExportLayout.WAREHOUSE_HOLD
+      options.exportLayout === ReportExportLayout.WAREHOUSE_HOLD ||
+      !this.shouldSummarizeInventoryDetail(options.fields)
     ) {
       return rows;
     }
     return this.toInventoryDetailSummaryRows(rows);
+  }
+
+  private shouldSummarizeInventoryDetail(fields?: string[]) {
+    const defaultFields = this.getDefaultFields(ReportType.INVENTORY_DETAIL);
+    const normalizedFields = fields?.length ? fields : defaultFields;
+
+    return (
+      normalizedFields.length === defaultFields.length &&
+      normalizedFields.every((field, index) => field === defaultFields[index])
+    );
   }
 
   private toInventoryHoldRows(rows: unknown[]): HoldSummaryRow[] {
@@ -1047,6 +1164,7 @@ export class ReportsService {
       string,
       {
         upc: string;
+        receivedAt: Date | string | null;
         productName: string;
         trackingNumbers: Set<string>;
         identities: Set<string>;
@@ -1059,18 +1177,21 @@ export class ReportsService {
       const productName = this.formatValue(
         this.readPath(row, 'product', 'name') || this.readPath(row, 'productName'),
       );
+      const receivedAt = this.readPath(row, 'receivedAt') as Date | string | null;
       const trackingNo = this.formatValue(this.readPath(row, 'upsTrackingNo'));
       const key = `${trackingNo}::${upc}::${productName}`;
       const group =
         groups.get(key) ??
         ({
           upc,
+          receivedAt,
           productName,
           trackingNumbers: new Set<string>(),
           identities: new Set<string>(),
           quantity: 0,
         } satisfies {
           upc: string;
+          receivedAt: Date | string | null;
           productName: string;
           trackingNumbers: Set<string>;
           identities: Set<string>;
@@ -1093,6 +1214,7 @@ export class ReportsService {
       const shouldExpand = group.quantity > 1 || identities.length > 1;
       const summaryRow = {
         upsTrackingNo: this.formatAggregatedValues(group.trackingNumbers),
+        receivedAt: group.receivedAt,
         upc: group.upc,
         imei: shouldExpand
           ? this.formatInventorySummaryIdentity(group.quantity, identities.length)
@@ -1109,6 +1231,7 @@ export class ReportsService {
         summaryRow,
         ...identities.map((identity) => ({
           upsTrackingNo: '',
+          receivedAt: null,
           upc: '',
           imei: identity,
           productName: '',
@@ -1195,12 +1318,19 @@ export class ReportsService {
       ],
       [ReportType.INVENTORY_DETAIL]: [
         field('upsTrackingNo', '单号', 'upsTrackingNo'),
+        field('customerCode', '客户代码', 'customer', 'code'),
+        field('customerName', '客户名称', 'customer', 'name'),
+        field('inboundBatchNo', '入库单号', 'inboundBatch', 'batchNo'),
+        computedField('outboundBoxNo', '出单号/箱号', (row) =>
+          this.readPath(row, 'outboundBoxItems', 0, 'outboundBox', 'boxNo'),
+        ),
         field('upc', 'UPC', 'upc'),
         computedField(
           'imei',
           'IMEI',
           (row) => this.readPath(row, 'imei') || this.readPath(row, 'serial'),
         ),
+        field('modelCode', '型号代码', 'product', 'modelCode'),
         computedField(
           'productName',
           '商品名称',
@@ -1211,6 +1341,9 @@ export class ReportsService {
           '数量',
           (row) => this.readPath(row, 'quantity') ?? this.readQuantity(row),
         ),
+        field('scannedAt', '扫描时间', 'inboundItem', 'scannedAt'),
+        field('receivedAt', '入库时间', 'receivedAt'),
+        field('status', '状态', 'status'),
       ],
       [ReportType.EXCEPTION_DETAIL]: [
         field('type', 'Exception Type', 'type'),
@@ -1275,6 +1408,15 @@ export class ReportsService {
         if (trimmed) {
           normalized[key as keyof ReportFilterDto] = trimmed as never;
         }
+      } else if (Array.isArray(value)) {
+        const normalizedValues = [
+          ...new Set(
+            value.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean),
+          ),
+        ];
+        if (normalizedValues.length) {
+          normalized[key as keyof ReportFilterDto] = normalizedValues as never;
+        }
       } else if (value !== undefined && value !== null) {
         normalized[key as keyof ReportFilterDto] = value as never;
       }
@@ -1289,6 +1431,9 @@ export class ReportsService {
   ) {
     if (reportType === ReportType.OUTBOUND_DETAIL && filters.boxNo) {
       return this.sanitizeFileNamePart(filters.boxNo);
+    }
+    if (reportType === ReportType.OUTBOUND_DETAIL && filters.boxNos?.length) {
+      return `selected-${filters.boxNos.length}-boxes`;
     }
 
     if (reportType !== ReportType.INBOUND_DETAIL || !filters.batchId) {

@@ -77,7 +77,7 @@ Returns open exceptions grouped by type:
 }
 ```
 
-## Top Inbound Customers
+## Today Inbound Customers
 
 `GET /dashboard/top-inbound-customers`
 
@@ -85,7 +85,7 @@ Optional query:
 
 - `warehouseId`
 
-Returns the top five customers by confirmed inbound item count today:
+Returns every customer with confirmed inbound item count today, sorted by count descending:
 
 ```json
 {

@@ -37,6 +37,7 @@ type WeightUnit = 'lb';
 type OutboundPackingMode = 'DETAILED_SCAN' | 'BULK_BOX';
 type ProductConditionFilter = 'ALL' | 'NEW' | 'REFURBISHED';
 type ProductDeviceFilter = 'ALL' | 'IPHONE' | 'IPAD';
+type CreatedBoxView = 'OPEN' | 'WAREHOUSE_TODAY' | 'LAST_7_WAREHOUSE_DAYS' | 'SEALED' | 'ALL';
 
 type BoxSizePreset = {
   label: string;
@@ -108,17 +109,15 @@ const defaultSizePreset: BoxSizePreset = {
 
 const boxSizePresets: BoxSizePreset[] = [
   defaultSizePreset,
-  { label: '10 × 10 × 10 in', length: 10, width: 10, height: 10, unit: 'in' },
-  { label: '14 × 14 × 14 in', length: 14, width: 14, height: 14, unit: 'in' },
-  { label: '16 × 16 × 16 in', length: 16, width: 16, height: 16, unit: 'in' },
-  { label: '18 × 18 × 18 in', length: 18, width: 18, height: 18, unit: 'in' },
-  { label: '20 × 20 × 20 in', length: 20, width: 20, height: 20, unit: 'in' },
-  { label: '24 × 18 × 18 in', length: 24, width: 18, height: 18, unit: 'in' },
+  { label: '16 × 16 × 12 in', length: 16, width: 16, height: 12, unit: 'in' },
+  { label: '18 × 18 × 12 in', length: 18, width: 18, height: 12, unit: 'in' },
+  { label: '18 × 18 × 16 in', length: 18, width: 18, height: 16, unit: 'in' },
 ];
 
 const customSizePreset = 'Custom';
 const defaultBoxWeight = 45;
 const allBoxesExportId = '__all_boxes__';
+const selectedBoxesExportId = '__selected_boxes__';
 const outboundBoxDataExportFields = [
   'boxNo',
   'boxName',
@@ -184,6 +183,7 @@ export function OutboundPackingPage() {
   const [isBatchItemsLoading, setIsBatchItemsLoading] = useState(false);
   const [boxesPage, setBoxesPage] = useState(1);
   const [boxesPageSize] = useState(50);
+  const [createdBoxView, setCreatedBoxView] = useState<CreatedBoxView>('OPEN');
   const [reworkBoxIds, setReworkBoxIds] = useState<Set<string>>(() => new Set());
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
   const [removedItemIds, setRemovedItemIds] = useState<Set<string>>(() => new Set());
@@ -212,18 +212,22 @@ export function OutboundPackingPage() {
   const warehouses = warehousesQuery.data ?? [];
 
   useEffect(() => {
-    if (!customerId && customers[0]) {
-      setCustomerId(customers[0].id);
-    }
     if (!warehouseId) {
       const defaultWarehouseId = selectDefaultWarehouseId(warehouses, settingsQuery.data);
       if (defaultWarehouseId) {
         setWarehouseId(defaultWarehouseId);
       }
     }
-  }, [customerId, customers, settingsQuery.data, warehouseId, warehouses]);
+  }, [settingsQuery.data, warehouseId, warehouses]);
 
   const selectedCustomer = customers.find((customer) => customer.id === customerId);
+  const selectedWarehouse = warehouses.find((warehouse) => warehouse.id === warehouseId);
+  const warehouseTimezone = selectedWarehouse?.timezone ?? 'America/Los_Angeles';
+  const createdBoxDateRange = useMemo(
+    () => getCreatedBoxViewDateRange(createdBoxView, warehouseTimezone),
+    [createdBoxView, warehouseTimezone],
+  );
+  const isAllCustomerLookup = !customerId;
   const activeInventorySearch = inventorySearch.trim();
   const isBulkPackingMode = packingMode === 'BULK_BOX';
   const activeConditionFilter = isBulkPackingMode ? conditionFilter : 'ALL';
@@ -244,6 +248,9 @@ export function OutboundPackingPage() {
     'outbound-boxes',
     customerId,
     warehouseId,
+    createdBoxView,
+    createdBoxDateRange.createdFrom,
+    createdBoxDateRange.createdTo,
     boxesPage,
     boxesPageSize,
   ] as const;
@@ -251,7 +258,6 @@ export function OutboundPackingPage() {
     queryKey: availableQueryKey,
     queryFn: () => {
       const params = {
-        customerId,
         warehouseId,
         page: availablePage,
         pageSize: availablePageSize,
@@ -260,13 +266,24 @@ export function OutboundPackingPage() {
       if (activeInventorySearch) {
         return inventoryApi.items({
           ...params,
+          customerId: customerId || undefined,
           sortBy: 'updatedAt',
           sortOrder: 'desc',
         });
       }
-      return outboundApi.availableItems(params);
+      if (!customerId) {
+        return inventoryApi.items({
+          ...params,
+          sortBy: 'updatedAt',
+          sortOrder: 'desc',
+        });
+      }
+      return outboundApi.availableItems({
+        ...params,
+        customerId,
+      });
     },
-    enabled: Boolean(customerId && warehouseId),
+    enabled: Boolean(warehouseId),
   });
   const available = availableQuery.data as InventoryResult | undefined;
   const availableItemsBeforeProductFilters = useMemo(() => {
@@ -294,6 +311,9 @@ export function OutboundPackingPage() {
       outboundApi.boxes({
         customerId,
         warehouseId,
+        status: getCreatedBoxViewStatus(createdBoxView),
+        createdFrom: createdBoxDateRange.createdFrom,
+        createdTo: createdBoxDateRange.createdTo,
         page: boxesPage,
         pageSize: boxesPageSize,
         sortBy: 'createdAt',
@@ -331,7 +351,11 @@ export function OutboundPackingPage() {
     setCurrentBox((current) => (current?.id === nextBox.id ? nextBox : current));
     setDetailBox((current) => (current?.id === nextBox.id ? nextBox : current));
     queryClient.setQueryData<BoxListResult | undefined>(boxesQueryKey, (current) =>
-      upsertBoxListResult(current, box),
+      upsertBoxListResult(current, box, {
+        view: createdBoxView,
+        createdFrom: createdBoxDateRange.createdFrom,
+        createdTo: createdBoxDateRange.createdTo,
+      }),
     );
     return nextBox;
   };
@@ -347,6 +371,9 @@ export function OutboundPackingPage() {
     condition?: ProductConditionFilter;
     device?: ProductDeviceFilter;
   }) => {
+    if (!customerId) {
+      throw new Error('请先选择具体客户后再装箱。');
+    }
     const collected: AvailableItem[] = [];
     let page = 1;
     let total = 0;
@@ -550,6 +577,9 @@ export function OutboundPackingPage() {
 
   const createBoxMutation = useMutation({
     mutationFn: () => {
+      if (!customerId) {
+        throw new Error('请先选择具体客户后再新建箱子。');
+      }
       if (!warehouseId) {
         throw new Error('请先选择仓库。');
       }
@@ -568,7 +598,11 @@ export function OutboundPackingPage() {
       setMessage('已新建箱子');
       setErrorMessage('');
       queryClient.setQueryData<BoxListResult | undefined>(boxesQueryKey, (current) =>
-        upsertBoxListResult(current, data as OutboundBox),
+        upsertBoxListResult(current, data as OutboundBox, {
+          view: createdBoxView,
+          createdFrom: createdBoxDateRange.createdFrom,
+          createdTo: createdBoxDateRange.createdTo,
+        }),
       );
     },
     onError: (error) => setErrorMessage(toUserErrorMessage(error, '新建箱子失败')),
@@ -599,6 +633,7 @@ export function OutboundPackingPage() {
   const addItemMutation = useMutation({
     mutationFn: (inventoryItemId: string) => {
       if (!currentBox) throw new Error('请先选择或新建箱子');
+      if (!customerId) throw new Error('请先选择具体客户后再加入箱子。');
       return outboundApi.addItem(currentBox.id, { inventoryItemId });
     },
     onMutate: async (inventoryItemId) => {
@@ -647,6 +682,7 @@ export function OutboundPackingPage() {
   const batchAddItemsMutation = useMutation({
     mutationFn: async (inventoryItemIds: string[]) => {
       if (!currentBox) throw new Error('请先选择或新建箱子');
+      if (!customerId) throw new Error('请先选择具体客户后再批量装箱。');
       if (inventoryItemIds.length === 0) throw new Error('请先选择可装箱货物');
 
       let latestBox: OutboundBox | null = null;
@@ -710,6 +746,9 @@ export function OutboundPackingPage() {
     mutationFn: async (payload: { upc: string; imeiOrSerial: string }) => {
       if (!currentBox || !canMutateCurrentBox) {
         throw new Error('请先选择一个未封箱箱子。');
+      }
+      if (!customerId) {
+        throw new Error('请先选择具体客户后再扫码装箱。');
       }
       const alreadyPackedInCurrentBox = currentBox.items.find(
         (item) =>
@@ -1073,15 +1112,22 @@ export function OutboundPackingPage() {
   });
 
   const downloadBoxDataMutation = useMutation({
-    mutationFn: async (input: { box?: PackingBox }) => {
+    mutationFn: async (input: { box?: PackingBox; boxes?: PackingBox[] }) => {
       if (input.box && input.box.itemCount === 0) {
         throw new Error('当前箱子没有货物，不能下载装箱明细。');
+      }
+      const selectedBoxes = input.boxes ?? [];
+      if (selectedBoxes.length === 0 && input.boxes) {
+        throw new Error('请先选择要下载的箱子。');
       }
       if (!customerId || !warehouseId) {
         throw new Error('请先选择客户和仓库。');
       }
 
-      setExportingBoxId(input.box?.id ?? allBoxesExportId);
+      const boxNos = selectedBoxes.map((box) => box.boxNo);
+      setExportingBoxId(
+        input.box ? input.box.id : selectedBoxes.length ? selectedBoxesExportId : allBoxesExportId,
+      );
       const created = (await reportsApi.createExport({
         reportType: 'OUTBOUND_DETAIL',
         format: 'EXCEL',
@@ -1089,6 +1135,7 @@ export function OutboundPackingPage() {
           customerId,
           warehouseId,
           boxNo: input.box?.boxNo,
+          boxNos: boxNos.length ? boxNos : undefined,
         },
         fields: outboundBoxDataExportFields,
       })) as ReportExport;
@@ -1211,7 +1258,11 @@ export function OutboundPackingPage() {
       setMessage('已进入返工中，可继续添加或删除货物');
       setErrorMessage('');
       queryClient.setQueryData<BoxListResult | undefined>(boxesQueryKey, (current) =>
-        upsertBoxListResult(current, reopenedRawBox),
+        upsertBoxListResult(current, reopenedRawBox, {
+          view: createdBoxView,
+          createdFrom: createdBoxDateRange.createdFrom,
+          createdTo: createdBoxDateRange.createdTo,
+        }),
       );
     },
     onError: (error) => setErrorMessage(toUserErrorMessage(error, '返工失败')),
@@ -1240,6 +1291,7 @@ export function OutboundPackingPage() {
           setDetailBox(null);
           setAvailablePage(1);
           setBoxesPage(1);
+          setCreatedBoxView('OPEN');
         }}
         onWarehouseChange={(nextWarehouseId) => {
           setWarehouseId(nextWarehouseId);
@@ -1247,6 +1299,7 @@ export function OutboundPackingPage() {
           setDetailBox(null);
           setAvailablePage(1);
           setBoxesPage(1);
+          setCreatedBoxView('OPEN');
         }}
       />
 
@@ -1258,6 +1311,7 @@ export function OutboundPackingPage() {
         weight={weight}
         note={note}
         currentBox={currentBox}
+        canCreate={Boolean(customerId && warehouseId)}
         isSaving={updateBoxMutation.isPending}
         isSealing={sealMutation.isPending}
         isCreating={createBoxMutation.isPending}
@@ -1298,10 +1352,11 @@ export function OutboundPackingPage() {
           pageSize={availablePageSize}
           search={inventorySearch}
           isSearchMode={Boolean(activeInventorySearch)}
-          showProductFilters={isBulkPackingMode}
+          showProductFilters={isBulkPackingMode && Boolean(customerId)}
           conditionFilter={conditionFilter}
           deviceFilter={deviceFilter}
-          canAdd={Boolean(currentBox && canMutateCurrentBox)}
+          canAdd={Boolean(customerId && currentBox && canMutateCurrentBox)}
+          canSelect={Boolean(customerId)}
           isAdding={
             addItemMutation.isPending ||
             batchAddItemsMutation.isPending ||
@@ -1312,6 +1367,7 @@ export function OutboundPackingPage() {
             warehouseId &&
             (selectedAvailableItemIds.size > 0 || (!activeInventorySearch && availableTotal > 0)),
           )}
+          isAllCustomerLookup={isAllCustomerLookup}
           selectedItemIds={selectedAvailableItemIds}
           selectedTotal={selectedAvailableItemIds.size}
           onSearchChange={(value) => {
@@ -1397,6 +1453,9 @@ export function OutboundPackingPage() {
         total={boxes?.total ?? 0}
         page={boxesPage}
         pageSize={boxesPageSize}
+        view={createdBoxView}
+        warehouseTimezone={warehouseTimezone}
+        warehouseBusinessDateLabel={createdBoxDateRange.label}
         bouncingBoxId={bouncingBoxId}
         isRefreshing={boxesQuery.isFetching}
         isSealing={sealMutation.isPending}
@@ -1406,6 +1465,11 @@ export function OutboundPackingPage() {
         exportingBoxId={exportingBoxId}
         selectedBoxIds={selectedCreatedBoxIds}
         onRefresh={() => boxesQuery.refetch()}
+        onViewChange={(nextView) => {
+          setCreatedBoxView(nextView);
+          setBoxesPage(1);
+          setSelectedCreatedBoxIds(new Set());
+        }}
         onPageChange={setBoxesPage}
         onSelectionChange={setSelectedCreatedBoxIds}
         onRequestDelete={() => setDeleteBoxesConfirmOpen(true)}
@@ -1432,6 +1496,9 @@ export function OutboundPackingPage() {
           saveShippingTrackingNoMutation.mutate({ box, shippingTrackingNo })
         }
         onDownloadAllData={() => downloadBoxDataMutation.mutate({})}
+        onDownloadSelectedData={() =>
+          downloadBoxDataMutation.mutate({ boxes: selectedCreatedBoxes })
+        }
         onDownloadData={(box) => downloadBoxDataMutation.mutate({ box })}
       />
 
@@ -1515,6 +1582,7 @@ function TrackingSearchBar(props: {
           value={props.customerId}
           onChange={(event) => props.onCustomerChange(event.target.value)}
         >
+          <option value="">全部客户</option>
           {props.customers.map((customer) => (
             <option key={customer.id} value={customer.id}>
               {customer.label}
@@ -1575,6 +1643,7 @@ function BoxQuickEditor(props: {
   weight: string;
   note: string;
   currentBox: PackingBox | null;
+  canCreate: boolean;
   isSaving: boolean;
   isSealing: boolean;
   isCreating: boolean;
@@ -1588,7 +1657,7 @@ function BoxQuickEditor(props: {
   onSeal: () => void;
   onCreate: () => void;
 }) {
-  const canEdit = !props.currentBox || props.currentBox.status !== 'sealed';
+  const canEdit = props.canCreate && (!props.currentBox || props.currentBox.status !== 'sealed');
   return (
     <section className="outbound-quick-editor">
       <div className="outbound-section-heading compact">
@@ -1680,7 +1749,9 @@ function BoxQuickEditor(props: {
           <button
             type="button"
             className="outbound-btn outbound-btn-success"
-            disabled={!props.currentBox || props.currentBox.itemCount === 0 || props.isSealing}
+            disabled={
+              !props.currentBox || !canEdit || props.currentBox.itemCount === 0 || props.isSealing
+            }
             onClick={props.onSeal}
           >
             <ShieldCheck size={16} />
@@ -1689,7 +1760,7 @@ function BoxQuickEditor(props: {
           <button
             type="button"
             className="outbound-btn outbound-btn-primary"
-            disabled={props.isCreating}
+            disabled={!props.canCreate || props.isCreating}
             onClick={props.onCreate}
           >
             <Box size={16} />
@@ -1712,7 +1783,9 @@ function InventoryPackingTable(props: {
   conditionFilter: ProductConditionFilter;
   deviceFilter: ProductDeviceFilter;
   canAdd: boolean;
+  canSelect: boolean;
   canBulkPackAll: boolean;
+  isAllCustomerLookup: boolean;
   isAdding: boolean;
   selectedItemIds: Set<string>;
   selectedTotal: number;
@@ -1727,7 +1800,7 @@ function InventoryPackingTable(props: {
   onBatchAdd: (items: PackingItem[]) => void;
   onOpenBulkPacking: () => void;
 }) {
-  const selectableItems = props.items.filter(isPackingItemSelectable);
+  const selectableItems = props.canSelect ? props.items.filter(isPackingItemSelectable) : [];
   const selectedItems = selectableItems.filter((item) => props.selectedItemIds.has(item.id));
   const allVisibleSelected =
     selectableItems.length > 0 &&
@@ -1759,7 +1832,13 @@ function InventoryPackingTable(props: {
         <div>
           <h2>客户库存 / 可装箱货物</h2>
           <span>
-            {props.isSearchMode ? '搜索结果包含待装箱和已装箱货物' : '当前客户可装箱货物'}
+            {props.isAllCustomerLookup
+              ? props.isSearchMode
+                ? '全部客户搜索结果，仅用于定位客户和状态'
+                : '全部客户库存，仅用于定位客户和状态'
+              : props.isSearchMode
+                ? '搜索结果包含待装箱和已装箱货物'
+                : '当前客户可装箱货物'}
             {props.selectedTotal ? ` · 已记忆勾选 ${props.selectedTotal} 件` : ''}
           </span>
         </div>
@@ -1799,7 +1878,7 @@ function InventoryPackingTable(props: {
             <input
               value={props.search}
               onChange={(event) => props.onSearchChange(event.target.value)}
-              placeholder="搜索单号、IMEI/Serial 或货物信息"
+              placeholder="搜索客户、单号、IMEI/Serial 或货物信息"
             />
           </label>
         </div>
@@ -1847,6 +1926,7 @@ function InventoryPackingTable(props: {
                 />
               </th>
               <th>入库时间</th>
+              <th>客户</th>
               <th>物流单号</th>
               <th>货物信息</th>
               <th>IMEI / Serial</th>
@@ -1856,7 +1936,7 @@ function InventoryPackingTable(props: {
           </thead>
           <tbody>
             {props.items.map((item) => {
-              const selectable = isPackingItemSelectable(item);
+              const selectable = props.canSelect && isPackingItemSelectable(item);
               const boxLabel = getLatestOutboundBoxLabel(item);
               return (
                 <tr key={item.id} className={selectable ? undefined : 'row-muted'}>
@@ -1870,6 +1950,9 @@ function InventoryPackingTable(props: {
                     />
                   </td>
                   <td>{formatShortDateTime(item.receivedAt)}</td>
+                  <td>
+                    <strong>{item.customerName}</strong>
+                  </td>
                   <td>
                     <strong className="mono">{item.trackingNumber || '-'}</strong>
                     <span>{item.carrier}</span>
@@ -1898,7 +1981,13 @@ function InventoryPackingTable(props: {
                       onClick={() => props.onAdd(item)}
                     >
                       <PackagePlus size={15} />
-                      {selectable ? '加入箱子' : item.status === 'packed' ? '已在箱中' : '不可装箱'}
+                      {selectable
+                        ? '加入箱子'
+                        : props.isAllCustomerLookup
+                          ? '先选客户'
+                          : item.status === 'packed'
+                            ? '已在箱中'
+                            : '不可装箱'}
                     </button>
                   </td>
                 </tr>
@@ -1906,8 +1995,12 @@ function InventoryPackingTable(props: {
             })}
             {props.items.length === 0 ? (
               <tr>
-                <td colSpan={7}>
-                  {props.isSearchMode ? '没有匹配的客户库存货物' : '没有匹配的可装箱货物'}
+                <td colSpan={8}>
+                  {props.isAllCustomerLookup && !props.isSearchMode
+                    ? '全部客户暂无库存'
+                    : props.isSearchMode
+                      ? '没有匹配的客户库存货物'
+                      : '没有匹配的可装箱货物'}
                 </td>
               </tr>
             ) : null}
@@ -2215,6 +2308,9 @@ function CreatedBoxList(props: {
   total: number;
   page: number;
   pageSize: number;
+  view: CreatedBoxView;
+  warehouseTimezone: string;
+  warehouseBusinessDateLabel?: string;
   bouncingBoxId: string | null;
   uploadingPhotoBoxId: string | null;
   isRefreshing: boolean;
@@ -2224,7 +2320,9 @@ function CreatedBoxList(props: {
   selectedBoxIds: Set<string>;
   exportingBoxId: string | null;
   onDownloadAllData: () => void;
+  onDownloadSelectedData: () => void;
   onRefresh: () => void;
+  onViewChange: (view: CreatedBoxView) => void;
   onPageChange: (page: number) => void;
   onSelectionChange: (value: Set<string>) => void;
   onRequestDelete: () => void;
@@ -2241,6 +2339,7 @@ function CreatedBoxList(props: {
   const selectedCount = props.selectedBoxIds.size;
   const [activeTaskGroup, setActiveTaskGroup] = useState('ALL');
   const taskGroups = useMemo(() => groupBoxesByTaskHeader(props.boxes), [props.boxes]);
+  const viewOptions = getCreatedBoxViewOptions(props.warehouseBusinessDateLabel);
   const visibleTaskGroups =
     activeTaskGroup === 'ALL'
       ? taskGroups
@@ -2270,7 +2369,7 @@ function CreatedBoxList(props: {
         <div>
           <h2>已创建箱子</h2>
           <span>
-            勾选只用于删除，扫码只会进入当前装箱目标
+            默认显示未完成箱子，仓库日期按 {props.warehouseTimezone} 计算
             {selectedCount ? ` · 已选 ${selectedCount} 个` : ''}
           </span>
         </div>
@@ -2283,6 +2382,19 @@ function CreatedBoxList(props: {
           >
             <Trash2 size={16} />
             {selectedCount ? '删除选中' : '先选箱子'}
+          </button>
+          <button
+            type="button"
+            className="outbound-btn outbound-btn-outline"
+            disabled={selectedCount === 0 || props.exportingBoxId === selectedBoxesExportId}
+            onClick={props.onDownloadSelectedData}
+          >
+            <Download size={16} />
+            {props.exportingBoxId === selectedBoxesExportId
+              ? '生成中'
+              : selectedCount
+                ? `下载选中数据 ${selectedCount} 箱`
+                : '先选箱子'}
           </button>
           <button
             type="button"
@@ -2303,6 +2415,19 @@ function CreatedBoxList(props: {
             刷新
           </button>
         </div>
+      </div>
+      <div className="created-box-view-tabs" aria-label="箱子状态和仓库日期筛选">
+        {viewOptions.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={props.view === option.value ? 'active' : ''}
+            onClick={() => props.onViewChange(option.value)}
+          >
+            <strong>{option.label}</strong>
+            <span>{option.description}</span>
+          </button>
+        ))}
       </div>
       {props.boxes.length > 0 ? (
         <div className="created-box-group-tabs" aria-label="箱子任务分类">
@@ -2430,7 +2555,7 @@ function CreatedBoxCard(props: {
           onChange={props.onToggleSelected}
           onClick={(event) => event.stopPropagation()}
         />
-        <span>{props.isCurrent ? '当前装箱' : props.isSelected ? '已选中' : '勾选删除'}</span>
+        <span>{props.isCurrent ? '当前装箱' : props.isSelected ? '已选中' : '勾选箱子'}</span>
       </div>
       <button
         type="button"
@@ -3378,9 +3503,17 @@ type ReportDownload = {
 function upsertBoxListResult(
   current: BoxListResult | undefined,
   box: OutboundBox,
+  filter?: {
+    view: CreatedBoxView;
+    createdFrom?: string;
+    createdTo?: string;
+  },
 ): BoxListResult | undefined {
   if (!current) {
     return current;
+  }
+  if (filter && !boxMatchesCreatedBoxView(box, filter)) {
+    return removeBoxesFromListResult(current, new Set([box.id]));
   }
   const existingIndex = current.items.findIndex((item) => item.id === box.id);
   if (existingIndex === -1) {
@@ -3394,6 +3527,35 @@ function upsertBoxListResult(
     ...current,
     items: current.items.map((item) => (item.id === box.id ? box : item)),
   };
+}
+
+function boxMatchesCreatedBoxView(
+  box: OutboundBox,
+  filter: {
+    view: CreatedBoxView;
+    createdFrom?: string;
+    createdTo?: string;
+  },
+) {
+  if (filter.view === 'OPEN' && box.status !== 'OPEN') {
+    return false;
+  }
+  if (filter.view === 'SEALED' && box.status !== 'SEALED') {
+    return false;
+  }
+  if (box.status === 'VOIDED') {
+    return false;
+  }
+  if (filter.createdFrom || filter.createdTo) {
+    const createdAt = box.createdAt ? new Date(box.createdAt).getTime() : 0;
+    if (filter.createdFrom && createdAt < new Date(filter.createdFrom).getTime()) {
+      return false;
+    }
+    if (filter.createdTo && createdAt > new Date(filter.createdTo).getTime()) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function removeBoxesFromListResult(
@@ -3524,6 +3686,122 @@ function normalizeBoxTaskText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function getCreatedBoxViewStatus(view: CreatedBoxView) {
+  if (view === 'OPEN') {
+    return 'OPEN';
+  }
+  if (view === 'SEALED') {
+    return 'SEALED';
+  }
+  return undefined;
+}
+
+function getCreatedBoxViewOptions(warehouseBusinessDateLabel?: string) {
+  return [
+    {
+      value: 'OPEN' as const,
+      label: '未完成',
+      description: '未封箱',
+    },
+    {
+      value: 'WAREHOUSE_TODAY' as const,
+      label: '仓库今日',
+      description: warehouseBusinessDateLabel ?? '按仓库时区',
+    },
+    {
+      value: 'LAST_7_WAREHOUSE_DAYS' as const,
+      label: '近7仓库日',
+      description: '按创建日期',
+    },
+    {
+      value: 'SEALED' as const,
+      label: '已封箱',
+      description: '历史可下载',
+    },
+    {
+      value: 'ALL' as const,
+      label: '全部历史',
+      description: '含已封箱',
+    },
+  ];
+}
+
+function getCreatedBoxViewDateRange(view: CreatedBoxView, timeZone: string) {
+  if (view !== 'WAREHOUSE_TODAY' && view !== 'LAST_7_WAREHOUSE_DAYS') {
+    return { label: undefined, createdFrom: undefined, createdTo: undefined };
+  }
+
+  const today = getZonedDateParts(new Date(), timeZone);
+  const startDate = view === 'LAST_7_WAREHOUSE_DAYS' ? addUtcDays(today, -6) : today;
+
+  return {
+    label: formatDateLabel(today),
+    createdFrom: zonedDateTimeToUtcIso(timeZone, startDate.year, startDate.month, startDate.day),
+    createdTo: zonedDateTimeToUtcIso(timeZone, today.year, today.month, today.day, 23, 59, 59, 999),
+  };
+}
+
+function getZonedDateParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  return {
+    year: Number(parts.find((part) => part.type === 'year')?.value),
+    month: Number(parts.find((part) => part.type === 'month')?.value),
+    day: Number(parts.find((part) => part.type === 'day')?.value),
+  };
+}
+
+function addUtcDays(date: { year: number; month: number; day: number }, days: number) {
+  const next = new Date(Date.UTC(date.year, date.month - 1, date.day + days, 12));
+  return {
+    year: next.getUTCFullYear(),
+    month: next.getUTCMonth() + 1,
+    day: next.getUTCDate(),
+  };
+}
+
+function zonedDateTimeToUtcIso(
+  timeZone: string,
+  year: number,
+  month: number,
+  day: number,
+  hour = 0,
+  minute = 0,
+  second = 0,
+  millisecond = 0,
+) {
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
+  const zonedParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(utcGuess));
+  const zonedAsUtc = Date.UTC(
+    Number(zonedParts.find((part) => part.type === 'year')?.value),
+    Number(zonedParts.find((part) => part.type === 'month')?.value) - 1,
+    Number(zonedParts.find((part) => part.type === 'day')?.value),
+    Number(zonedParts.find((part) => part.type === 'hour')?.value),
+    Number(zonedParts.find((part) => part.type === 'minute')?.value),
+    Number(zonedParts.find((part) => part.type === 'second')?.value),
+    millisecond,
+  );
+  const offset = zonedAsUtc - utcGuess;
+  return new Date(utcGuess - offset).toISOString();
+}
+
+function formatDateLabel(date: { year: number; month: number; day: number }) {
+  return `${date.year}-${String(date.month).padStart(2, '0')}-${String(date.day).padStart(2, '0')}`;
+}
+
 function toBoxStatus(box: OutboundBox, reworkBoxIds: Set<string>): BoxStatus {
   if (box.status === 'SEALED') {
     return 'sealed';
@@ -3608,11 +3886,8 @@ function toBackendBoxSize(
   const preset = boxSizePresets.find((item) => item.label === sizeLabel);
   const size = preset ?? { ...manualSize, label: customSizePreset, unit: 'in' as const };
   const customSize = `${size.length}*${size.width}*${size.height}`;
-  if (size.label === '12 × 12 × 12 in') {
-    return { sizePreset: '12*12*12' };
-  }
-  if (size.label === '14 × 14 × 14 in') {
-    return { sizePreset: '14*14*14' };
+  if (preset) {
+    return { sizePreset: `${preset.length}*${preset.width}*${preset.height}` };
   }
   return { sizePreset: 'CUSTOM', customSize };
 }

@@ -20,7 +20,7 @@ export class CreateReportExportDto extends PreviewReportDto {
   @ApiPropertyOptional({
     enum: ReportExportLayout,
     description:
-      'Optional Excel layout. PACKED_SUMMARY applies to outbound detail Excel exports; WAREHOUSE_HOLD applies to inventory detail Excel exports.',
+      'Optional Excel layout. INBOUND_REGISTRATION applies to inbound detail Excel exports; PACKED_SUMMARY applies to outbound detail Excel exports; WAREHOUSE_HOLD applies to inventory detail Excel exports.',
   })
   @IsOptional()
   @IsEnum(ReportExportLayout)

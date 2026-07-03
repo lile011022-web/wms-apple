@@ -137,6 +137,13 @@ export class InboundRepository {
     });
   }
 
+  findDraftByBatchNo(batchNo: string) {
+    return this.prisma.inboundBatch.findUnique({
+      where: { batchNo },
+      include: inboundBatchInclude,
+    });
+  }
+
   createItem(data: Prisma.InboundItemCreateInput, exception?: Prisma.ExceptionRecordCreateInput) {
     return this.prisma.$transaction(async (tx) => {
       const item = await tx.inboundItem.create({
@@ -230,89 +237,89 @@ export class InboundRepository {
     duplicateImeiExceptionEnabled: boolean;
     duplicateUpsExceptionEnabled: boolean;
   }) {
-    return this.prisma.$transaction(async (tx) => {
-      const draft = await tx.inboundBatch.findUniqueOrThrow({
-        where: { id: input.draftId },
-        include: inboundBatchInclude,
-      });
-      const confirmableItems = draft.inboundItems.filter(
-        (item) => item.status === InboundItemStatus.PENDING && item.productId,
-      );
+    return this.prisma.$transaction(
+      async (tx) => {
+        const draft = await tx.inboundBatch.findUniqueOrThrow({
+          where: { id: input.draftId },
+          include: inboundBatchInclude,
+        });
+        const confirmableItems = draft.inboundItems.filter(
+          (item) => item.status === InboundItemStatus.PENDING && item.productId,
+        );
 
-      const duplicateItemIds = new Set<string>();
-      const duplicateImeis = new Set<string>();
-      const duplicateSerials = new Set<string>();
-      for (const item of confirmableItems) {
-        if (item.imei) {
-          const existing = await tx.inventoryItem.findUnique({ where: { imei: item.imei } });
-          if (existing) {
-            duplicateImeis.add(item.imei);
-            duplicateItemIds.add(item.id);
+        const duplicateItemIds = new Set<string>();
+        const duplicateImeis = new Set<string>();
+        const duplicateSerials = new Set<string>();
+        for (const item of confirmableItems) {
+          if (item.imei) {
+            const existing = await tx.inventoryItem.findUnique({ where: { imei: item.imei } });
+            if (existing) {
+              duplicateImeis.add(item.imei);
+              duplicateItemIds.add(item.id);
+            }
           }
-        }
 
-        if (item.serial) {
-          const existing = await tx.inventoryItem.findUnique({ where: { serial: item.serial } });
-          if (existing) {
-            duplicateSerials.add(item.serial);
-            duplicateItemIds.add(item.id);
+          if (item.serial) {
+            const existing = await tx.inventoryItem.findUnique({ where: { serial: item.serial } });
+            if (existing) {
+              duplicateSerials.add(item.serial);
+              duplicateItemIds.add(item.id);
+            }
           }
-        }
 
-        if (item.upsTrackingNo) {
-          const duplicateUpsCount = await tx.inboundItem.count({
-            where: {
-              upsTrackingNo: item.upsTrackingNo,
-              status: InboundItemStatus.CONFIRMED,
-            },
-          });
-          if (duplicateUpsCount > 0) {
-            duplicateItemIds.add(item.id);
-            if (input.duplicateUpsExceptionEnabled) {
-              await tx.exceptionRecord.create({
-                data: {
-                  type: ExceptionType.UPS_DUPLICATED,
-                  customerId: draft.customerId,
-                  warehouseId: draft.warehouseId,
-                  productId: item.productId,
-                  inboundItemId: item.id,
-                  rawValue: item.upsTrackingNo,
-                  upsTrackingNo: item.upsTrackingNo,
-                  upc: item.upc,
-                  imei: item.imei,
-                  serial: item.serial,
-                },
-              });
+          if (item.upsTrackingNo) {
+            const duplicateUpsCount = await tx.inboundItem.count({
+              where: {
+                upsTrackingNo: item.upsTrackingNo,
+                status: InboundItemStatus.CONFIRMED,
+              },
+            });
+            if (duplicateUpsCount > 0) {
+              duplicateItemIds.add(item.id);
+              if (input.duplicateUpsExceptionEnabled) {
+                await tx.exceptionRecord.create({
+                  data: {
+                    type: ExceptionType.UPS_DUPLICATED,
+                    customerId: draft.customerId,
+                    warehouseId: draft.warehouseId,
+                    productId: item.productId,
+                    inboundItemId: item.id,
+                    rawValue: item.upsTrackingNo,
+                    upsTrackingNo: item.upsTrackingNo,
+                    upc: item.upc,
+                    imei: item.imei,
+                    serial: item.serial,
+                  },
+                });
+              }
             }
           }
         }
-      }
 
-      if (duplicateImeis.size > 0) {
-        throw new BadRequestException(
-          `IMEI 已存在库存记录，不能重复入库: ${[...duplicateImeis].join(', ')}。请修正或删除重复明细后再确认入库。`,
-        );
-      }
-
-      if (duplicateSerials.size > 0) {
-        throw new BadRequestException(
-          `Serial 已存在库存记录，不能重复入库: ${[...duplicateSerials].join(', ')}。请修正或删除重复明细后再确认入库。`,
-        );
-      }
-
-      const confirmedItemIds: string[] = [];
-      const inventoryIds: string[] = [];
-      for (const item of confirmableItems) {
-        if (duplicateItemIds.has(item.id) || !item.productId) {
-          await tx.inboundItem.update({
-            where: { id: item.id },
-            data: { status: InboundItemStatus.EXCEPTION },
-          });
-          continue;
+        if (duplicateImeis.size > 0) {
+          throw new BadRequestException(
+            `IMEI 已存在库存记录，不能重复入库: ${[...duplicateImeis].join(', ')}。请修正或删除重复明细后再确认入库。`,
+          );
         }
 
-        const inventoryItem = await tx.inventoryItem.create({
-          data: {
+        if (duplicateSerials.size > 0) {
+          throw new BadRequestException(
+            `Serial 已存在库存记录，不能重复入库: ${[...duplicateSerials].join(', ')}。请修正或删除重复明细后再确认入库。`,
+          );
+        }
+
+        const confirmedItemIds: string[] = [];
+        const inventoryIds: string[] = [];
+        for (const item of confirmableItems) {
+          if (duplicateItemIds.has(item.id) || !item.productId) {
+            await tx.inboundItem.update({
+              where: { id: item.id },
+              data: { status: InboundItemStatus.EXCEPTION },
+            });
+            continue;
+          }
+
+          const inventoryItem = await this.createInventoryItemOrThrowReadableIdentityConflict(tx, {
             customerId: draft.customerId,
             warehouseId: draft.warehouseId,
             productId: item.productId,
@@ -321,53 +328,91 @@ export class InboundRepository {
             serial: item.serial,
             upc: item.upc,
             upsTrackingNo: item.upsTrackingNo,
+          });
+
+          await tx.inboundItem.update({
+            where: { id: item.id },
+            data: {
+              status: InboundItemStatus.CONFIRMED,
+              inventoryItemId: inventoryItem.id,
+            },
+          });
+          confirmedItemIds.push(item.id);
+          inventoryIds.push(inventoryItem.id);
+        }
+
+        await tx.inboundBatch.update({
+          where: { id: draft.id },
+          data: {
+            status: InboundBatchStatus.CONFIRMED,
+            confirmedAt: new Date(),
           },
         });
 
-        await tx.inboundItem.update({
-          where: { id: item.id },
+        await tx.auditLog.create({
           data: {
-            status: InboundItemStatus.CONFIRMED,
-            inventoryItemId: inventoryItem.id,
+            action: 'INBOUND_CONFIRM',
+            resourceType: 'inbound-batch',
+            resourceId: draft.id,
+            operatorId: input.operatorId,
+            afterSnapshot: {
+              batchId: draft.id,
+              batchNo: draft.batchNo,
+              confirmedItemIds,
+              inventoryIds,
+              exceptionItemIds: [...duplicateItemIds],
+            },
+            metadata: {
+              confirmedCount: confirmedItemIds.length,
+              exceptionCount: duplicateItemIds.size,
+            },
           },
         });
-        confirmedItemIds.push(item.id);
-        inventoryIds.push(inventoryItem.id);
+
+        return tx.inboundBatch.findUniqueOrThrow({
+          where: { id: draft.id },
+          include: inboundBatchInclude,
+        });
+      },
+      {
+        maxWait: 10_000,
+        timeout: 120_000,
+      },
+    );
+  }
+
+  private async createInventoryItemOrThrowReadableIdentityConflict(
+    tx: Prisma.TransactionClient,
+    data: {
+      customerId: string;
+      warehouseId: string;
+      productId: string;
+      inboundBatchId: string;
+      imei: string | null;
+      serial: string | null;
+      upc: string;
+      upsTrackingNo: string | null;
+    },
+  ) {
+    try {
+      return await tx.inventoryItem.create({ data });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const target = Array.isArray(error.meta?.target) ? error.meta.target.join(',') : '';
+        if (target.includes('imei') && data.imei) {
+          throw new BadRequestException(
+            `IMEI 已存在库存记录，不能重复入库: ${data.imei}。请修正或删除重复明细后再确认入库。`,
+          );
+        }
+        if (target.includes('serial') && data.serial) {
+          throw new BadRequestException(
+            `Serial 已存在库存记录，不能重复入库: ${data.serial}。请修正或删除重复明细后再确认入库。`,
+          );
+        }
       }
 
-      await tx.inboundBatch.update({
-        where: { id: draft.id },
-        data: {
-          status: InboundBatchStatus.CONFIRMED,
-          confirmedAt: new Date(),
-        },
-      });
-
-      await tx.auditLog.create({
-        data: {
-          action: 'INBOUND_CONFIRM',
-          resourceType: 'inbound-batch',
-          resourceId: draft.id,
-          operatorId: input.operatorId,
-          afterSnapshot: {
-            batchId: draft.id,
-            batchNo: draft.batchNo,
-            confirmedItemIds,
-            inventoryIds,
-            exceptionItemIds: [...duplicateItemIds],
-          },
-          metadata: {
-            confirmedCount: confirmedItemIds.length,
-            exceptionCount: duplicateItemIds.size,
-          },
-        },
-      });
-
-      return tx.inboundBatch.findUniqueOrThrow({
-        where: { id: draft.id },
-        include: inboundBatchInclude,
-      });
-    });
+      throw error;
+    }
   }
 
   async forceConfirmItem(input: { itemId: string; operatorId: string; reason: string }) {
@@ -472,6 +517,11 @@ export class InboundRepository {
         where: { id: input.itemId },
         include: inboundItemInclude,
       });
+      if (item.inboundBatch.status === InboundBatchStatus.DRAFT) {
+        throw new BadRequestException(
+          '当前入库单还未确认，请回到入库扫码页面编辑或删除这条明细后再确认入库。',
+        );
+      }
       const existingInventoryItem = input.inventoryItemId
         ? await tx.inventoryItem.findUniqueOrThrow({
             where: { id: input.inventoryItemId },
@@ -520,16 +570,6 @@ export class InboundRepository {
           resolvedAt: correctedAt,
         },
       });
-
-      if (item.inboundBatch.status === InboundBatchStatus.DRAFT) {
-        await tx.inboundBatch.update({
-          where: { id: item.inboundBatchId },
-          data: {
-            status: InboundBatchStatus.CONFIRMED,
-            confirmedAt: item.inboundBatch.confirmedAt ?? correctedAt,
-          },
-        });
-      }
 
       const updatedItem = await tx.inboundItem.update({
         where: { id: input.itemId },

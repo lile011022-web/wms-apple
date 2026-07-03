@@ -10,6 +10,7 @@ import {
   isValidUpsTracking,
   isValidUspsTracking,
   isAutoAcceptedPackageTracking,
+  isWarehouseCompensationTracking,
   normalizePackageTracking,
 } from './ups.js';
 
@@ -36,15 +37,21 @@ describe('shared scan validators', () => {
     expect(isValidUspsTracking('9400111899223857000000')).toBe(true);
     expect(isValidFedexTracking('9611020987654312345672')).toBe(true);
     expect(isValidFedexTracking('96320804008675235705004823280')).toBe(true);
+    expect(isWarehouseCompensationTracking('bb0000')).toBe(true);
+    expect(isValidPackageTracking('bb0000jh05')).toBe(true);
     expect(normalizePackageTracking(' 9400 1118 9922 3857 0000 00 ')).toBe(
       '9400111899223857000000',
     );
+    expect(normalizePackageTracking(' bb0000 ')).toBe('BB0000');
+    expect(normalizePackageTracking(' bb0000 jh05 ')).toBe('BB0000JH05');
   });
 
-  it('only auto-accepts UPS and 9622 FedEx tracking before manual review', () => {
+  it('auto-accepts UPS, 9622 FedEx, and warehouse compensation tracking before manual review', () => {
     expect(isAutoAcceptedPackageTracking('1Z999AA10123456784')).toBe(true);
     expect(isAutoAcceptedPackageTracking('9622123456789012345678')).toBe(true);
     expect(isAutoAcceptedPackageTracking('9622080430009579265100530689178')).toBe(true);
+    expect(isAutoAcceptedPackageTracking('bb0000')).toBe(true);
+    expect(isAutoAcceptedPackageTracking('bb0000jh05')).toBe(true);
     expect(isAutoAcceptedPackageTracking('9400111899223857000000')).toBe(false);
     expect(isAutoAcceptedPackageTracking('9611020987654312345672')).toBe(false);
     expect(isAutoAcceptedPackageTracking('96320804008675235705004823280')).toBe(false);

@@ -9,6 +9,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { BusinessError } from '../errors/business-error';
 import { ApiErrorCode, ErrorCode } from '../errors/error-codes';
@@ -58,11 +59,63 @@ export class AllExceptionsFilter implements ExceptionFilter {
       };
     }
 
+    if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+      return this.toPrismaErrorResponse(exception);
+    }
+
     return {
       status: HttpStatus.INTERNAL_SERVER_ERROR,
       error: {
         code: ErrorCode.INTERNAL_SERVER_ERROR,
         message: 'Internal server error',
+      },
+    };
+  }
+
+  private toPrismaErrorResponse(exception: Prisma.PrismaClientKnownRequestError): {
+    status: HttpStatus;
+    error: ErrorBody;
+  } {
+    if (exception.code === 'P2002') {
+      return {
+        status: HttpStatus.CONFLICT,
+        error: {
+          code: ErrorCode.CONFLICT,
+          message: '数据已存在，请检查重复的 IMEI、Serial、UPC、SKU 或单号后再重试。',
+          details: this.toPrismaDetails(exception),
+        },
+      };
+    }
+
+    if (exception.code === 'P2025') {
+      return {
+        status: HttpStatus.NOT_FOUND,
+        error: {
+          code: ErrorCode.RESOURCE_NOT_FOUND,
+          message: '请求的数据不存在或已被处理，请刷新页面后重试。',
+          details: this.toPrismaDetails(exception),
+        },
+      };
+    }
+
+    if (exception.code === 'P2028') {
+      return {
+        status: HttpStatus.CONFLICT,
+        error: {
+          code: ErrorCode.CONFLICT,
+          message:
+            '本次入库确认数据量较大，数据库事务超时。请刷新页面后重试；如果仍失败，请联系管理员分批处理。',
+          details: this.toPrismaDetails(exception),
+        },
+      };
+    }
+
+    return {
+      status: HttpStatus.INTERNAL_SERVER_ERROR,
+      error: {
+        code: ErrorCode.INTERNAL_SERVER_ERROR,
+        message: '数据库操作失败，请刷新页面后重试；如果仍失败，请联系管理员。',
+        details: this.toPrismaDetails(exception),
       },
     };
   }
@@ -120,6 +173,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     return {
       fields: message,
+    };
+  }
+
+  private toPrismaDetails(
+    exception: Prisma.PrismaClientKnownRequestError,
+  ): Record<string, unknown> | undefined {
+    const target = exception.meta?.target;
+    if (!target) {
+      return {
+        prismaCode: exception.code,
+      };
+    }
+
+    return {
+      prismaCode: exception.code,
+      target,
     };
   }
 }

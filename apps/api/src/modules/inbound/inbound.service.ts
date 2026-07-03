@@ -85,6 +85,23 @@ export class InboundService {
     return this.toDraftResponse(draft);
   }
 
+  async getDraftByBatchNo(batchNo: string) {
+    const normalizedBatchNo = batchNo.trim().toUpperCase();
+    if (!normalizedBatchNo) {
+      throw new BadRequestException('Inbound batch number is required.');
+    }
+
+    const draft = await this.inboundRepository.findDraftByBatchNo(normalizedBatchNo);
+    if (!draft) {
+      throw new NotFoundException('没有找到这个入库单号。');
+    }
+    if (draft.status !== InboundBatchStatus.DRAFT) {
+      throw new ConflictException('这个入库单已经不是草稿状态，不能在入库扫码页面恢复。');
+    }
+
+    return this.toDraftResponse(draft);
+  }
+
   async scanUps(draftId: string, dto: ScanInboundUpsDto) {
     const draft = await this.findOpenDraft(draftId);
     const upsTrackingNo = normalizePackageTracking(dto.upsTrackingNo);
@@ -325,6 +342,11 @@ export class InboundService {
     const item = await this.inboundRepository.findItemById(id);
     if (!item) {
       throw new NotFoundException('Inbound record not found.');
+    }
+    if (item.inboundBatch.status === InboundBatchStatus.DRAFT) {
+      throw new ConflictException(
+        '当前入库单还未确认，请回到入库扫码页面编辑或删除这条明细后再确认入库。',
+      );
     }
 
     const nextUpc = this.normalizeUpc(dto.upc);

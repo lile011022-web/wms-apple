@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, Edit3, RefreshCw, Save, Search, ShieldCheck, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { customersApi, inboundApi } from '../../api/workflow';
 import { HorizontalScrollControl } from '../../components/horizontal-scroll-control';
 import { PaginationControls } from '../../components/pagination-controls';
@@ -26,10 +26,6 @@ export function InboundRecordsPage() {
   });
   const customers = (customersQuery.data as CustomerOption[] | undefined) ?? [];
 
-  useEffect(() => {
-    if (!customerId && customers[0]) setCustomerId(customers[0].id);
-  }, [customerId, customers]);
-
   const params = useMemo(
     () => ({
       page,
@@ -48,7 +44,6 @@ export function InboundRecordsPage() {
   const recordsQuery = useQuery({
     queryKey: ['inbound-records', params],
     queryFn: () => inboundApi.records(params),
-    enabled: Boolean(customerId),
   });
   const records = recordsQuery.data as InboundRecordsResult | undefined;
   const editingRecord = recordEdit
@@ -179,6 +174,7 @@ export function InboundRecordsPage() {
               setPage(1);
             }}
           >
+            <option value="">全部客户</option>
             {customers.map((customer) => (
               <option key={customer.id} value={customer.id}>
                 {customer.label}
@@ -357,7 +353,7 @@ export function InboundRecordsPage() {
               })}
               {!records || records.items.length === 0 ? (
                 <tr>
-                  <td colSpan={10}>暂无入库记录</td>
+                  <td colSpan={11}>暂无入库记录</td>
                 </tr>
               ) : null}
             </tbody>

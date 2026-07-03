@@ -7,7 +7,7 @@ import {
   InventoryStatus,
   OutboundBoxStatus,
 } from '@prisma/client';
-import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class ReportFilterDto {
   @ApiPropertyOptional({ example: 'cust_01H...' })
@@ -64,6 +64,13 @@ export class ReportFilterDto {
   @IsOptional()
   @IsString()
   boxNo?: string;
+
+  @ApiPropertyOptional({ example: ['BOX-20260617-001', 'BOX-20260617-002'] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  boxNos?: string[];
 
   @ApiPropertyOptional({ example: 'iPhone 15 Pro' })
   @IsOptional()

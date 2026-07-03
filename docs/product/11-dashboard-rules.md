@@ -10,7 +10,7 @@
 - Inbound trend counts confirmed inbound items.
 - Outbound trend counts sealed outbound boxes.
 - Exception distribution groups open exceptions by exception type.
-- Top inbound customers ranks the top five customers by confirmed inbound item count today.
+- The inbound customer breakdown lists every customer with confirmed inbound items today, sorted by count descending.
 - Dashboard endpoints may be filtered by warehouse.
 
 ## Audit Logs

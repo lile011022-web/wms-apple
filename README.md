@@ -87,10 +87,13 @@ pnpm --filter @wms-scan/shared test
 
 ## 当前测试服务器
 
-- SSH: `ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@24.199.87.181`
+- Droplet: `ubuntu-s-2vcpu-4gb-120gb-intel-nyc1`
+- SSH: `ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@147.182.133.230`
 - Server path: `/opt/wms-scan`
-- Web: `http://24.199.87.181/`
-- Health: `http://24.199.87.181/api/v1/health`
+- Web: `http://147.182.133.230/`
+- Health: `http://147.182.133.230/api/v1/health`
+
+2026-06-30 核验结果：`147.182.133.230` 返回 WMS health `status: ok`，作为当前部署目标；截图中的另一台 `147.182.186.0` 未返回正常 WMS health，不应作为当前部署目标。旧服务器 `24.199.87.181` 仍可能返回旧 WMS health，停用或删除前必须先确认数据库备份、域名入口和业务数据已经迁移。
 
 本地修改、验证、提交后，可将当前 checkout 同步到服务器，再在服务器执行：
 
@@ -112,7 +115,7 @@ USE_PREBUILT_IMAGES=true COMPOSE_FILE=docker-compose.prod.images.yml PROJECT_DIR
 PostgreSQL 只在 Docker 内网开放，不暴露公网端口。需要直接改数据时，先 SSH 到服务器，再进入 PostgreSQL 容器：
 
 ```bash
-ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@24.199.87.181
+ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@147.182.133.230
 cd /opt/wms-scan
 docker compose -p wms-scan -f docker-compose.prod.yml --env-file .env.production exec postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
@@ -136,6 +139,7 @@ PROJECT_DIR=/opt/wms-scan infra/scripts/backup-postgres.sh
 - 数据库设计: [docs/database](docs/database)
 - API 合同: [docs/api](docs/api)
 - 本地开发和运维: [docs/operations](docs/operations)
+- 系统操作手册: [docs/operations/user-manual.md](docs/operations/user-manual.md)
 - 变更记录: [docs/changelog](docs/changelog)
 - 原始 UI 原型: [docs/ui-prototype/original-html](docs/ui-prototype/original-html)
 

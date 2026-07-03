@@ -14,6 +14,8 @@ Outbound packing moves customer-owned inventory from warehouse stock into outbou
 - Outbound boxes belong to one warehouse.
 - Only inventory rows from the same warehouse as the outbound box can be packed into that box.
 - The internal box number must be unique inside its warehouse.
+- The common box size presets are `12*12*12`, `16*16*12`, `18*18*12`, and `18*18*16`;
+  operators can still use `CUSTOM` when a shipment needs a different size.
 
 ## Box Naming Rules
 
@@ -63,6 +65,14 @@ Rules:
   `wangchen20260625翻 新手机 16pro箱1` appears in a separate group.
 - The created-box list should load enough boxes per page for a day's active tasks to be grouped
   together in normal warehouse use.
+- The created-box list should default to `未完成`, meaning open boxes only, so historical sealed
+  boxes do not accumulate in the daily packing workspace.
+- Created-box date shortcuts such as `仓库今日` and `近7仓库日` must use the selected warehouse's
+  `timezone` to calculate the business date. They must not use the operator's browser timezone or
+  China time, because US warehouse staff may create boxes while China-based staff download details
+  on the next calendar day.
+- `已封箱` and `全部历史` are explicit history views. Operators should switch to those views only
+  when downloading or reviewing old boxes.
 
 ## Available Inventory
 
@@ -79,12 +89,25 @@ When the outbound packing customer inventory search box is empty, the page shows
 
 When an operator types or scans a search value in that box, the page may search the selected customer's full inventory for traceability. Already packed rows can appear in search results, but they must show the generated box name or internal box number from `latestOutboundBox` and remain non-selectable. This lets staff answer “which box is this item in” without allowing duplicate packing.
 
-Outbound search can match UPS tracking number, UPC, IMEI, Serial, SKU, and product name. Packing actions still require the selected customer, selected warehouse, and `IN_STOCK` status.
+The outbound packing customer selector may also be set to all customers for global lookup. In that
+mode the inventory table should show paginated inventory across customers for the selected warehouse,
+and the search box should narrow that global list by package tracking number, IMEI/Serial, customer,
+or product. All-customer rows must show customer ownership and status, but they are not selectable or
+packable. Operators must switch to the row's specific customer before creating boxes, scanning into a
+box, batch packing, or adding any item.
+
+Outbound search can match customer code/name, UPS tracking number, UPC, IMEI, Serial, SKU, and
+product name. Packing actions still require the selected customer, selected warehouse, and
+`IN_STOCK` status.
 
 The package tracking storage field keeps the legacy API name `upsTrackingNo`, but operators can search UPS, USPS, and FedEx numbers through the outbound search box.
 
 The outbound packing inventory table must show the inventory `receivedAt` time as 入库时间 so
 operators can prioritize older or specific inbound stock while packing.
+
+The outbound packing inventory table must also show the inventory customer name. It is redundant
+when a single customer is selected, but it keeps search results and operator screenshots
+self-identifying when staff are tracing unknown packages.
 
 In bulk box packing mode, the outbound packing inventory table can be narrowed by
 operator-facing product class filters:
@@ -175,6 +198,7 @@ Allowed operations for an open box:
 - Clear all rows.
 - Upload or delete packing photos or videos.
 - Download the current box packing detail data for customer-service order creation before sealing.
+- Download packing detail data for selected created boxes from the created-box list.
 - Seal the box.
 
 Allowed operations for a sealed box:
@@ -205,7 +229,8 @@ When a box is sealed:
 
 Downloading box packing data is allowed before sealing. This export is for customer-service order
 creation and reconciliation only; it must not change the box lifecycle state and must not bypass the
-photo/video evidence requirement for final sealing.
+photo/video evidence requirement for final sealing. Downloading selected boxes should produce one
+workbook containing only the ticked boxes, whether those boxes are still open or already sealed.
 
 When a sealed box is reopened for rework:
 

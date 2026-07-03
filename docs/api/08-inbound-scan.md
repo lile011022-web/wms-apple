@@ -37,6 +37,13 @@ Preview items include `scannedAt`, `createdAt`, `updatedAt`, and linked `excepti
 client can keep scan-time ascending review order and show a readable exception reason beside any
 `EXCEPTION` row.
 
+`GET /api/v1/inbound/drafts/by-batch/:batchNo`
+
+Restores an open draft by its operator-facing batch number, for example
+`INB-20260701152205-Q2QEUT`. The endpoint returns the same payload as `GET /drafts/:id` and is used
+by the scan page's recovery control when a browser has cached a newer empty draft. Only `DRAFT`
+batches can be restored here; confirmed batches remain in inbound records.
+
 ## Scan Package Tracking Number
 
 `POST /api/v1/inbound/drafts/:id/ups`
@@ -48,11 +55,12 @@ client can keep scan-time ascending review order and show a readable exception r
 ```
 
 Returns normalized package tracking data and duplicate status. This endpoint auto-accepts UPS
-tracking numbers and FedEx tracking numbers that start with `9622` and contain 22 to 34 digits in
-total before item scans, but it still reports duplicate counts from both confirmed inbound records
-and the current draft. USPS, other FedEx formats, and unsupported package tracking formats return
-`valid: false` instead of failing the request, so the web page can ask the operator whether to
-continue. The request and response keep the legacy `upsTrackingNo` field name for API compatibility.
+tracking numbers, manually entered warehouse compensation package numbers that start with `BB0000`,
+and FedEx tracking numbers that start with `9622` and contain 22 to 34 digits in total before item
+scans, but it still reports duplicate counts from both confirmed inbound records and the current
+draft. USPS, other FedEx formats, and unsupported package tracking formats return `valid: false`
+instead of failing the request, so the web page can ask the operator whether to continue. The request
+and response keep the legacy `upsTrackingNo` field name for API compatibility.
 
 Example response:
 
@@ -89,7 +97,9 @@ Rules:
 - `trackingExceptionConfirmed` is optional. It should only be sent after the operator confirms a
   package tracking warning. When true, USPS, non-9622 FedEx, duplicate tracking numbers from
   confirmed records or the current draft, or other unsupported tracking formats can be saved to the
-  draft instead of being rejected.
+  draft instead of being rejected. `BB0000` warehouse compensation package numbers, including the
+  exact value `BB0000`, do not need this exception flag unless a duplicate warning is being
+  deliberately confirmed.
 - `scanMode` is optional and defaults to `STANDARD`.
 - `STANDARD` mode is the strict mode used by the web page's `一版模式`: package tracking number, UPC,
   and IMEI/Serial are required according to product rules.
@@ -219,7 +229,20 @@ Confirmation runs inside one database transaction:
 Drafts with no confirmable rows are rejected. Drafts with repeated IMEI or Serial values inside
 the same active preview are rejected with a business error so the operator can delete or fix the
 duplicate row before confirming. Drafts with IMEI or Serial values already present in inventory
-are also rejected with a business error and remain open for correction.
+are also rejected with a business error and remain open for correction. If a database uniqueness
+guard catches the duplicate during the final transaction, the API still returns the same readable
+IMEI/Serial duplicate message rather than a generic `500` response.
+
+Large restored drafts can contain hundreds of pending rows, so the confirmation transaction is
+allowed a longer execution window than short single-row edits. If the database still times out, the
+API returns a readable large-batch retry message instead of the generic database failure response.
+
+## Correct Confirmed Records
+
+Inbound record correction is for rows that already belong to a confirmed batch. Rows in an unfinished
+`DRAFT` batch must be edited or deleted from the inbound scan page before final confirmation. The API
+rejects record-correction requests against draft batches so a single row cannot create inventory and
+partially confirm a still-open receiving draft.
 
 ## List Records
 

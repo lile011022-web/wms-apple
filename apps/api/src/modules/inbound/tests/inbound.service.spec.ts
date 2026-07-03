@@ -172,6 +172,7 @@ function createService(repositoryOverrides: Partial<Record<keyof InboundReposito
     findWarehouseById: jest.fn().mockResolvedValue(warehouse),
     createDraft: jest.fn().mockResolvedValue(draft),
     findDraftById: jest.fn().mockResolvedValue(draft),
+    findDraftByBatchNo: jest.fn().mockResolvedValue(draft),
     findProductByUpc: jest.fn().mockResolvedValue({
       id: 'upc-1',
       upc: '194253149189',
@@ -222,7 +223,7 @@ describe('InboundService', () => {
     );
   });
 
-  it('auto-accepts UPS and 9622 FedEx package tracking numbers for inbound scans', async () => {
+  it('auto-accepts UPS, 9622 FedEx, and warehouse compensation package tracking numbers for inbound scans', async () => {
     const { repository, service } = createService({});
 
     await expect(
@@ -244,12 +245,24 @@ describe('InboundService', () => {
       upsTrackingNo: '9622080430009579265100530689178',
       valid: true,
     });
+    await expect(
+      service.scanUps('draft-1', { upsTrackingNo: ' bb0000 jh05 ' }),
+    ).resolves.toMatchObject({
+      upsTrackingNo: 'BB0000JH05',
+      valid: true,
+    });
+    await expect(service.scanUps('draft-1', { upsTrackingNo: ' bb0000 ' })).resolves.toMatchObject({
+      upsTrackingNo: 'BB0000',
+      valid: true,
+    });
 
     expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('1Z999AA10123456784');
     expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('9622123456789012345678');
     expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith(
       '9622080430009579265100530689178',
     );
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('BB0000JH05');
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('BB0000');
     expect(repository.countDraftItemsByUps).toHaveBeenCalledWith('draft-1', '1Z999AA10123456784');
     expect(repository.countDraftItemsByUps).toHaveBeenCalledWith(
       'draft-1',
@@ -258,6 +271,34 @@ describe('InboundService', () => {
     expect(repository.countDraftItemsByUps).toHaveBeenCalledWith(
       'draft-1',
       '9622080430009579265100530689178',
+    );
+    expect(repository.countDraftItemsByUps).toHaveBeenCalledWith('draft-1', 'BB0000JH05');
+    expect(repository.countDraftItemsByUps).toHaveBeenCalledWith('draft-1', 'BB0000');
+  });
+
+  it('restores an open draft by batch number', async () => {
+    const { repository, service } = createService({
+      findDraftByBatchNo: jest.fn().mockResolvedValue(draft),
+    });
+
+    await expect(service.getDraftByBatchNo(' inb-20260617000000-abc123 ')).resolves.toMatchObject({
+      id: 'draft-1',
+      batchNo: 'INB-20260617000000-ABC123',
+      status: InboundBatchStatus.DRAFT,
+    });
+    expect(repository.findDraftByBatchNo).toHaveBeenCalledWith('INB-20260617000000-ABC123');
+  });
+
+  it('rejects restoring a non-draft batch by batch number', async () => {
+    const { service } = createService({
+      findDraftByBatchNo: jest.fn().mockResolvedValue({
+        ...draft,
+        status: InboundBatchStatus.CONFIRMED,
+      }),
+    });
+
+    await expect(service.getDraftByBatchNo('INB-20260617000000-ABC123')).rejects.toThrow(
+      '这个入库单已经不是草稿状态，不能在入库扫码页面恢复。',
     );
   });
 
@@ -342,6 +383,25 @@ describe('InboundService', () => {
     expect(repository.createItem).toHaveBeenCalledWith(
       expect.objectContaining({
         upsTrackingNo: 'NOT-A-TRACKING-NUMBER',
+        status: InboundItemStatus.PENDING,
+      }),
+      undefined,
+    );
+  });
+
+  it('allows warehouse compensation package tracking without exception confirmation', async () => {
+    const { repository, service } = createService({});
+
+    await expect(
+      service.addItem('draft-1', {
+        upsTrackingNo: 'bb0000',
+        upc: '194253149189',
+        imei: '356789012345678',
+      }),
+    ).resolves.toMatchObject({ status: InboundItemStatus.PENDING });
+    expect(repository.createItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        upsTrackingNo: 'BB0000',
         status: InboundItemStatus.PENDING,
       }),
       undefined,
@@ -585,6 +645,27 @@ describe('InboundService', () => {
       productId: product.id,
       reason: 'UPC and identity were scanned into the wrong fields',
     });
+  });
+
+  it('rejects inbound-record correction while the source batch is still a draft', async () => {
+    const { repository, service } = createService({
+      findItemById: jest.fn().mockResolvedValue({
+        ...pendingItem,
+        inboundBatch: {
+          ...draft,
+          status: InboundBatchStatus.DRAFT,
+        },
+      }),
+    });
+
+    await expect(
+      service.correctRecordUpc(
+        'item-1',
+        { upc: '195950251593', reason: 'Fix before confirmation' },
+        operator,
+      ),
+    ).rejects.toThrow('当前入库单还未确认，请回到入库扫码页面编辑或删除这条明细后再确认入库。');
+    expect(repository.correctRecordUpc).not.toHaveBeenCalled();
   });
 
   it('rejects force inbound when the exception item has no matched active product', async () => {

@@ -37,6 +37,8 @@ export const productsApi = {
 export const inboundApi = {
   createDraft: (data: Payload) => request<unknown>('post', '/inbound/drafts', { data }),
   getDraft: (id: string) => request<unknown>('get', `/inbound/drafts/${id}`),
+  getDraftByBatchNo: (batchNo: string) =>
+    request<unknown>('get', `/inbound/drafts/by-batch/${encodeURIComponent(batchNo)}`),
   scanUps: (id: string, data: Payload) =>
     request<unknown>('post', `/inbound/drafts/${id}/ups`, { data }),
   addItem: (id: string, data: Payload) =>
@@ -70,6 +72,7 @@ export const inventoryApi = {
   availableForOutbound: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/inventory/available-for-outbound', { params }),
   deleteProducts: (data: Payload) => request<unknown>('delete', '/inventory/products', { data }),
+  deleteItems: (data: Payload) => request<unknown>('delete', '/inventory/items', { data }),
 };
 
 export const outboundApi = {
@@ -224,6 +227,8 @@ export const reportsApi = {
   createExport: (data: Payload) => request<unknown>('post', '/reports/exports', { data }),
   inboundBatches: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/reports/inbound-batches', { params }),
+  outboundBoxes: (params?: QueryParams) =>
+    request<PaginatedResult<unknown>>('get', '/reports/outbound-boxes', { params }),
   exports: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/reports/exports', { params }),
   download: (id: string) => request<unknown>('get', `/reports/exports/${id}/download`),

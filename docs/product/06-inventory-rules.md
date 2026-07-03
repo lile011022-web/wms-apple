@@ -5,7 +5,9 @@ Inventory rows are customer-owned item records created by confirmed inbound scan
 ## Ownership
 
 - Inventory always belongs to the customer selected and locked during inbound scanning.
-- Customer inventory pages must query by `customerId`.
+- Customer inventory pages may query one selected `customerId` or all customers for lookup. When
+  all customers are shown, every SKU and IMEI/detail row must display the customer code/name so
+  operators can identify ownership without opening each customer separately.
 - Outbound packing must only offer inventory from the selected customer.
 - Outbound packing must not reassign the customer of an inventory row.
 
@@ -24,7 +26,7 @@ Product-level inventory summaries are derived from `inventory_items` grouped by 
 The customer inventory page should show:
 
 - Customer-level totals for total inventory, SKU count, in-stock, available outbound, packed, outbound, exception, and voided quantities.
-- A business-date locator so operators can review a selected day, including today's current inventory activity, packed items, and outbound items without leaving the customer inventory page.
+- A business-time locator so operators can review a selected start/end time window, including today's current inventory activity, packed items, and outbound items without leaving the customer inventory page.
 - SKU and product identity from the product catalog.
 - Count of distinct related package tracking numbers for that SKU. In the customer inventory page, `单号` means the inbound logistics number stored as `upsTrackingNo`, but SKU summary rows show only the count instead of listing every tracking number.
 - Total quantity.
@@ -33,6 +35,7 @@ The customer inventory page should show:
 - Outbound quantity.
 - Exception quantity.
 - Available-for-outbound quantity.
+- Customer code/name on SKU rows, especially when the filter is set to all customers.
 
 Customer-level summary cards are operational drill-down buttons:
 
@@ -43,7 +46,7 @@ Customer-level summary cards are operational drill-down buttons:
 - Clicking exception or voided shows the matching blocked or cleanup rows.
 - The click should reset SKU/detail pagination and move the operator to the matching detail data.
 
-When a business date is selected, date filters are status-aware:
+When a business time range is selected, date filters are status-aware:
 
 - `PACKED` rows use `packedAt`.
 - `OUTBOUND` rows use `outboundAt`.
@@ -70,12 +73,20 @@ Detail rows should preserve:
 - Current inventory status.
 - Latest outbound box when packed or outbound.
 - Exception summary.
+- Customer code/name as a first-class visible column so cross-customer searches remain identifiable.
 
 The customer inventory detail table should provide a search box for narrowing item rows without
 leaving the page. Search should use the inventory item list API's broad `search` filter so operators
-can find rows by package tracking number, IMEI, Serial, UPC, SKU, or product name while preserving
-the selected customer and warehouse filters. The search should also cover inbound batch number and
-latest outbound box number/name because those columns are visible in the detail table.
+can find rows by customer code/name, package tracking number, IMEI, Serial, UPC, SKU, or product name
+while preserving the selected customer and warehouse filters when a customer is selected. The search
+should also cover inbound batch number and latest outbound box number/name because those columns are
+visible in the detail table.
+
+The customer inventory detail table should provide a direct `导出明细` action. The export must use
+the current customer, warehouse, business time range, status card, and detail search filters so downloaded
+rows match the on-screen detail table. When the current view is all customers, exported rows must
+include customer code/name. The exported table must include `入库时间` so operators can audit how
+long visible inventory has stayed in the warehouse.
 
 ## Outbound Availability
 
@@ -85,22 +96,34 @@ Rows with `EXCEPTION`, `PACKED`, `OUTBOUND`, or `VOIDED` status must not appear 
 
 ## Customer Inventory Page Boundary
 
-The left navigation customer inventory page is for viewing and cleaning customer-owned inventory. It
-should not create boxes, select boxes, seal boxes, or expose batch packing controls.
+The left navigation customer inventory page is for viewing and cleaning customer-owned inventory
+details. It should not create boxes, select boxes, seal boxes, expose batch packing controls, or
+delete product catalog UPC/SKU data.
 
-The SKU summary table may expose destructive cleanup controls:
+The IMEI/detail inventory table may expose destructive cleanup controls:
 
-- Operators can select one or more visible SKU rows and delete inventory for the selected customer,
-  warehouse, and products.
-- Operators can delete all SKU rows in the current SKU summary page.
+- Operators can select one or more visible inventory detail rows and delete those exact customer
+  inventory rows.
+- Operators can delete all detail rows in the current detail page.
+- Deletion requires a selected customer; all-customer lookup views remain read-only for destructive
+  cleanup.
 - Deletion must show a confirmation prompt before calling the API.
-- Deletion removes matching inventory rows, removes related outbound box item rows, and clears linked
-  inbound-item and exception inventory pointers.
-- Deletion does not delete customer records, products, inbound batches, or inbound item history.
-- Deletion must be audit logged with the selected customer, warehouse, product IDs, and deleted count.
+- Deletion removes matching `inventory_items` rows and clears linked inbound-item and exception
+  inventory pointers.
+- Deletion must reject packed or outbound rows; operators must resolve outbound box associations in
+  the outbound workflow first.
+- Deletion does not delete customer records, products, product UPCs, inbound batches, or inbound item
+  history.
+- Deletion must be audit logged with the selected customer, warehouse, inventory item IDs, and
+  deleted count.
 
-Batch packing belongs to the outbound packing workbench, where the selected customer inventory panel can add one or many available rows to the active outbound box.
+Batch packing belongs to the outbound packing workbench, where the selected customer inventory panel
+can add one or many available rows to the active outbound box. All-customer inventory views are for
+lookup and ownership identification; destructive cleanup and outbound packing still require a
+specific selected customer.
 
 ## Export Behavior
 
 Inventory export filters must match inventory list filters so the detail download page and reports module do not drift from on-screen inventory results.
+Customer inventory page shortcut exports should use the report export workflow so downloads remain
+audited through `REPORT_EXPORT`.

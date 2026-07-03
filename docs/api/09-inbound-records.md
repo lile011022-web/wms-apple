@@ -14,7 +14,7 @@ Query parameters:
 
 - `page`, `pageSize`, `search`, `sortBy`, `sortOrder`
 - `batchId`
-- `customerId`
+- `customerId` is optional. Omit it to search all customers.
 - `warehouseId`
 - `status`
 - `inventoryStatus`
@@ -36,6 +36,9 @@ Supported `sortBy` values:
 - `status`
 
 Search covers UPS, UPC, IMEI, Serial, customer code/name, product SKU, and product name.
+When `customerId`, `dateFrom`, and `dateTo` are omitted, the list searches all customers and all
+historical inbound records. This is the preferred lookup path when operators need to verify one
+package tracking number without knowing which customer received it.
 
 Exact filter fields are normalized before querying:
 

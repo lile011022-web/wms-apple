@@ -420,6 +420,7 @@ export class OutboundService {
       customerId: this.trimOptional(query.customerId),
       warehouseId: this.trimOptional(query.warehouseId),
       status: query.status ?? { not: OutboundBoxStatus.VOIDED },
+      createdAt: this.toDateRange(query.createdFrom, query.createdTo),
       OR: search
         ? [
             { boxNo: { contains: search, mode: 'insensitive' } },
@@ -427,6 +428,16 @@ export class OutboundService {
             { customer: { name: { contains: search, mode: 'insensitive' } } },
           ]
         : undefined,
+    };
+  }
+
+  private toDateRange(dateFrom?: string, dateTo?: string) {
+    if (!dateFrom && !dateTo) {
+      return undefined;
+    }
+    return {
+      gte: dateFrom ? new Date(dateFrom) : undefined,
+      lte: dateTo ? new Date(dateTo) : undefined,
     };
   }
 

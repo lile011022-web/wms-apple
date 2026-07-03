@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { ArgumentsHost } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { BusinessError } from '../errors/business-error';
 import { ErrorCode } from '../errors/error-codes';
 import { AllExceptionsFilter } from './all-exceptions.filter';
@@ -97,6 +98,57 @@ describe('AllExceptionsFilter', () => {
         details: { customerId: 'customer-1' },
       },
       requestId: 'req-business',
+    });
+  });
+
+  it('maps Prisma unique constraint errors to a conflict envelope', () => {
+    const filter = new AllExceptionsFilter();
+    const { host, status, json } = createHost('req-prisma');
+    const exception = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+      meta: { target: ['imei'] },
+    });
+
+    filter.catch(exception, host);
+
+    expect(status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+    expect(json).toHaveBeenCalledWith({
+      success: false,
+      error: {
+        code: ErrorCode.CONFLICT,
+        message: '数据已存在，请检查重复的 IMEI、Serial、UPC、SKU 或单号后再重试。',
+        details: {
+          prismaCode: 'P2002',
+          target: ['imei'],
+        },
+      },
+      requestId: 'req-prisma',
+    });
+  });
+
+  it('maps Prisma transaction timeout errors to a readable conflict envelope', () => {
+    const filter = new AllExceptionsFilter();
+    const { host, status, json } = createHost('req-prisma-timeout');
+    const exception = new Prisma.PrismaClientKnownRequestError('Transaction already closed', {
+      code: 'P2028',
+      clientVersion: 'test',
+    });
+
+    filter.catch(exception, host);
+
+    expect(status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+    expect(json).toHaveBeenCalledWith({
+      success: false,
+      error: {
+        code: ErrorCode.CONFLICT,
+        message:
+          '本次入库确认数据量较大，数据库事务超时。请刷新页面后重试；如果仍失败，请联系管理员分批处理。',
+        details: {
+          prismaCode: 'P2028',
+        },
+      },
+      requestId: 'req-prisma-timeout',
     });
   });
 });

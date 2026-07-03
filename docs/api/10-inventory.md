@@ -6,11 +6,12 @@ All endpoints use the `/api/v1` prefix and require bearer authentication with `i
 
 ## GET /inventory/customer-summary
 
-Returns customer-level inventory totals.
+Returns inventory totals for one customer or, when `customerId` is omitted, all customers in the
+selected warehouse/date scope.
 
 Query parameters:
 
-- `customerId`: required. The customer whose inventory should be counted.
+- `customerId`: optional. When omitted, counts cover all customers.
 - `warehouseId`: optional warehouse filter.
 - `status`: optional inventory status for a drill-down summary.
 - `dateFrom`, `dateTo`: optional business date range. Date-only values such as `2026-06-28` are expanded to the full UTC day.
@@ -38,11 +39,12 @@ Response data:
 
 ## GET /inventory/products
 
-Returns SKU-level inventory summaries for a selected customer.
+Returns SKU-level inventory summaries. Rows are grouped by `customerId + productId`, so all-customer
+views do not merge the same SKU across different customers.
 
 Query parameters:
 
-- `customerId`: required.
+- `customerId`: optional. When omitted, rows for all customers are returned.
 - `warehouseId`: optional.
 - `search`: optional UPC, SKU, product name, IMEI, Serial, or UPS search.
 - `status`: optional `IN_STOCK`, `PACKED`, `OUTBOUND`, `EXCEPTION`, or `VOIDED` status filter.
@@ -74,6 +76,11 @@ Each row contains a product block and status counts:
         "requiresImei": true,
         "status": "ACTIVE",
         "upcs": ["194253149189"]
+      },
+      "customer": {
+        "id": "customer-1",
+        "code": "CUST-001",
+        "name": "Apple Reseller"
       },
       "summary": {
         "totalQuantity": 5,
@@ -121,19 +128,24 @@ linked `inbound_items.inventoryItemId` and `exception_records.inventoryItemId` v
 do not block the cleanup. The customer record, product catalog, inbound batch, and inbound item rows
 remain in place for historical review. The operation writes an audit log with the deleted item count.
 
+This route is retained for API compatibility. The operator-facing customer inventory page should use
+`DELETE /inventory/items` so staff delete exact IMEI/Serial inventory detail rows rather than acting
+from the SKU summary.
+
 ## GET /inventory/items
 
 Returns item-level inventory rows.
 
 Query parameters:
 
-- `customerId`: optional for general inventory search, required by customer-facing pages.
+- `customerId`: optional. Customer-facing pages may omit it for all-customer lookup, but must show
+  each row's customer identity when doing so.
 - `warehouseId`: optional.
 - `productId`: optional.
 - `status`: optional `IN_STOCK`, `PACKED`, `OUTBOUND`, `EXCEPTION`, or `VOIDED`.
 - `upc`, `imei`, `serial`, `upsTrackingNo`: optional exact-field contains filters.
-- `search`: optional search across UPC, IMEI, Serial, UPS, inbound batch number, outbound box
-  number/name, SKU, and product name.
+- `search`: optional search across customer code/name, UPC, IMEI, Serial, UPS, inbound batch number,
+  outbound box number/name, SKU, and product name.
 - `availableForOutbound`: optional boolean. When true, only `IN_STOCK` rows are returned.
 - `dateFrom`, `dateTo`: optional business date range using status-aware date anchors. Packed rows are filtered by `packedAt`, outbound rows by `outboundAt`, and other rows by `receivedAt`.
 - `page`, `pageSize`, `sortBy`, `sortOrder`: standard pagination and sorting.
@@ -157,13 +169,15 @@ Customer inventory IMEI detail rows should show both time anchors:
 Customer inventory item tables should display the returned tracking context and expose the `search`
 filter in the IMEI detail section:
 
+- `customer.code` / `customer.name`: row ownership, especially in all-customer searches.
 - `inboundBatch.batchNo`: inbound batch number.
 - `upsTrackingNo`: package tracking/order number captured during inbound scan or CSV import.
 - `latestOutboundBox.boxNo`: internal outbound box/order number when the inventory row has been packed or shipped.
 - `latestOutboundBox.boxName`: operator-facing generated box name, used by outbound packing search to tell staff which box already contains the item.
 
 The left navigation customer inventory page does not create boxes, seal boxes, or pack inventory. It
-may delete selected SKU inventory for operational cleanup through `DELETE /inventory/products`.
+may delete selected IMEI/detail inventory rows for operational cleanup through
+`DELETE /inventory/items`.
 Batch packing must use `GET /inventory/available-for-outbound` from the outbound packing page, then
 add selected rows through `POST /outbound/boxes/:id/items`. The outbound packing page may call
 `GET /inventory/items` when an operator searches a specific value so packed rows can be found and
@@ -174,6 +188,30 @@ the outbound module.
 ## GET /inventory/items/:id
 
 Returns one inventory row by ID. Use this for item detail drawers or audit drill-down links.
+
+## DELETE /inventory/items
+
+Deletes selected customer inventory detail rows by inventory item ID. This is the operator-facing
+cleanup action on the customer inventory detail table.
+
+Permission: `customers.manage`
+
+Request body:
+
+```json
+{
+  "customerId": "customer-1",
+  "warehouseId": "warehouse-1",
+  "itemIds": ["inventory-1", "inventory-2"]
+}
+```
+
+The backend requires a selected customer and only deletes inventory rows that belong to that
+customer and optional warehouse. Packed or outbound rows, or rows already linked to outbound box
+items, are rejected so operators do not silently break shipping history. The operation clears linked
+`inbound_items.inventoryItemId` and `exception_records.inventoryItemId` values, deletes the matching
+`inventory_items` rows, and writes an audit log. It does not delete customer records, products,
+product UPCs, inbound batches, or inbound item history.
 
 ## GET /inventory/available-for-outbound
 

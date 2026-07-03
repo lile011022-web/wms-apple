@@ -106,17 +106,29 @@ function createService(repositoryOverrides: Partial<Record<keyof InventoryReposi
     getCustomerSkuCount: jest.fn().mockResolvedValue([{ productId: 'product-1' }]),
     findProductSummaries: jest.fn().mockResolvedValue({
       total: 1,
-      products: [product],
+      rows: [{ customerId: 'customer-1', productId: 'product-1', product, customer }],
       statusCounts: [
-        { productId: 'product-1', status: InventoryStatus.IN_STOCK, _count: { _all: 3 } },
-        { productId: 'product-1', status: InventoryStatus.OUTBOUND, _count: { _all: 2 } },
+        {
+          customerId: 'customer-1',
+          productId: 'product-1',
+          status: InventoryStatus.IN_STOCK,
+          _count: { _all: 3 },
+        },
+        {
+          customerId: 'customer-1',
+          productId: 'product-1',
+          status: InventoryStatus.OUTBOUND,
+          _count: { _all: 2 },
+        },
       ],
       trackingRows: [
         {
+          customerId: 'customer-1',
           productId: 'product-1',
           upsTrackingNo: '1Z999AA10123456784',
         },
         {
+          customerId: 'customer-1',
           productId: 'product-1',
           upsTrackingNo: '1ZBBTEST0000000100',
         },
@@ -131,6 +143,11 @@ function createService(repositoryOverrides: Partial<Record<keyof InventoryReposi
       clearedInboundLinks: 3,
       clearedExceptionLinks: 0,
     }),
+    deleteItems: jest.fn().mockResolvedValue({
+      deletedInventoryItems: 2,
+      clearedInboundLinks: 2,
+      clearedExceptionLinks: 0,
+    }),
     toSearchWhere: jest.fn().mockReturnValue(undefined),
     toOutboundAvailableWhere: jest.fn().mockReturnValue({ status: InventoryStatus.IN_STOCK }),
     ...repositoryOverrides,
@@ -143,10 +160,17 @@ function createService(repositoryOverrides: Partial<Record<keyof InventoryReposi
 }
 
 describe('InventoryService', () => {
-  it('requires a customer before returning customer inventory summary', async () => {
-    const { service } = createService({});
+  it('can summarize inventory across all customers', async () => {
+    const { repository, service } = createService({});
 
-    await expect(service.getCustomerSummary({})).rejects.toThrow(BadRequestException);
+    await expect(service.getCustomerSummary({})).resolves.toMatchObject({
+      customerId: null,
+      totalQuantity: 6,
+      skuCount: 1,
+    });
+    expect(repository.getCustomerStatusCounts).toHaveBeenCalledWith(
+      expect.not.objectContaining({ customerId: expect.any(String) }),
+    );
   });
 
   it('summarizes only the selected customer inventory', async () => {
@@ -175,6 +199,7 @@ describe('InventoryService', () => {
       total: 1,
       items: [
         {
+          customer: { id: 'customer-1', code: 'CUST-001', name: 'Apple Reseller' },
           product: { id: 'product-1', sku: 'IPHONE-16-PRO-256-NAT' },
           summary: {
             totalQuantity: 5,
@@ -322,6 +347,8 @@ describe('InventoryService', () => {
         },
         { product: { sku: { contains: 'BOX-BB0001', mode: 'insensitive' } } },
         { product: { name: { contains: 'BOX-BB0001', mode: 'insensitive' } } },
+        { customer: { code: { contains: 'BOX-BB0001', mode: 'insensitive' } } },
+        { customer: { name: { contains: 'BOX-BB0001', mode: 'insensitive' } } },
       ]),
     });
   });
@@ -355,6 +382,37 @@ describe('InventoryService', () => {
 
     await expect(
       service.deleteProducts({ customerId: 'customer-1', productIds: [' '] }, operator),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('deletes selected customer inventory detail rows by item id', async () => {
+    const { repository, service } = createService({});
+
+    await expect(
+      service.deleteItems(
+        {
+          customerId: ' customer-1 ',
+          warehouseId: ' warehouse-1 ',
+          itemIds: ['inventory-1', 'inventory-1', ' inventory-2 '],
+        },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      deletedInventoryItems: 2,
+    });
+    expect(repository.deleteItems).toHaveBeenCalledWith({
+      customerId: 'customer-1',
+      warehouseId: 'warehouse-1',
+      itemIds: ['inventory-1', 'inventory-2'],
+      operator,
+    });
+  });
+
+  it('rejects inventory detail deletion without selected rows', async () => {
+    const { service } = createService({});
+
+    await expect(
+      service.deleteItems({ customerId: 'customer-1', itemIds: [' '] }, operator),
     ).rejects.toThrow(BadRequestException);
   });
 });

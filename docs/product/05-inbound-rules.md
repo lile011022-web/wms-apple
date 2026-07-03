@@ -36,17 +36,21 @@ The customer must be locked before scan data becomes operational inventory. Pack
 - The current API and database field remains `upsTrackingNo` for compatibility, but the business meaning is package tracking number.
 - Multiple items may share one package tracking number within the same package.
 - A package tracking value already confirmed in prior inbound records is treated as a duplicate package signal and can create `UPS_DUPLICATED` exceptions.
-- The scan page auto-accepts only UPS tracking numbers and FedEx tracking numbers that start with
-  `9622` and contain 22 to 34 digits in total. These values can proceed without an extra operator
-  warning.
+- The scan page auto-accepts UPS tracking numbers, warehouse compensation package numbers that
+  start with `BB0000`, and FedEx tracking numbers that start with `9622` and contain 22 to 34 digits
+  in total. These values can proceed without an extra operator warning.
+- `BB0000` package numbers are manually entered by warehouse operators when the warehouse
+  compensates a customer with a replacement package. The system normalizes them to uppercase,
+  stores them as package tracking numbers, accepts the exact value `BB0000` as valid, and still
+  applies normal duplicate tracking checks.
 - USPS values, non-9622 FedEx values, and all other package tracking formats are abnormal for the
   current receiving workflow. They must pause the scan page and require explicit operator
   confirmation before the item can be added to the draft.
 - When a package tracking number is entered, the scan page should warn the operator if the number
-  does not match the UPS or 9622 FedEx auto-accept rules, if it already appears in confirmed inbound
-  records, or if it already appears in the current draft. The operator can either modify the number
-  or explicitly continue inbound. After explicit confirmation, the current scan can still be saved
-  with that package tracking value.
+  does not match the UPS, `BB0000` warehouse compensation, or 9622 FedEx auto-accept rules, if it
+  already appears in confirmed inbound records, or if it already appears in the current draft. The
+  operator can either modify the number or explicitly continue inbound. After explicit confirmation,
+  the current scan can still be saved with that package tracking value.
 
 ## Confirmation
 
@@ -56,6 +60,9 @@ Before confirmation, the inbound scan page should show an always-current review 
 active draft. The summary must help the operator verify the number of scanned product units, unique
 UPC values, product styles, package tracking numbers, pending rows, exception rows, and the count
 per UPC/product.
+The page must also let operators restore an unfinished draft by its visible `INB-...` batch number,
+so browser-local state does not hide an older open receiving batch after a refresh, device switch, or
+accidental new draft.
 The draft detail table and UPC review must follow scan-time ascending order: earlier scanned rows
 stay above later rows, and the newest scan appears at the bottom of the current review sequence.
 Exception rows must show the operator-facing abnormal reason, such as unmatched UPC, duplicate
@@ -65,10 +72,15 @@ IMEI/Serial, or duplicated package tracking number, rather than only showing the
 The system must:
 
 - Recheck duplicates inside the transaction.
+- Convert database-level IMEI/Serial uniqueness conflicts into operator-readable duplicate
+  messages instead of exposing a generic server error.
 - Create inventory only for valid preview rows.
 - Mark duplicate rows as exceptions instead of creating inventory.
 - Link confirmed inbound items to the created inventory items.
 - Write an `INBOUND_CONFIRM` audit log.
+- Allow large restored drafts enough transaction time to confirm hundreds of pending rows; if the
+  database still times out, the operator must see a batch-size retry message instead of a generic
+  database failure.
 
 ## Delete Policy
 
@@ -80,9 +92,16 @@ If an operator confirms or leaves an inbound row with wrong scan fields, the cor
 from the inbound records page instead of deleting history. Operators can correct package tracking
 number, UPC, and IMEI/Serial in one row-level correction panel. A corrected UPC must match an active
 UPC/product mapping. If the row already has linked inventory, the system updates both the inbound
-record and linked inventory item in one audited transaction. If the row is still `EXCEPTION` or
-`PENDING` without linked inventory, saving a valid correction creates inventory and marks the row as
-normal `CONFIRMED` inbound. Packed or outbound inventory cannot be corrected through this flow.
+record and linked inventory item in one audited transaction. If the row belongs to an already
+confirmed batch and is still `EXCEPTION` or `PENDING` without linked inventory, saving a valid
+correction creates inventory and marks the row as normal `CONFIRMED` inbound. Rows that still belong
+to a draft batch must be corrected from the inbound scan page, not from inbound records, so one row
+cannot partially confirm an unfinished draft. Packed or outbound inventory cannot be corrected
+through this flow.
+
+The inbound records page must support all-customer, all-time lookup. When an operator is checking a
+package tracking number and does not know the customer, the customer filter can stay on `全部客户`,
+and the search should cover all historical inbound rows across every customer.
 
 ## Force Inbound
 
@@ -122,9 +141,10 @@ In standard mode, after the package tracking number is present and the UPC input
 UPC value, focus should move to IMEI automatically even when the scanner does not send an Enter key.
 The default loop starts the next row at the package tracking field. When the operator enables the
 same-package continuous option, the page must first review the current package tracking number.
-Duplicate tracking numbers and tracking numbers outside the UPS/9622-prefixed FedEx auto-accept
-rules must be confirmed before the option becomes active. After confirmation, the current package
-tracking number is retained after a successful row and focus moves back to UPC for the next item.
+Duplicate tracking numbers and tracking numbers outside the UPS, `BB0000` warehouse compensation,
+or 9622-prefixed FedEx auto-accept rules must be confirmed before the option becomes active. After
+confirmation, the current package tracking number is retained after a successful row and focus moves
+back to UPC for the next item.
 While same-package continuous scanning is active, repeated use of that retained tracking number
 inside the current draft is treated as already confirmed for the next item. Other abnormal tracking
 signals, such as unsupported format or historical confirmed duplicates, still require explicit

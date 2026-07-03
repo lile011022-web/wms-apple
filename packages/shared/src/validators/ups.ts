@@ -19,6 +19,11 @@ export function isAutoAcceptedFedexTracking(value: string): boolean {
   return /^9622[0-9]{18,30}$/.test(normalized);
 }
 
+export function isWarehouseCompensationTracking(value: string): boolean {
+  const normalized = value.trim().replace(/\s+/g, '').toUpperCase();
+  return /^BB0000[0-9A-Z]*$/.test(normalized);
+}
+
 export function normalizePackageTracking(value: string): string {
   return value.trim().replace(/\s+/g, '').toUpperCase();
 }
@@ -28,11 +33,16 @@ export function isValidPackageTracking(value: string): boolean {
   return (
     isValidUpsTracking(normalized) ||
     isValidUspsTracking(normalized) ||
-    isValidFedexTracking(normalized)
+    isValidFedexTracking(normalized) ||
+    isWarehouseCompensationTracking(normalized)
   );
 }
 
 export function isAutoAcceptedPackageTracking(value: string): boolean {
   const normalized = normalizePackageTracking(value);
-  return isValidUpsTracking(normalized) || isAutoAcceptedFedexTracking(normalized);
+  return (
+    isValidUpsTracking(normalized) ||
+    isAutoAcceptedFedexTracking(normalized) ||
+    isWarehouseCompensationTracking(normalized)
+  );
 }

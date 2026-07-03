@@ -7,6 +7,7 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { CreateReportExportDto } from './dto/create-report-export.dto';
 import { ListInboundBatchOptionsQueryDto } from './dto/list-inbound-batch-options-query.dto';
+import { ListOutboundBoxOptionsQueryDto } from './dto/list-outbound-box-options-query.dto';
 import { ListReportExportsQueryDto } from './dto/list-report-exports-query.dto';
 import { PreviewReportDto } from './dto/preview-report.dto';
 import { ReportsService } from './reports.service';
@@ -32,6 +33,11 @@ export class ReportsController {
   @Get('inbound-batches')
   listInboundBatchOptions(@Query() query: ListInboundBatchOptionsQueryDto) {
     return this.reportsService.listInboundBatchOptions(query);
+  }
+
+  @Get('outbound-boxes')
+  listOutboundBoxOptions(@Query() query: ListOutboundBoxOptionsQueryDto) {
+    return this.reportsService.listOutboundBoxOptions(query);
   }
 
   @Get('exports')

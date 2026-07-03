@@ -22,7 +22,7 @@ const completedExport = {
   requestedById: operator.id,
   filters: {
     filters: { customerId: 'customer-1' },
-    fields: ['upsTrackingNo', 'upc', 'imei', 'productName', 'quantity'],
+    fields: ['upsTrackingNo', 'receivedAt', 'upc', 'imei', 'productName', 'quantity'],
     format: ReportExportFormat.CSV,
     rowCount: 1,
     fileName: 'inventory_detail-export-1.csv',
@@ -30,7 +30,7 @@ const completedExport = {
     generatedAt: now.toISOString(),
     metadata: {
       fileContent:
-        '单号,UPC,IMEI,商品名称,数量\n1Z999AA10123456784,194253149189,356789012345678,iPhone 16 Pro,3',
+        '单号,入库时间,UPC,IMEI,商品名称,数量\n1Z999AA10123456784,2026-06-17T00:00:00.000Z,194253149189,356789012345678,iPhone 16 Pro,3',
     },
   },
   fileUrl: 'report-export://export-1/inventory_detail-export-1.csv',
@@ -171,6 +171,7 @@ function createService(
     findInboundBatchById: jest
       .fn()
       .mockResolvedValue({ id: 'batch-1', batchNo: 'INB-20260622-001' }),
+    findOutboundBoxOptions: jest.fn().mockResolvedValue([0, []]),
     createAuditLog: jest.fn().mockResolvedValue({ id: 'audit-1' }),
     ...repositoryOverrides,
   } as unknown as jest.Mocked<ReportsRepository>;
@@ -196,26 +197,20 @@ describe('ReportsService', () => {
   it('returns preview counts and selected fields', async () => {
     const { repository, service } = createService();
 
-    await expect(
-      service.preview({
-        reportType: ReportType.INVENTORY_DETAIL,
-        filters: { customerId: ' customer-1 ' },
-        fields: ['upsTrackingNo', 'upc', 'imei', 'productName', 'quantity'],
-      }),
-    ).resolves.toMatchObject({
+    const preview = await service.preview({
+      reportType: ReportType.INVENTORY_DETAIL,
+      filters: { customerId: ' customer-1 ' },
+      fields: ['upsTrackingNo', 'receivedAt', 'upc', 'imei', 'productName', 'quantity'],
+    });
+
+    expect(preview).toMatchObject({
       reportType: ReportType.INVENTORY_DETAIL,
       estimatedRowCount: 5,
-      selectedFields: ['upsTrackingNo', 'upc', 'imei', 'productName', 'quantity'],
-      availableFields: [
-        { key: 'upsTrackingNo', title: '单号' },
-        { key: 'upc', title: 'UPC' },
-        { key: 'imei', title: 'IMEI' },
-        { key: 'productName', title: '商品名称' },
-        { key: 'quantity', title: '数量' },
-      ],
+      selectedFields: ['upsTrackingNo', 'receivedAt', 'upc', 'imei', 'productName', 'quantity'],
       sampleRows: [
         {
           upsTrackingNo: '1Z999AA10123456784',
+          receivedAt: now.toISOString(),
           upc: '194253149189',
           imei: '共 5 台，已列 2 个 IMEI',
           productName: 'iPhone 16 Pro',
@@ -223,6 +218,7 @@ describe('ReportsService', () => {
         },
         {
           upsTrackingNo: '',
+          receivedAt: '',
           upc: '',
           imei: '356789012345678',
           productName: '',
@@ -230,6 +226,7 @@ describe('ReportsService', () => {
         },
         {
           upsTrackingNo: '',
+          receivedAt: '',
           upc: '',
           imei: '356789012345679',
           productName: '',
@@ -237,6 +234,7 @@ describe('ReportsService', () => {
         },
         {
           upsTrackingNo: '1Z999AA10123456785',
+          receivedAt: now.toISOString(),
           upc: '194253149189',
           imei: '共 4 台，已列 1 个 IMEI',
           productName: 'iPhone 16 Pro',
@@ -244,6 +242,7 @@ describe('ReportsService', () => {
         },
         {
           upsTrackingNo: '',
+          receivedAt: '',
           upc: '',
           imei: '356789012345680',
           productName: '',
@@ -253,6 +252,19 @@ describe('ReportsService', () => {
       shouldRunInBackground: false,
       filters: { customerId: 'customer-1' },
     });
+    expect(preview.availableFields).toEqual(
+      expect.arrayContaining([
+        { key: 'upsTrackingNo', title: '单号' },
+        { key: 'customerName', title: '客户名称' },
+        { key: 'inboundBatchNo', title: '入库单号' },
+        { key: 'outboundBoxNo', title: '出单号/箱号' },
+        { key: 'upc', title: 'UPC' },
+        { key: 'imei', title: 'IMEI' },
+        { key: 'productName', title: '商品名称' },
+        { key: 'quantity', title: '数量' },
+        { key: 'scannedAt', title: '扫描时间' },
+      ]),
+    );
     expect(repository.countRows).toHaveBeenCalledWith(ReportType.INVENTORY_DETAIL, {
       customerId: 'customer-1',
     });
@@ -265,6 +277,106 @@ describe('ReportsService', () => {
     );
   });
 
+  it('keeps inventory detail rows raw when table fields are selected', async () => {
+    const { service } = createService({
+      countRows: jest.fn().mockResolvedValue(1),
+      findRows: jest.fn().mockResolvedValue([
+        {
+          ...inventoryRow,
+          customer: { code: 'CUST-001', name: 'Apple Reseller' },
+          inboundItem: { scannedAt: now },
+          outboundBoxItems: [
+            {
+              outboundBox: { boxNo: 'BOX-20260621-001' },
+            },
+          ],
+        },
+      ]),
+    });
+
+    await expect(
+      service.preview({
+        reportType: ReportType.INVENTORY_DETAIL,
+        fields: [
+          'upsTrackingNo',
+          'customerName',
+          'inboundBatchNo',
+          'outboundBoxNo',
+          'imei',
+          'scannedAt',
+        ],
+      }),
+    ).resolves.toMatchObject({
+      estimatedRowCount: 1,
+      sampleRows: [
+        {
+          upsTrackingNo: '1Z999AA10123456784',
+          customerName: 'Apple Reseller',
+          inboundBatchNo: 'INB-001',
+          outboundBoxNo: 'BOX-20260621-001',
+          imei: '356789012345678',
+          scannedAt: now.toISOString(),
+        },
+      ],
+    });
+  });
+
+  it('lists selectable outbound boxes for report downloads', async () => {
+    const { repository, service } = createService({
+      findOutboundBoxOptions: jest.fn().mockResolvedValue([
+        1,
+        [
+          {
+            id: 'box-1',
+            boxNo: 'BOX-20260621-001',
+            boxName: 'Apex Trading - Blue iPad',
+            shippingTrackingNo: 'UPLOAD-TRACK-001',
+            status: 'SEALED',
+            sealedAt: now,
+            createdAt: now,
+            updatedAt: now,
+            customer: { id: 'customer-1', code: 'CUST-001', name: 'Apple Reseller' },
+            warehouse: { id: 'warehouse-1', code: 'US-LAX-01', name: 'Los Angeles Warehouse' },
+            _count: { items: 24 },
+          },
+        ],
+      ]),
+    });
+
+    await expect(
+      service.listOutboundBoxOptions({
+        page: 1,
+        pageSize: 20,
+        sortOrder: 'desc',
+        customerId: ' customer-1 ',
+        outboundStatus: 'SEALED',
+        search: ' BOX ',
+      }),
+    ).resolves.toMatchObject({
+      total: 1,
+      items: [
+        {
+          id: 'box-1',
+          boxNo: 'BOX-20260621-001',
+          customer: { code: 'CUST-001', name: 'Apple Reseller' },
+          itemCount: 24,
+          label: 'BOX-20260621-001 / Apex Trading - Blue iPad / CUST-001 / 24 件',
+        },
+      ],
+    });
+
+    expect(repository.findOutboundBoxOptions).toHaveBeenCalledWith({
+      customerId: 'customer-1',
+      warehouseId: undefined,
+      outboundStatus: 'SEALED',
+      dateFrom: undefined,
+      dateTo: undefined,
+      search: 'BOX',
+      skip: 0,
+      take: 20,
+    });
+  });
+
   it('creates a completed CSV export and writes an audit log', async () => {
     const { repository, service } = createService();
 
@@ -273,7 +385,7 @@ describe('ReportsService', () => {
         {
           reportType: ReportType.INVENTORY_DETAIL,
           format: ReportExportFormat.CSV,
-          fields: ['upsTrackingNo', 'upc', 'imei', 'productName', 'quantity'],
+          fields: ['upsTrackingNo', 'receivedAt', 'upc', 'imei', 'productName', 'quantity'],
         },
         operator,
       ),
@@ -296,16 +408,16 @@ describe('ReportsService', () => {
     const completedPayload = completedCall![0].filters as {
       metadata: { fileContent: string };
     };
-    expect(completedPayload.metadata.fileContent).toContain('单号,UPC,IMEI,商品名称,数量');
+    expect(completedPayload.metadata.fileContent).toContain('单号,入库时间,UPC,IMEI,商品名称,数量');
     expect(completedPayload.metadata.fileContent).toContain(
-      '1Z999AA10123456784,194253149189,共 5 台，已列 2 个 IMEI,iPhone 16 Pro,5',
+      '1Z999AA10123456784,2026-06-17T00:00:00.000Z,194253149189,共 5 台，已列 2 个 IMEI,iPhone 16 Pro,5',
     );
-    expect(completedPayload.metadata.fileContent).toContain(',,356789012345678,,');
-    expect(completedPayload.metadata.fileContent).toContain(',,356789012345679,,');
+    expect(completedPayload.metadata.fileContent).toContain(',,,356789012345678,,');
+    expect(completedPayload.metadata.fileContent).toContain(',,,356789012345679,,');
     expect(completedPayload.metadata.fileContent).toContain(
-      '1Z999AA10123456785,194253149189,共 4 台，已列 1 个 IMEI,iPhone 16 Pro,4',
+      '1Z999AA10123456785,2026-06-17T00:00:00.000Z,194253149189,共 4 台，已列 1 个 IMEI,iPhone 16 Pro,4',
     );
-    expect(completedPayload.metadata.fileContent).toContain(',,356789012345680,,');
+    expect(completedPayload.metadata.fileContent).toContain(',,,356789012345680,,');
   });
 
   it('includes box notes and uploaded tracking number in outbound detail downloads', async () => {
@@ -361,11 +473,19 @@ describe('ReportsService', () => {
     expect(completedPayload.metadata.fileContent).toContain('<Worksheet ss:Name="SN&amp;IMEI">');
     expect(completedPayload.metadata.fileContent).toContain('<Worksheet ss:Name="各箱型号汇总">');
     expect(completedPayload.metadata.fileContent).toContain('<Worksheet ss:Name="出库详情">');
+    expect(completedPayload.metadata.fileContent).toContain('归属客户：');
+    expect(completedPayload.metadata.fileContent).toContain('实际送到地址：');
+    expect(completedPayload.metadata.fileContent).not.toContain('每箱备注：翻新 iPad 蓝色机');
+    expect(completedPayload.metadata.fileContent).not.toContain('销售客户：');
+    expect(completedPayload.metadata.fileContent).not.toContain('目的地：');
     expect(completedPayload.metadata.fileContent).toContain('第 1 箱  （1 件）');
     expect(completedPayload.metadata.fileContent).toContain('第 2 箱  （1 件）');
     expect(completedPayload.metadata.fileContent).toContain('上传单号：');
+    expect(completedPayload.metadata.fileContent).toContain('单号');
     expect(completedPayload.metadata.fileContent).toContain('UPLOAD-TRACK-001');
     expect(completedPayload.metadata.fileContent).toContain('UPLOAD-TRACK-002');
+    expect(completedPayload.metadata.fileContent).toContain('1Z999AA10123456784');
+    expect(completedPayload.metadata.fileContent).toContain('1Z999AA10123456785');
     expect(completedPayload.metadata.fileContent).toContain('SN-002');
     expect(completedPayload.metadata.fileContent).toContain('356789012345679');
     expect(completedPayload.metadata.fileContent).toContain('实际扫描总数：');
@@ -427,7 +547,7 @@ describe('ReportsService', () => {
           reportType: ReportType.INVENTORY_DETAIL,
           format: ReportExportFormat.EXCEL,
           exportLayout: ReportExportLayout.WAREHOUSE_HOLD,
-          filters: { inventoryStatus: 'IN_STOCK' },
+          filters: { inventoryStatus: 'PACKED', outboundStatus: 'OPEN' },
           fields: ['upc', 'imei', 'productName', 'quantity'],
         },
         operator,
@@ -455,6 +575,42 @@ describe('ReportsService', () => {
     expect(completedPayload.metadata.fileContent).toContain(
       '<Cell ss:StyleID="HoldTotal"><Data ss:Type="Number">2</Data></Cell>',
     );
+  });
+
+  it('formats inbound detail Excel as a Feishu registration worksheet', async () => {
+    const { repository, service } = createService({
+      findRows: jest.fn().mockResolvedValue([inboundRow]),
+    });
+
+    await expect(
+      service.createExport(
+        {
+          reportType: ReportType.INBOUND_DETAIL,
+          format: ReportExportFormat.EXCEL,
+          exportLayout: ReportExportLayout.INBOUND_REGISTRATION,
+          filters: { batchId: 'batch-1' },
+          fields: ['batchNo', 'imei'],
+        },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      fileName: 'inbound_detail-inbound_registration-INB-20260622-001-export-1.xls',
+      rowCount: 1,
+    });
+
+    const completedCall = repository.updateExport.mock.calls[0];
+    expect(completedCall).toBeDefined();
+    const completedPayload = completedCall![0].filters as {
+      metadata: { fileContent: string };
+    };
+
+    expect(completedPayload.metadata.fileContent).toContain('入库时间');
+    expect(completedPayload.metadata.fileContent).toContain('单号');
+    expect(completedPayload.metadata.fileContent).toContain('UPC');
+    expect(completedPayload.metadata.fileContent).toContain('IMEI');
+    expect(completedPayload.metadata.fileContent).toContain('商品名称');
+    expect(completedPayload.metadata.fileContent).toContain('数量');
+    expect(completedPayload.metadata.fileContent).toContain('iPhone 16 Pro');
   });
 
   it('allows outbound detail Excel downloads for an open box before sealing', async () => {
@@ -492,6 +648,35 @@ describe('ReportsService', () => {
     );
   });
 
+  it('allows outbound detail Excel downloads for selected boxes', async () => {
+    const { repository, service } = createService({
+      findRows: jest.fn().mockResolvedValue([outboundRow, outboundRowSecondBox]),
+    });
+
+    await expect(
+      service.createExport(
+        {
+          reportType: ReportType.OUTBOUND_DETAIL,
+          format: ReportExportFormat.EXCEL,
+          filters: {
+            boxNos: [' BOX-20260621-001 ', 'BOX-20260621-002'],
+          },
+          fields: ['boxNo', 'boxStatus', 'imei'],
+        },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      fileName: 'outbound_detail-selected-2-boxes-export-1.xls',
+      rowCount: 2,
+    });
+
+    expect(repository.findRows).toHaveBeenCalledWith(
+      ReportType.OUTBOUND_DETAIL,
+      { boxNos: ['BOX-20260621-001', 'BOX-20260621-002'] },
+      expect.any(Number),
+    );
+  });
+
   it('names inbound detail export files with the selected batch number', async () => {
     const { service } = createService({ findRows: jest.fn().mockResolvedValue([inboundRow]) });
 
@@ -523,13 +708,14 @@ describe('ReportsService', () => {
     await expect(
       service.preview({
         reportType: ReportType.INVENTORY_DETAIL,
-        fields: ['upsTrackingNo', 'upc', 'imei', 'productName', 'quantity'],
+        fields: ['upsTrackingNo', 'receivedAt', 'upc', 'imei', 'productName', 'quantity'],
       }),
     ).resolves.toMatchObject({
       estimatedRowCount: 2,
       sampleRows: [
         {
           upsTrackingNo: '1Z999AA10123456784',
+          receivedAt: now.toISOString(),
           upc: '194253149189',
           imei: '共 2 台，已列 1 个 IMEI',
           productName: 'iPhone 16 Pro',
@@ -537,6 +723,7 @@ describe('ReportsService', () => {
         },
         {
           upsTrackingNo: '',
+          receivedAt: '',
           upc: '',
           imei: '356789012345678',
           productName: '',
@@ -579,7 +766,7 @@ describe('ReportsService', () => {
       id: 'export-1',
       contentType: 'text/csv; charset=utf-8',
       content:
-        '单号,UPC,IMEI,商品名称,数量\n1Z999AA10123456784,194253149189,356789012345678,iPhone 16 Pro,3',
+        '单号,入库时间,UPC,IMEI,商品名称,数量\n1Z999AA10123456784,2026-06-17T00:00:00.000Z,194253149189,356789012345678,iPhone 16 Pro,3',
     });
   });
 });

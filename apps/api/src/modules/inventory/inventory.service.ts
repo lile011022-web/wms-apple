@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InventoryStatus, Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
+import { DeleteInventoryItemsDto } from './dto/delete-inventory-items.dto';
 import { DeleteInventoryProductsDto } from './dto/delete-inventory-products.dto';
 import { InventoryCustomerSummaryQueryDto } from './dto/inventory-customer-summary-query.dto';
 import { ListInventoryItemsQueryDto } from './dto/list-inventory-items-query.dto';
@@ -12,8 +13,10 @@ export class InventoryService {
   constructor(private readonly inventoryRepository: InventoryRepository) {}
 
   async getCustomerSummary(query: InventoryCustomerSummaryQueryDto) {
-    const customerId = await this.requireCustomerId(query.customerId);
-    await this.findExistingCustomer(customerId);
+    const customerId = this.trimOptional(query.customerId);
+    if (customerId) {
+      await this.findExistingCustomer(customerId);
+    }
     const where = this.toBaseWhere({
       customerId,
       warehouseId: this.trimOptional(query.warehouseId),
@@ -28,7 +31,7 @@ export class InventoryService {
     const counts = this.toStatusCountMap(statusCounts);
 
     return {
-      customerId,
+      customerId: customerId ?? null,
       warehouseId: this.trimOptional(query.warehouseId) ?? null,
       totalQuantity: this.sumCounts(counts),
       skuCount: skuRows.length,
@@ -42,8 +45,10 @@ export class InventoryService {
   }
 
   async listProducts(query: ListInventoryProductsQueryDto) {
-    const customerId = await this.requireCustomerId(query.customerId);
-    await this.findExistingCustomer(customerId);
+    const customerId = this.trimOptional(query.customerId);
+    if (customerId) {
+      await this.findExistingCustomer(customerId);
+    }
     const allowedSortFields = new Set(['sku', 'name', 'createdAt', 'updatedAt']);
     const sortBy = query.sortBy && allowedSortFields.has(query.sortBy) ? query.sortBy : 'sku';
     const where = this.toBaseWhere({
@@ -63,6 +68,7 @@ export class InventoryService {
     const countByProduct = this.toProductStatusCountMap(
       result.statusCounts.map((row) => ({
         productId: row.productId,
+        customerId: row.customerId,
         status: row.status,
         count: this.readGroupCount(row._count),
       })),
@@ -70,9 +76,19 @@ export class InventoryService {
     const trackingNumberCountByProduct = this.toProductTrackingNumberCountMap(result.trackingRows);
 
     return {
-      items: result.products.map((product) => {
-        const counts = countByProduct.get(product.id) ?? this.emptyStatusCounts();
+      items: result.rows.map((row) => {
+        const product = row.product;
+        const counts =
+          countByProduct.get(this.toProductCustomerKey(product.id, row.customerId)) ??
+          this.emptyStatusCounts();
         return {
+          customer: row.customer
+            ? {
+                id: row.customer.id,
+                code: row.customer.code,
+                name: row.customer.name,
+              }
+            : null,
           product: {
             id: product.id,
             sku: product.sku,
@@ -96,7 +112,10 @@ export class InventoryService {
             voidedQuantity: counts[InventoryStatus.VOIDED],
             availableForOutboundQuantity: counts[InventoryStatus.IN_STOCK],
           },
-          trackingNumberCount: trackingNumberCountByProduct.get(product.id) ?? 0,
+          trackingNumberCount:
+            trackingNumberCountByProduct.get(
+              this.toProductCustomerKey(product.id, row.customerId),
+            ) ?? 0,
         };
       }),
       page: query.page,
@@ -173,6 +192,22 @@ export class InventoryService {
       customerId,
       warehouseId: this.trimOptional(dto.warehouseId),
       productIds,
+      operator,
+    });
+  }
+
+  async deleteItems(dto: DeleteInventoryItemsDto, operator: AuthenticatedUser) {
+    const customerId = await this.requireCustomerId(dto.customerId);
+    await this.findExistingCustomer(customerId);
+    const itemIds = [...new Set(dto.itemIds.map((id) => id.trim()).filter(Boolean))];
+    if (!itemIds.length) {
+      throw new BadRequestException('At least one inventory item must be selected.');
+    }
+
+    return this.inventoryRepository.deleteItems({
+      customerId,
+      warehouseId: this.trimOptional(dto.warehouseId),
+      itemIds,
       operator,
     });
   }
@@ -407,13 +442,14 @@ export class InventoryService {
   }
 
   private toProductStatusCountMap(
-    rows: Array<{ productId: string; status: InventoryStatus; count: number }>,
+    rows: Array<{ productId: string; customerId: string; status: InventoryStatus; count: number }>,
   ) {
     const map = new Map<string, Record<InventoryStatus, number>>();
     for (const row of rows) {
-      const counts = map.get(row.productId) ?? this.emptyStatusCounts();
+      const key = this.toProductCustomerKey(row.productId, row.customerId);
+      const counts = map.get(key) ?? this.emptyStatusCounts();
       counts[row.status] = row.count;
-      map.set(row.productId, counts);
+      map.set(key, counts);
     }
     return map;
   }
@@ -421,6 +457,7 @@ export class InventoryService {
   private toProductTrackingNumberCountMap(
     rows: Array<{
       productId: string;
+      customerId: string;
       upsTrackingNo: string | null;
     }>,
   ) {
@@ -429,11 +466,16 @@ export class InventoryService {
       if (!row.upsTrackingNo) {
         continue;
       }
-      const numbers = map.get(row.productId) ?? new Set<string>();
+      const key = this.toProductCustomerKey(row.productId, row.customerId);
+      const numbers = map.get(key) ?? new Set<string>();
       numbers.add(row.upsTrackingNo);
-      map.set(row.productId, numbers);
+      map.set(key, numbers);
     }
     return new Map([...map.entries()].map(([productId, numbers]) => [productId, numbers.size]));
+  }
+
+  private toProductCustomerKey(productId: string, customerId: string) {
+    return `${customerId}:${productId}`;
   }
 
   private emptyStatusCounts(): Record<InventoryStatus, number> {

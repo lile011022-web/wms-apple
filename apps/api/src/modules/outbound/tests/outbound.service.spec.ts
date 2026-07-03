@@ -184,6 +184,35 @@ function createService(
 }
 
 describe('OutboundService', () => {
+  it('filters box lists by status and created date range', async () => {
+    const { repository, service } = createService();
+
+    await service.listBoxes({
+      customerId: customer.id,
+      warehouseId: warehouse.id,
+      status: OutboundBoxStatus.OPEN,
+      createdFrom: '2026-06-17T07:00:00.000Z',
+      createdTo: '2026-06-18T06:59:59.999Z',
+      page: 1,
+      pageSize: 20,
+      sortOrder: 'desc',
+    });
+
+    expect(repository.findBoxes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          customerId: customer.id,
+          warehouseId: warehouse.id,
+          status: OutboundBoxStatus.OPEN,
+          createdAt: {
+            gte: new Date('2026-06-17T07:00:00.000Z'),
+            lte: new Date('2026-06-18T06:59:59.999Z'),
+          },
+        }),
+      }),
+    );
+  });
+
   it('requires customer and warehouse when creating a box', async () => {
     const { service } = createService();
 

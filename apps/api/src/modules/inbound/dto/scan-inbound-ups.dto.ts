@@ -8,7 +8,7 @@ export class ScanInboundUpsDto {
       'UPS, USPS, or FedEx package tracking number. The legacy field name is kept for API compatibility.',
   })
   @IsString()
-  @MinLength(8)
+  @MinLength(6)
   @MaxLength(40)
   upsTrackingNo: string;
 }

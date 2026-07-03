@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { CalendarDays, FileSpreadsheet, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { getSystemSettings, listWarehouses } from '../../api/settings';
-import { customersApi, inventoryApi } from '../../api/workflow';
+import { customersApi, inventoryApi, reportsApi } from '../../api/workflow';
 import { HorizontalScrollControl } from '../../components/horizontal-scroll-control';
 import { PaginationControls } from '../../components/pagination-controls';
 import { selectDefaultWarehouseId } from '../../utils/default-warehouse';
@@ -16,10 +16,11 @@ export function CustomerInventoryPage() {
   const [detailPage, setDetailPage] = useState(1);
   const [detailPageSize, setDetailPageSize] = useState(50);
   const [detailSearch, setDetailSearch] = useState('');
-  const [activityDate, setActivityDate] = useState(() => toDateInputValue(new Date()));
+  const [activityDateFrom, setActivityDateFrom] = useState(() => toDateTimeInputValue(new Date()));
+  const [activityDateTo, setActivityDateTo] = useState(() => toDateTimeInputValue(endOfToday()));
   const [statusFilter, setStatusFilter] = useState<InventoryStatusFilter>('');
   const [activeMetricLabel, setActiveMetricLabel] = useState('库存总数');
-  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [selectedInventoryItemIds, setSelectedInventoryItemIds] = useState<string[]>([]);
   const detailTableRef = useRef<HTMLDivElement | null>(null);
   const customersQuery = useQuery({
     queryKey: ['customer-options'],
@@ -37,27 +38,29 @@ export function CustomerInventoryPage() {
   const warehouses = warehousesQuery.data ?? [];
 
   useEffect(() => {
-    if (!customerId && customers[0]) {
-      setCustomerId(customers[0].id);
-    }
     if (!warehouseId) {
       const defaultWarehouseId = selectDefaultWarehouseId(warehouses, settingsQuery.data);
       if (defaultWarehouseId) {
         setWarehouseId(defaultWarehouseId);
       }
     }
-  }, [customerId, customers, settingsQuery.data, warehouseId, warehouses]);
+  }, [settingsQuery.data, warehouseId, warehouses]);
 
   const customerSummaryQuery = useQuery({
-    queryKey: ['inventory-customer-summary', customerId, warehouseId, activityDate],
+    queryKey: [
+      'inventory-customer-summary',
+      customerId,
+      warehouseId,
+      activityDateFrom,
+      activityDateTo,
+    ],
     queryFn: () =>
       inventoryApi.customerSummary({
-        customerId,
+        customerId: customerId || undefined,
         warehouseId,
-        dateFrom: activityDate || undefined,
-        dateTo: activityDate || undefined,
+        dateFrom: toIsoDateTime(activityDateFrom),
+        dateTo: toIsoDateTime(activityDateTo),
       }),
-    enabled: Boolean(customerId),
   });
   const customerSummary = customerSummaryQuery.data as CustomerInventorySummary | undefined;
 
@@ -66,22 +69,22 @@ export function CustomerInventoryPage() {
       'inventory-products',
       customerId,
       warehouseId,
-      activityDate,
+      activityDateFrom,
+      activityDateTo,
       statusFilter,
       summaryPage,
       summaryPageSize,
     ],
     queryFn: () =>
       inventoryApi.products({
-        customerId,
+        customerId: customerId || undefined,
         warehouseId,
         status: statusFilter || undefined,
-        dateFrom: activityDate || undefined,
-        dateTo: activityDate || undefined,
+        dateFrom: toIsoDateTime(activityDateFrom),
+        dateTo: toIsoDateTime(activityDateTo),
         page: summaryPage,
         pageSize: summaryPageSize,
       }),
-    enabled: Boolean(customerId),
   });
   const productSummary = productSummaryQuery.data as ProductSummaryResult | undefined;
 
@@ -90,7 +93,8 @@ export function CustomerInventoryPage() {
       'inventory-items',
       customerId,
       warehouseId,
-      activityDate,
+      activityDateFrom,
+      activityDateTo,
       statusFilter,
       detailSearch,
       detailPage,
@@ -98,38 +102,40 @@ export function CustomerInventoryPage() {
     ],
     queryFn: () =>
       inventoryApi.items({
-        customerId,
+        customerId: customerId || undefined,
         warehouseId,
         status: statusFilter || undefined,
-        dateFrom: activityDate || undefined,
-        dateTo: activityDate || undefined,
+        dateFrom: toIsoDateTime(activityDateFrom),
+        dateTo: toIsoDateTime(activityDateTo),
         search: detailSearch.trim() || undefined,
         page: detailPage,
         pageSize: detailPageSize,
       }),
-    enabled: Boolean(customerId),
   });
   const inventory = inventoryQuery.data as InventoryResult | undefined;
   const skuSectionTitle = getSkuSectionTitle(activeMetricLabel);
   const detailSectionTitle = getDetailSectionTitle(activeMetricLabel);
-  const currentPageProductIds = productSummary?.items.map((row) => row.product.id) ?? [];
-  const selectedOnCurrentPage = currentPageProductIds.filter((id) =>
-    selectedProductIds.includes(id),
+  const currentPageInventoryItemIds = customerId
+    ? (inventory?.items.map((item) => item.id) ?? [])
+    : [];
+  const selectedDetailsOnCurrentPage = currentPageInventoryItemIds.filter((id) =>
+    selectedInventoryItemIds.includes(id),
   );
-  const isCurrentPageSelected =
-    currentPageProductIds.length > 0 && selectedOnCurrentPage.length === currentPageProductIds.length;
+  const isCurrentDetailPageSelected =
+    currentPageInventoryItemIds.length > 0 &&
+    selectedDetailsOnCurrentPage.length === currentPageInventoryItemIds.length;
 
   const isFetching =
     customerSummaryQuery.isFetching || productSummaryQuery.isFetching || inventoryQuery.isFetching;
-  const deleteProductsMutation = useMutation({
-    mutationFn: (productIds: string[]) =>
-      inventoryApi.deleteProducts({
+  const deleteInventoryItemsMutation = useMutation({
+    mutationFn: (itemIds: string[]) =>
+      inventoryApi.deleteItems({
         customerId,
         warehouseId: warehouseId || undefined,
-        productIds,
+        itemIds,
       }),
     onSuccess: async () => {
-      setSelectedProductIds([]);
+      setSelectedInventoryItemIds([]);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['inventory-customer-summary'] }),
         queryClient.invalidateQueries({ queryKey: ['inventory-products'] }),
@@ -137,13 +143,58 @@ export function CustomerInventoryPage() {
       ]);
     },
     onError: (error) => {
-      window.alert(error instanceof Error ? error.message : '删除库存失败');
+      window.alert(error instanceof Error ? error.message : '删除库存明细失败');
+    },
+  });
+  const downloadInventoryDetailMutation = useMutation({
+    mutationFn: async () => {
+      const created = (await reportsApi.createExport({
+        reportType: 'INVENTORY_DETAIL',
+        format: 'EXCEL',
+        filters: {
+          customerId: customerId || undefined,
+          warehouseId: warehouseId || undefined,
+          inventoryStatus: statusFilter || undefined,
+          dateFrom: toIsoDateTime(activityDateFrom),
+          dateTo: toIsoDateTime(activityDateTo),
+          search: detailSearch.trim() || undefined,
+        },
+        fields: [
+          'upsTrackingNo',
+          'customerCode',
+          'customerName',
+          'inboundBatchNo',
+          'outboundBoxNo',
+          'imei',
+          'upc',
+          'productName',
+          'modelCode',
+          'receivedAt',
+          'status',
+        ],
+      })) as ReportExport;
+      return reportsApi.download(created.id) as Promise<ReportDownload>;
+    },
+    onSuccess: (file) => {
+      downloadReportFile(file);
+    },
+    onError: (error) => {
+      window.alert(error instanceof Error ? error.message : '导出库存明细失败');
     },
   });
 
   useEffect(() => {
-    setSelectedProductIds([]);
-  }, [customerId, warehouseId, summaryPage, summaryPageSize, activityDate, statusFilter]);
+    setSelectedInventoryItemIds([]);
+  }, [
+    customerId,
+    warehouseId,
+    detailPage,
+    detailPageSize,
+    detailSearch,
+    activityDateFrom,
+    activityDateTo,
+    statusFilter,
+  ]);
 
   const applyMetricFilter = (label: string, status: InventoryStatusFilter) => {
     setActiveMetricLabel(label);
@@ -156,35 +207,33 @@ export function CustomerInventoryPage() {
     }, 0);
   };
 
-  const toggleCurrentPageProducts = () => {
-    setSelectedProductIds((current) => {
-      if (isCurrentPageSelected) {
-        return current.filter((id) => !currentPageProductIds.includes(id));
+  const toggleCurrentPageInventoryItems = () => {
+    setSelectedInventoryItemIds((current) => {
+      if (isCurrentDetailPageSelected) {
+        return current.filter((id) => !currentPageInventoryItemIds.includes(id));
       }
-      return [...new Set([...current, ...currentPageProductIds])];
+      return [...new Set([...current, ...currentPageInventoryItemIds])];
     });
   };
 
-  const toggleProduct = (productId: string) => {
-    setSelectedProductIds((current) =>
-      current.includes(productId)
-        ? current.filter((id) => id !== productId)
-        : [...current, productId],
+  const toggleInventoryItem = (itemId: string) => {
+    setSelectedInventoryItemIds((current) =>
+      current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId],
     );
   };
 
-  const deleteProducts = (productIds: string[], label: string) => {
-    const normalizedProductIds = [...new Set(productIds)].filter(Boolean);
-    if (!normalizedProductIds.length || deleteProductsMutation.isPending) {
+  const deleteInventoryItems = (itemIds: string[], label: string) => {
+    const normalizedItemIds = [...new Set(itemIds)].filter(Boolean);
+    if (!normalizedItemIds.length || deleteInventoryItemsMutation.isPending) {
       return;
     }
     const confirmed = window.confirm(
-      `确认删除${label}的库存？\n\n将删除 ${normalizedProductIds.length} 个 SKU 对应的当前客户/仓库库存，并解除相关箱内明细、入库记录和异常记录关联。`,
+      `确认删除${label}的库存明细？\n\n将删除 ${normalizedItemIds.length} 条当前客户/仓库的库存明细，不会删除 UPC、SKU 或商品资料。已装箱/已出库明细会被系统拦截。`,
     );
     if (!confirmed) {
       return;
     }
-    deleteProductsMutation.mutate(normalizedProductIds);
+    deleteInventoryItemsMutation.mutate(normalizedItemIds);
   };
 
   return (
@@ -205,6 +254,7 @@ export function CustomerInventoryPage() {
               setDetailPage(1);
             }}
           >
+            <option value="">全部客户</option>
             {customers.map((customer) => (
               <option key={customer.id} value={customer.id}>
                 {customer.label}
@@ -247,21 +297,29 @@ export function CustomerInventoryPage() {
           <CalendarDays size={18} />
           <div>
             <h2>按日期定位</h2>
-            <span>
-              {activityDate
-                ? `${activityDate} 的 ${activeMetricLabel} 数据`
-                : `全部日期的 ${activeMetricLabel} 数据`}
-            </span>
+            <span>{formatTimeRangeLabel(activityDateFrom, activityDateTo, activeMetricLabel)}</span>
           </div>
         </div>
         <div className="inventory-date-actions">
           <label>
-            <span>业务日期</span>
+            <span>开始时间</span>
             <input
-              type="date"
-              value={activityDate}
+              type="datetime-local"
+              value={activityDateFrom}
               onChange={(event) => {
-                setActivityDate(event.target.value);
+                setActivityDateFrom(event.target.value);
+                setSummaryPage(1);
+                setDetailPage(1);
+              }}
+            />
+          </label>
+          <label>
+            <span>结束时间</span>
+            <input
+              type="datetime-local"
+              value={activityDateTo}
+              onChange={(event) => {
+                setActivityDateTo(event.target.value);
                 setSummaryPage(1);
                 setDetailPage(1);
               }}
@@ -271,7 +329,8 @@ export function CustomerInventoryPage() {
             type="button"
             className="btn secondary"
             onClick={() => {
-              setActivityDate(toDateInputValue(new Date()));
+              setActivityDateFrom(toDateTimeInputValue(new Date()));
+              setActivityDateTo(toDateTimeInputValue(endOfToday()));
               setSummaryPage(1);
               setDetailPage(1);
             }}
@@ -282,7 +341,8 @@ export function CustomerInventoryPage() {
             type="button"
             className="btn ghost"
             onClick={() => {
-              setActivityDate('');
+              setActivityDateFrom('');
+              setActivityDateTo('');
               setSummaryPage(1);
               setDetailPage(1);
             }}
@@ -299,9 +359,13 @@ export function CustomerInventoryPage() {
           <span>
             {customerSummaryQuery.isFetching
               ? '正在读取'
-              : activityDate
-                ? '按当前客户和日期统计'
-                : '按当前客户统计'}
+              : activityDateFrom || activityDateTo
+                ? customerId
+                  ? '按当前客户和日期统计'
+                  : '按全部客户和日期统计'
+                : customerId
+                  ? '按当前客户统计'
+                  : '按全部客户统计'}
           </span>
         </div>
         <div className="inbound-review-grid">
@@ -362,30 +426,9 @@ export function CustomerInventoryPage() {
           <div>
             <h2>{skuSectionTitle}</h2>
             <span>
-              {activityDate ? `${activityDate}，` : ''}
-              {activeMetricLabel}：共 {productSummary?.total ?? 0} 款，已选{' '}
-              {selectedProductIds.length} 款
+              {formatCompactTimeRange(activityDateFrom, activityDateTo)}
+              {activeMetricLabel}：共 {productSummary?.total ?? 0} 款
             </span>
-          </div>
-          <div className="inventory-bulk-actions">
-            <button
-              type="button"
-              className="btn danger"
-              disabled={!selectedProductIds.length || deleteProductsMutation.isPending}
-              onClick={() => deleteProducts(selectedProductIds, '选中 SKU')}
-            >
-              <Trash2 size={16} />
-              删除选中
-            </button>
-            <button
-              type="button"
-              className="btn danger"
-              disabled={!currentPageProductIds.length || deleteProductsMutation.isPending}
-              onClick={() => deleteProducts(currentPageProductIds, '当前分页 SKU')}
-            >
-              <Trash2 size={16} />
-              删除当前分页
-            </button>
           </div>
         </div>
         <PaginationControls
@@ -402,14 +445,7 @@ export function CustomerInventoryPage() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>
-                <input
-                  type="checkbox"
-                  checked={isCurrentPageSelected}
-                  onChange={toggleCurrentPageProducts}
-                  aria-label="选择当前分页 SKU"
-                />
-              </th>
+              <th>客户</th>
               <th>UPC</th>
               <th>SKU</th>
               <th>商品</th>
@@ -425,14 +461,9 @@ export function CustomerInventoryPage() {
           </thead>
           <tbody>
             {productSummary?.items.map((row) => (
-              <tr key={row.product.id}>
+              <tr key={`${row.customer?.id ?? 'all'}:${row.product.id}`}>
                 <td>
-                  <input
-                    type="checkbox"
-                    checked={selectedProductIds.includes(row.product.id)}
-                    onChange={() => toggleProduct(row.product.id)}
-                    aria-label={`选择 ${row.product.sku}`}
-                  />
+                  <strong>{formatCustomerLabel(row.customer)}</strong>
                 </td>
                 <td className="mono">{row.product.upcs.join(', ') || '-'}</td>
                 <td className="mono">{row.product.sku}</td>
@@ -457,12 +488,56 @@ export function CustomerInventoryPage() {
       </section>
 
       <section className="panel data-panel">
-        <div className="section-title">
-          <h2>{detailSectionTitle}</h2>
-          <span>
-            {activityDate ? `${activityDate}，` : ''}
-            {activeMetricLabel}：共 {inventory?.total ?? 0} 条
-          </span>
+        <div className="section-title inventory-section-title">
+          <div>
+            <h2>{detailSectionTitle}</h2>
+            <span>
+              {formatCompactTimeRange(activityDateFrom, activityDateTo)}
+              {activeMetricLabel}：共 {inventory?.total ?? 0} 条，已选{' '}
+              {selectedInventoryItemIds.length} 条
+            </span>
+          </div>
+          <div className="inventory-bulk-actions">
+            <button
+              type="button"
+              className="btn danger"
+              disabled={
+                !customerId ||
+                !selectedInventoryItemIds.length ||
+                deleteInventoryItemsMutation.isPending
+              }
+              onClick={() => deleteInventoryItems(selectedInventoryItemIds, '选中')}
+            >
+              <Trash2 size={16} />
+              删除选中
+            </button>
+            <button
+              type="button"
+              className="btn danger"
+              disabled={
+                !customerId ||
+                !currentPageInventoryItemIds.length ||
+                deleteInventoryItemsMutation.isPending
+              }
+              onClick={() => deleteInventoryItems(currentPageInventoryItemIds, '当前分页')}
+            >
+              <Trash2 size={16} />
+              删除当前分页
+            </button>
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={
+                !inventory?.total ||
+                inventoryQuery.isFetching ||
+                downloadInventoryDetailMutation.isPending
+              }
+              onClick={() => downloadInventoryDetailMutation.mutate()}
+            >
+              <FileSpreadsheet size={16} />
+              {downloadInventoryDetailMutation.isPending ? '导出中' : '导出明细'}
+            </button>
+          </div>
         </div>
         <PaginationControls
           page={detailPage}
@@ -491,7 +566,17 @@ export function CustomerInventoryPage() {
           <table className="data-table inventory-detail-table">
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={isCurrentDetailPageSelected}
+                    disabled={!customerId || !currentPageInventoryItemIds.length}
+                    onChange={toggleCurrentPageInventoryItems}
+                    aria-label="选择当前分页库存明细"
+                  />
+                </th>
                 <th>单号</th>
+                <th>客户</th>
                 <th>入库单号</th>
                 <th>出单号/箱号</th>
                 <th>IMEI</th>
@@ -506,7 +591,17 @@ export function CustomerInventoryPage() {
             <tbody>
               {inventory?.items.map((item) => (
                 <tr key={item.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedInventoryItemIds.includes(item.id)}
+                      disabled={!customerId}
+                      onChange={() => toggleInventoryItem(item.id)}
+                      aria-label={`选择库存明细 ${item.imei ?? item.serial ?? item.upc}`}
+                    />
+                  </td>
                   <td className="mono">{item.upsTrackingNo ?? '-'}</td>
+                  <td>{formatCustomerLabel(item.customer)}</td>
                   <td className="mono">{item.inboundBatch?.batchNo ?? '-'}</td>
                   <td className="mono">{item.latestOutboundBox?.boxNo ?? '-'}</td>
                   <td className="mono">{item.imei ?? item.serial}</td>
@@ -526,7 +621,7 @@ export function CustomerInventoryPage() {
               ))}
               {!inventory || inventory.items.length === 0 ? (
                 <tr>
-                  <td colSpan={10}>暂无库存</td>
+                  <td colSpan={12}>暂无库存</td>
                 </tr>
               ) : null}
             </tbody>
@@ -557,6 +652,7 @@ type ProductSummaryResult = {
   pageSize: number;
 };
 type ProductSummaryItem = {
+  customer?: { id: string; code: string; name: string } | null;
   product: {
     id: string;
     sku: string;
@@ -589,11 +685,27 @@ type InventoryItem = {
   availableForOutbound: boolean;
   upsTrackingNo: string | null;
   receivedAt: string | null;
+  customer?: { id: string; code: string; name: string } | null;
   product: { name: string; modelCode?: string | null };
   inboundItem?: { scannedAt?: string | null } | null;
   inboundBatch?: { batchNo: string } | null;
   latestOutboundBox?: { boxNo: string } | null;
 };
+type ReportExport = {
+  id: string;
+  status: string;
+};
+type ReportDownload = {
+  fileName: string;
+  contentType: string;
+  content: string;
+  rowCount: number;
+};
+
+function formatCustomerLabel(customer?: { code?: string | null; name?: string | null } | null) {
+  if (!customer) return '-';
+  return [customer.code, customer.name].filter(Boolean).join(' - ') || '-';
+}
 
 function SummaryMetric({
   label,
@@ -634,11 +746,60 @@ function SummaryMetric({
   );
 }
 
-function toDateInputValue(date: Date) {
+function toDateTimeInputValue(date: Date) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, '0');
   const day = `${date.getDate()}`.padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const hour = `${date.getHours()}`.padStart(2, '0');
+  const minute = `${date.getMinutes()}`.padStart(2, '0');
+  return `${year}-${month}-${day}T${hour}:${minute}`;
+}
+
+function endOfToday() {
+  const date = new Date();
+  date.setHours(23, 59, 59, 999);
+  return date;
+}
+
+function toIsoDateTime(value: string) {
+  if (!value) {
+    return undefined;
+  }
+  return new Date(value).toISOString();
+}
+
+function formatTimeRangeLabel(dateFrom: string, dateTo: string, metricLabel: string) {
+  const range = formatCompactTimeRange(dateFrom, dateTo).replace(/，$/, '');
+  return range ? `${range} 的 ${metricLabel} 数据` : `全部时间的 ${metricLabel} 数据`;
+}
+
+function formatCompactTimeRange(dateFrom: string, dateTo: string) {
+  if (dateFrom && dateTo) {
+    return `${dateFrom.replace('T', ' ')} 至 ${dateTo.replace('T', ' ')}，`;
+  }
+  if (dateFrom) {
+    return `${dateFrom.replace('T', ' ')} 之后，`;
+  }
+  if (dateTo) {
+    return `${dateTo.replace('T', ' ')} 之前，`;
+  }
+  return '';
+}
+
+function downloadReportFile(file: ReportDownload) {
+  const blob = new globalThis.Blob([file.content], { type: file.contentType });
+  const url = globalThis.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = file.fileName;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+
+  window.setTimeout(() => {
+    anchor.remove();
+    globalThis.URL.revokeObjectURL(url);
+  }, 0);
 }
 
 function getSkuSectionTitle(metricLabel: string) {

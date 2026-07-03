@@ -80,6 +80,7 @@ export function InboundScanPage() {
   const [lastInboundItem, setLastInboundItem] = useState<InboundDraftItem | null>(null);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [restoreBatchNo, setRestoreBatchNo] = useState('');
   const [trackingWarning, setTrackingWarning] = useState<TrackingWarning | null>(null);
   const [isCheckingTracking, setIsCheckingTracking] = useState(false);
   const [pendingScanFocus, setPendingScanFocus] = useState<InboundScanField | null>(null);
@@ -350,6 +351,40 @@ export function InboundScanPage() {
     },
     onError: (error) => {
       setErrorMessage(toUserErrorMessage(error, '创建入库草稿失败'));
+    },
+  });
+  const restoreDraftMutation = useMutation({
+    mutationFn: async () => {
+      const batchNo = restoreBatchNo.trim();
+      if (!batchNo) {
+        throw new Error('请输入入库单号');
+      }
+      return inboundApi.getDraftByBatchNo(batchNo);
+    },
+    onMutate: () => {
+      setMessage('');
+      setErrorMessage('');
+    },
+    onSuccess: (data) => {
+      const restoredDraft = data as InboundDraft;
+      setDraft(restoredDraft);
+      setCustomerId(restoredDraft.customer.id);
+      setWarehouseId(restoredDraft.warehouse.id);
+      persistLockedContext({
+        customerId: restoredDraft.customer.id,
+        warehouseId: restoredDraft.warehouse.id,
+        draftId: restoredDraft.id,
+      });
+      setRestoreBatchNo(restoredDraft.batchNo);
+      clearScanInputs();
+      setLastInboundItem(null);
+      setTrackingWarning(null);
+      setMessage(`已恢复入库单 ${restoredDraft.batchNo}`);
+      hasFocusedLockedDraftRef.current = true;
+      focusNextScanStart();
+    },
+    onError: (error) => {
+      setErrorMessage(toUserErrorMessage(error, '恢复入库单失败'));
     },
   });
   const addItemMutation = useMutation({
@@ -883,7 +918,7 @@ export function InboundScanPage() {
             <input
               ref={trackingInputRef}
               value={upsTrackingNo}
-              placeholder="UPS / USPS / FedEx"
+              placeholder="UPS / USPS / FedEx / BB0000"
               disabled={!!blockingExceptionItem}
               onKeyDown={(event) => handleScanKeyDown(event, 'tracking')}
               onChange={(event) => {
@@ -1038,6 +1073,10 @@ export function InboundScanPage() {
       ) : null}
       <DraftPanel
         draft={draft}
+        restoreBatchNo={restoreBatchNo}
+        isRestoringDraft={restoreDraftMutation.isPending}
+        onRestoreBatchNoChange={setRestoreBatchNo}
+        onRestoreDraft={() => restoreDraftMutation.mutate()}
         blockingExceptionItemId={blockingExceptionItem?.id}
         removingItemId={removeItemMutation.isPending ? removeItemMutation.variables : undefined}
         updatingItemId={
@@ -1085,6 +1124,17 @@ type InboundDraft = {
   id: string;
   batchNo: string;
   status: string;
+  customer: {
+    id: string;
+    code: string;
+    name: string;
+  };
+  warehouse: {
+    id: string;
+    code: string;
+    name: string;
+    timezone: string;
+  };
   summary: {
     totalItems: number;
     pendingItems: number;
@@ -1129,6 +1179,10 @@ type TrackingScanResult = {
 
 function DraftPanel({
   draft,
+  restoreBatchNo,
+  isRestoringDraft,
+  onRestoreBatchNoChange,
+  onRestoreDraft,
   blockingExceptionItemId,
   removingItemId,
   updatingItemId,
@@ -1136,6 +1190,10 @@ function DraftPanel({
   onRemoveItem,
 }: {
   draft: InboundDraft | null;
+  restoreBatchNo: string;
+  isRestoringDraft: boolean;
+  onRestoreBatchNoChange: (value: string) => void;
+  onRestoreDraft: () => void;
   blockingExceptionItemId?: string;
   removingItemId?: string;
   updatingItemId?: string;
@@ -1208,9 +1266,30 @@ function DraftPanel({
 
   return (
     <section className="panel data-panel">
-      <div className="section-title">
-        <h2>当前入库单</h2>
-        <span>{draft ? `${draft.batchNo} / ${draft.status}` : '尚未创建'}</span>
+      <div className="section-title inbound-draft-title">
+        <div>
+          <h2>当前入库单</h2>
+          <span>{draft ? `${draft.batchNo} / ${draft.status}` : '尚未创建'}</span>
+        </div>
+        <form
+          className="restore-draft-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onRestoreDraft();
+          }}
+        >
+          <label>
+            <span>按入库单号恢复</span>
+            <input
+              value={restoreBatchNo}
+              placeholder="INB-20260701152205-Q2QEUT"
+              onChange={(event) => onRestoreBatchNoChange(event.target.value)}
+            />
+          </label>
+          <button type="submit" disabled={isRestoringDraft || !restoreBatchNo.trim()}>
+            {isRestoringDraft ? '恢复中' : '恢复草稿'}
+          </button>
+        </form>
       </div>
       <div className="inbound-review-grid">
         <SummaryMetric label="产品件数" value={reviewSummary.totalItems} />
@@ -1294,7 +1373,7 @@ function DraftPanel({
                     <input
                       className="table-inline-input"
                       value={editValues.upsTrackingNo}
-                      placeholder="UPS / USPS / FedEx"
+                      placeholder="UPS / USPS / FedEx / BB0000"
                       onChange={(event) => updateEditValue('upsTrackingNo', event.target.value)}
                     />
                   ) : (
@@ -1496,7 +1575,7 @@ function LastInboundNotice({
         <input
           className="mono"
           value={values.upsTrackingNo}
-          placeholder="UPS / USPS / FedEx"
+          placeholder="UPS / USPS / FedEx / BB0000"
           disabled={!isEditing || isUpdating}
           onChange={(event) => updateValue('upsTrackingNo', event.target.value)}
         />
@@ -1620,6 +1699,9 @@ function isLikelyCompleteTrackingInput(value: string) {
   if (/^9622[0-9]{18,30}$/.test(normalized)) {
     return true;
   }
+  if (/^BB0000[0-9A-Z]*$/.test(normalized)) {
+    return true;
+  }
   if (/^[0-9]{12}$/.test(normalized) || /^[0-9]{15}$/.test(normalized)) {
     return true;
   }
@@ -1712,7 +1794,7 @@ function findDraftIdentityDuplicates(items: InboundDraftItem[]) {
 function buildTrackingWarningReasons(result: TrackingScanResult) {
   const reasons: string[] = [];
   if (!result.valid) {
-    reasons.push('不是 UPS 或 9622 开头的 22-34 位 FedEx 自动放行规则');
+    reasons.push('不是 UPS、BB0000 仓库补偿单号或 9622 开头的 22-34 位 FedEx 自动放行规则');
   }
   if (result.duplicate) {
     reasons.push(`该物流单号已有 ${result.duplicateCount} 条确认入库记录`);

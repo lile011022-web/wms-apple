@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, AlertTriangle, Boxes, ClipboardList } from 'lucide-react';
+import { Activity, AlertTriangle, Boxes, ClipboardList, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { auditLogsApi, dashboardApi } from '../../api/workflow';
 
@@ -12,7 +12,13 @@ export function DashboardPage() {
     queryKey: ['audit-logs-recent'],
     queryFn: () => auditLogsApi.recent(),
   });
+  const inboundCustomersQuery = useQuery({
+    queryKey: ['dashboard-top-inbound-customers'],
+    queryFn: () => dashboardApi.topInboundCustomers(),
+  });
   const summary = summaryQuery.data as DashboardSummary | undefined;
+  const inboundCustomersData = inboundCustomersQuery.data as DashboardInboundCustomers | undefined;
+  const inboundCustomers = inboundCustomersData?.items ?? [];
   const auditData = auditQuery.data as AuditLogItem[] | { items: AuditLogItem[] } | undefined;
   const auditLogs = Array.isArray(auditData) ? auditData : (auditData?.items ?? []);
 
@@ -45,6 +51,31 @@ export function DashboardPage() {
           value={summary?.pendingExceptionCount ?? 0}
         />
       </div>
+
+      <section className="panel dashboard-inbound-breakdown">
+        <div className="section-title">
+          <h2>今日入库客户明细</h2>
+          <span>
+            {inboundCustomersQuery.isLoading ? '正在读取' : `${inboundCustomers.length} 个客户`}
+          </span>
+        </div>
+        {inboundCustomers.length ? (
+          <div className="dashboard-customer-count-grid">
+            {inboundCustomers.map((item) => (
+              <article key={item.customerId} className="dashboard-customer-count-card">
+                <div>
+                  <Users size={16} />
+                  <strong>{item.customerName || item.customerCode || '未知客户'}</strong>
+                </div>
+                <span>{item.customerCode ?? '-'}</span>
+                <b>{item.inboundCount}</b>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-panel">今日暂无客户入库记录</div>
+        )}
+      </section>
 
       <section className="panel data-panel">
         <div className="section-title">
@@ -86,6 +117,15 @@ type DashboardSummary = {
   todayOutboundBoxCount: number;
   inStockTotal: number;
   pendingExceptionCount: number;
+  generatedAt: string;
+};
+type DashboardInboundCustomers = {
+  items: Array<{
+    customerId: string;
+    customerCode?: string | null;
+    customerName?: string | null;
+    inboundCount: number;
+  }>;
   generatedAt: string;
 };
 

@@ -5,6 +5,7 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
+import { DeleteInventoryItemsDto } from './dto/delete-inventory-items.dto';
 import { DeleteInventoryProductsDto } from './dto/delete-inventory-products.dto';
 import { InventoryCustomerSummaryQueryDto } from './dto/inventory-customer-summary-query.dto';
 import { ListInventoryItemsQueryDto } from './dto/list-inventory-items-query.dto';
@@ -46,6 +47,12 @@ export class InventoryController {
   @Get('items')
   listItems(@Query() query: ListInventoryItemsQueryDto) {
     return this.inventoryService.listItems(query);
+  }
+
+  @Delete('items')
+  @Permissions('customers.manage')
+  deleteItems(@Body() dto: DeleteInventoryItemsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.inventoryService.deleteItems(dto, user);
   }
 
   @Get('items/:id')

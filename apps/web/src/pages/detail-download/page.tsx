@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Eye, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { CheckSquare, Download, Eye, FileSpreadsheet, RefreshCw, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { customersApi, reportsApi } from '../../api/workflow';
 
@@ -12,6 +12,11 @@ const reportTypes = [
   { value: 'AUDIT_LOG', label: '审计日志' },
 ];
 
+const inboundExcelLayouts = [
+  { value: 'STANDARD', label: '系统入库明细表' },
+  { value: 'INBOUND_REGISTRATION', label: '飞书入库登记表' },
+];
+
 const outboundExcelLayouts = [
   { value: 'STANDARD', label: '现有客户核对表' },
   { value: 'PACKED_SUMMARY', label: '已装箱汇总表格' },
@@ -19,7 +24,22 @@ const outboundExcelLayouts = [
 
 const inventoryExcelLayouts = [
   { value: 'STANDARD', label: '现有库存明细表' },
-  { value: 'WAREHOUSE_HOLD', label: '留仓汇总表格' },
+  { value: 'WAREHOUSE_HOLD', label: '未封箱留仓汇总表格' },
+];
+
+const boxSizeOptions = [
+  { value: '', label: '全部箱子类型' },
+  { value: '12*12*12', label: '12 x 12 x 12' },
+  { value: '14*14*14', label: '14 x 14 x 14' },
+  { value: 'CUSTOM', label: 'Custom' },
+];
+
+const inboundStatusOptions = [
+  { value: 'CONFIRMED', label: '已确认入库' },
+  { value: '', label: '全部状态' },
+  { value: 'PENDING', label: '待确认' },
+  { value: 'EXCEPTION', label: '异常' },
+  { value: 'VOIDED', label: '已作废' },
 ];
 
 export function DetailDownloadPage() {
@@ -28,13 +48,16 @@ export function DetailDownloadPage() {
   const [format, setFormat] = useState('CSV');
   const [customerId, setCustomerId] = useState('');
   const [batchId, setBatchId] = useState('');
+  const [inboundStatus, setInboundStatus] = useState('CONFIRMED');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
   const [sealedOnly, setSealedOnly] = useState(true);
   const [exportLayout, setExportLayout] = useState('STANDARD');
+  const [boxSizePreset, setBoxSizePreset] = useState('');
   const [preview, setPreview] = useState<ReportPreview | null>(null);
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
+  const [selectedBoxNos, setSelectedBoxNos] = useState<string[]>([]);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const hasInvalidDateRange = Boolean(dateFrom && dateTo && new Date(dateFrom) > new Date(dateTo));
@@ -54,21 +77,71 @@ export function DetailDownloadPage() {
     ((inboundBatchesQuery.data as ExportBatchResult | undefined)?.items as
       | InboundBatchOption[]
       | undefined) ?? [];
+  const outboundBoxesQuery = useQuery({
+    queryKey: [
+      'report-outbound-boxes',
+      customerId,
+      dateFrom,
+      dateTo,
+      search,
+      sealedOnly,
+      boxSizePreset,
+    ],
+    queryFn: () =>
+      reportsApi.outboundBoxes({
+        page: 1,
+        pageSize: 100,
+        customerId: customerId || undefined,
+        dateFrom: toIsoDateTime(dateFrom),
+        dateTo: toIsoDateTime(dateTo),
+        search: search || undefined,
+        outboundStatus: sealedOnly ? 'SEALED' : undefined,
+        sizePreset: boxSizePreset || undefined,
+      }),
+    enabled: reportType === 'OUTBOUND_DETAIL' && !hasInvalidDateRange,
+  });
+  const outboundBoxes =
+    ((outboundBoxesQuery.data as ExportOutboundBoxResult | undefined)?.items as
+      | OutboundBoxOption[]
+      | undefined) ?? [];
 
   const filters = useMemo(
     () => ({
       customerId: customerId || undefined,
       batchId: reportType === 'INBOUND_DETAIL' ? batchId || undefined : undefined,
+      inboundStatus: reportType === 'INBOUND_DETAIL' && inboundStatus ? inboundStatus : undefined,
       dateFrom: toIsoDateTime(dateFrom),
       dateTo: toIsoDateTime(dateTo),
       search: search || undefined,
-      outboundStatus: reportType === 'OUTBOUND_DETAIL' && sealedOnly ? 'SEALED' : undefined,
+      boxNos:
+        reportType === 'OUTBOUND_DETAIL' && selectedBoxNos.length > 0 ? selectedBoxNos : undefined,
+      outboundStatus:
+        reportType === 'OUTBOUND_DETAIL' && sealedOnly
+          ? 'SEALED'
+          : reportType === 'INVENTORY_DETAIL' &&
+              format === 'EXCEL' &&
+              exportLayout === 'WAREHOUSE_HOLD'
+            ? 'OPEN'
+            : undefined,
       inventoryStatus:
         reportType === 'INVENTORY_DETAIL' && format === 'EXCEL' && exportLayout === 'WAREHOUSE_HOLD'
-          ? 'IN_STOCK'
+          ? 'PACKED'
           : undefined,
     }),
-    [batchId, customerId, dateFrom, dateTo, exportLayout, format, reportType, sealedOnly, search],
+    [
+      batchId,
+      customerId,
+      dateFrom,
+      dateTo,
+      exportLayout,
+      format,
+      inboundStatus,
+      reportType,
+      sealedOnly,
+      search,
+      selectedBoxNos,
+      boxSizePreset,
+    ],
   );
 
   const exportsQuery = useQuery({
@@ -103,7 +176,9 @@ export function DetailDownloadPage() {
         reportType,
         format,
         exportLayout:
-          (reportType === 'OUTBOUND_DETAIL' || reportType === 'INVENTORY_DETAIL') &&
+          (reportType === 'INBOUND_DETAIL' ||
+            reportType === 'OUTBOUND_DETAIL' ||
+            reportType === 'INVENTORY_DETAIL') &&
           format === 'EXCEL'
             ? exportLayout
             : undefined,
@@ -144,6 +219,10 @@ export function DetailDownloadPage() {
   useEffect(() => {
     setPreview(null);
     setSelectedFields([]);
+    setSelectedBoxNos([]);
+    if (reportType === 'INBOUND_DETAIL') {
+      setInboundStatus('CONFIRMED');
+    }
   }, [reportType]);
 
   useEffect(() => {
@@ -155,8 +234,14 @@ export function DetailDownloadPage() {
   }, [customerId, reportType]);
 
   useEffect(() => {
+    setSelectedBoxNos([]);
+  }, [customerId, dateFrom, dateTo, sealedOnly, boxSizePreset]);
+
+  useEffect(() => {
     if (
-      (reportType !== 'OUTBOUND_DETAIL' && reportType !== 'INVENTORY_DETAIL') ||
+      (reportType !== 'INBOUND_DETAIL' &&
+        reportType !== 'OUTBOUND_DETAIL' &&
+        reportType !== 'INVENTORY_DETAIL') ||
       format !== 'EXCEL'
     ) {
       setExportLayout('STANDARD');
@@ -164,11 +249,13 @@ export function DetailDownloadPage() {
   }, [format, reportType]);
 
   const excelLayouts =
-    reportType === 'OUTBOUND_DETAIL'
-      ? outboundExcelLayouts
-      : reportType === 'INVENTORY_DETAIL'
-        ? inventoryExcelLayouts
-        : [];
+    reportType === 'INBOUND_DETAIL'
+      ? inboundExcelLayouts
+      : reportType === 'OUTBOUND_DETAIL'
+        ? outboundExcelLayouts
+        : reportType === 'INVENTORY_DETAIL'
+          ? inventoryExcelLayouts
+          : [];
 
   useEffect(() => {
     if (
@@ -184,6 +271,18 @@ export function DetailDownloadPage() {
     setSelectedFields((current) =>
       current.includes(field) ? current.filter((item) => item !== field) : [...current, field],
     );
+  };
+
+  const toggleBox = (boxNo: string) => {
+    setSelectedBoxNos((current) =>
+      current.includes(boxNo) ? current.filter((item) => item !== boxNo) : [...current, boxNo],
+    );
+  };
+
+  const selectVisibleBoxes = () => {
+    setSelectedBoxNos((current) => [
+      ...new Set([...current, ...outboundBoxes.map((box) => box.boxNo)]),
+    ]);
   };
 
   return (
@@ -257,6 +356,21 @@ export function DetailDownloadPage() {
             </select>
           </label>
         ) : null}
+        {reportType === 'INBOUND_DETAIL' ? (
+          <label>
+            <span>入库状态</span>
+            <select
+              value={inboundStatus}
+              onChange={(event) => setInboundStatus(event.target.value)}
+            >
+              {inboundStatusOptions.map((option) => (
+                <option key={option.value || 'all'} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label>
           <span>搜索</span>
           <input
@@ -277,8 +391,22 @@ export function DetailDownloadPage() {
             </select>
           </label>
         ) : null}
-        {(reportType === 'OUTBOUND_DETAIL' || reportType === 'INVENTORY_DETAIL') &&
-        format === 'EXCEL' ? (
+        {reportType === 'OUTBOUND_DETAIL' ? (
+          <label>
+            <span>箱子类型</span>
+            <select
+              value={boxSizePreset}
+              onChange={(event) => setBoxSizePreset(event.target.value)}
+            >
+              {boxSizeOptions.map((option) => (
+                <option key={option.value || 'all'} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {excelLayouts.length > 0 && format === 'EXCEL' ? (
           <label>
             <span>表格模式</span>
             <select value={exportLayout} onChange={(event) => setExportLayout(event.target.value)}>
@@ -311,9 +439,100 @@ export function DetailDownloadPage() {
           onClick={() => createMutation.mutate()}
         >
           <FileSpreadsheet size={16} />
-          生成导出
+          {selectedBoxNos.length > 0 ? `生成选中箱子导出 ${selectedBoxNos.length} 箱` : '生成导出'}
         </button>
       </section>
+
+      {reportType === 'OUTBOUND_DETAIL' ? (
+        <section className="panel report-box-picker">
+          <div className="section-title compact">
+            <div>
+              <h2>选择箱子</h2>
+              <span>
+                {selectedBoxNos.length > 0
+                  ? `已选 ${selectedBoxNos.length} 箱，仍按搜索和时间过滤箱内明细`
+                  : '不勾选箱子时，按上方筛选条件导出'}
+              </span>
+            </div>
+            <div className="box-picker-actions">
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={outboundBoxes.length === 0}
+                onClick={selectVisibleBoxes}
+              >
+                <CheckSquare size={16} />
+                选择当前列表
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={selectedBoxNos.length === 0}
+                onClick={() => setSelectedBoxNos([])}
+              >
+                <X size={16} />
+                清空选择
+              </button>
+            </div>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>
+                  <span className="sr-only">选择</span>
+                </th>
+                <th>箱子</th>
+                <th>客户</th>
+                <th>状态</th>
+                <th>箱子类型</th>
+                <th>货物</th>
+                <th>上传单号</th>
+                <th>时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {outboundBoxes.map((box) => (
+                <tr
+                  key={box.id}
+                  className={selectedBoxNos.includes(box.boxNo) ? 'selected-record-row' : ''}
+                >
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedBoxNos.includes(box.boxNo)}
+                      onChange={() => toggleBox(box.boxNo)}
+                    />
+                  </td>
+                  <td>
+                    <strong>{box.boxName || box.boxNo}</strong>
+                    <span className="mono">{box.boxNo}</span>
+                  </td>
+                  <td>
+                    <strong>{box.customer.name}</strong>
+                    <span>{box.customer.code}</span>
+                  </td>
+                  <td>
+                    <span className={box.status === 'SEALED' ? 'badge badge-success' : 'badge'}>
+                      {box.status === 'SEALED' ? '已封箱' : '未封箱'}
+                    </span>
+                  </td>
+                  <td>{formatBoxSize(box.sizePreset, box.customSize)}</td>
+                  <td>{box.itemCount} 件</td>
+                  <td className="mono">{box.shippingTrackingNo || '-'}</td>
+                  <td>{formatDateTime(box.sealedAt ?? box.createdAt)}</td>
+                </tr>
+              ))}
+              {outboundBoxes.length === 0 ? (
+                <tr>
+                  <td colSpan={8}>
+                    {outboundBoxesQuery.isFetching ? '正在加载可选箱子' : '暂无符合当前条件的箱子'}
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
 
       {hasInvalidDateRange ? <div className="inline-error">结束时间不能早于开始时间</div> : null}
       {message ? <div className="inline-success">{message}</div> : null}
@@ -331,6 +550,13 @@ export function DetailDownloadPage() {
             {(reportType === 'OUTBOUND_DETAIL' || reportType === 'INVENTORY_DETAIL') &&
             format === 'EXCEL' ? (
               <span>模式 {excelLayouts.find((item) => item.value === exportLayout)?.label}</span>
+            ) : null}
+            {reportType === 'INBOUND_DETAIL' ? (
+              <span>
+                入库状态{' '}
+                {inboundStatusOptions.find((item) => item.value === inboundStatus)?.label ??
+                  '全部状态'}
+              </span>
             ) : null}
             <span>{preview?.shouldRunInBackground ? '需后台任务' : '可同步生成'}</span>
           </div>
@@ -412,6 +638,22 @@ type InboundBatchOption = {
   label: string;
   rowCount: number;
   confirmedAt?: string | null;
+};
+type ExportOutboundBoxResult = { items: OutboundBoxOption[]; total: number };
+type OutboundBoxOption = {
+  id: string;
+  boxNo: string;
+  boxName?: string | null;
+  sizePreset?: string | null;
+  customSize?: string | null;
+  shippingTrackingNo?: string | null;
+  status: string;
+  sealedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  itemCount: number;
+  customer: { id: string; code: string; name: string };
+  warehouse: { id: string; code: string; name: string };
 };
 type ReportPreview = {
   estimatedRowCount: number;
@@ -501,6 +743,27 @@ function toIsoDateTime(value: string) {
   }
 
   return new Date(value).toISOString();
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return '-';
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function formatBoxSize(sizePreset?: string | null, customSize?: string | null) {
+  const value = customSize || sizePreset;
+  if (!value) {
+    return '-';
+  }
+  return value.replace(/\*/g, ' x ');
 }
 
 function toUserErrorMessage(error: unknown, fallback: string) {

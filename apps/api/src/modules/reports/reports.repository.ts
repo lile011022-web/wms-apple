@@ -67,6 +67,45 @@ export class ReportsRepository {
     });
   }
 
+  findOutboundBoxOptions(params: {
+    customerId?: string;
+    warehouseId?: string;
+    outboundStatus?: ReportFilterDto['outboundStatus'];
+    sizePreset?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    search?: string;
+    skip: number;
+    take: number;
+  }) {
+    const where = this.toOutboundBoxOptionWhere(params);
+
+    return this.prisma.$transaction([
+      this.prisma.outboundBox.count({ where }),
+      this.prisma.outboundBox.findMany({
+        where,
+        skip: params.skip,
+        take: params.take,
+        orderBy: [{ sealedAt: 'desc' }, { createdAt: 'desc' }],
+        select: {
+          id: true,
+          boxNo: true,
+          boxName: true,
+          sizePreset: true,
+          customSize: true,
+          shippingTrackingNo: true,
+          status: true,
+          sealedAt: true,
+          createdAt: true,
+          updatedAt: true,
+          customer: { select: { id: true, code: true, name: true } },
+          warehouse: { select: { id: true, code: true, name: true } },
+          _count: { select: { items: true } },
+        },
+      }),
+    ]);
+  }
+
   countRows(reportType: ReportType, filters: ReportFilterDto) {
     switch (reportType) {
       case ReportType.INBOUND_DETAIL:
@@ -118,6 +157,11 @@ export class ReportsRepository {
             warehouse: true,
             product: true,
             inboundBatch: true,
+            inboundItem: {
+              select: {
+                scannedAt: true,
+              },
+            },
             outboundBoxItems: {
               include: { outboundBox: true },
               orderBy: { packedAt: 'desc' },
@@ -286,6 +330,7 @@ export class ReportsRepository {
 
   private toInventoryWhere(filters: ReportFilterDto): Prisma.InventoryItemWhereInput {
     const search = this.trimOptional(filters.search);
+    const boxNos = this.toStringList(filters.boxNos);
     return {
       customerId: this.trimOptional(filters.customerId),
       warehouseId: this.trimOptional(filters.warehouseId),
@@ -296,6 +341,17 @@ export class ReportsRepository {
       serial: this.contains(filters.serial, true),
       upsTrackingNo: this.contains(filters.upsTrackingNo, true),
       receivedAt: this.toDateRange(filters),
+      outboundBoxItems:
+        filters.outboundStatus || filters.boxNo || boxNos.length
+          ? {
+              some: {
+                outboundBox: {
+                  status: filters.outboundStatus,
+                  boxNo: boxNos.length ? { in: boxNos } : this.contains(filters.boxNo, true),
+                },
+              },
+            }
+          : undefined,
       OR: search
         ? [
             { upc: { contains: search } },
@@ -313,13 +369,14 @@ export class ReportsRepository {
 
   private toOutboundWhere(filters: ReportFilterDto): Prisma.OutboundBoxItemWhereInput {
     const search = this.trimOptional(filters.search);
+    const boxNos = this.toStringList(filters.boxNos);
     return {
       packedAt: this.toDateRange(filters),
       outboundBox: {
         customerId: this.trimOptional(filters.customerId),
         warehouseId: this.trimOptional(filters.warehouseId),
         status: filters.outboundStatus,
-        boxNo: this.contains(filters.boxNo, true),
+        boxNo: boxNos.length ? { in: boxNos } : this.contains(filters.boxNo, true),
       },
       inventoryItem: {
         productId: this.trimOptional(filters.productId),
@@ -339,6 +396,55 @@ export class ReportsRepository {
             { inventoryItem: { serial: { contains: search, mode: 'insensitive' } } },
             { inventoryItem: { product: { sku: { contains: search, mode: 'insensitive' } } } },
             { inventoryItem: { product: { name: { contains: search, mode: 'insensitive' } } } },
+          ]
+        : undefined,
+    };
+  }
+
+  private toOutboundBoxOptionWhere(params: {
+    customerId?: string;
+    warehouseId?: string;
+    outboundStatus?: ReportFilterDto['outboundStatus'];
+    sizePreset?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    search?: string;
+  }): Prisma.OutboundBoxWhereInput {
+    const search = this.trimOptional(params.search);
+    const packedAt = this.toDateRange({
+      dateFrom: params.dateFrom,
+      dateTo: params.dateTo,
+    });
+
+    return {
+      customerId: this.trimOptional(params.customerId),
+      warehouseId: this.trimOptional(params.warehouseId),
+      status: params.outboundStatus,
+      sizePreset: this.trimOptional(params.sizePreset),
+      items: packedAt ? { some: { packedAt } } : undefined,
+      OR: search
+        ? [
+            { boxNo: { contains: search, mode: 'insensitive' } },
+            { boxName: { contains: search, mode: 'insensitive' } },
+            { shippingTrackingNo: { contains: search, mode: 'insensitive' } },
+            { customer: { code: { contains: search, mode: 'insensitive' } } },
+            { customer: { name: { contains: search, mode: 'insensitive' } } },
+            {
+              items: {
+                some: {
+                  inventoryItem: {
+                    OR: [
+                      { upc: { contains: search } },
+                      { upsTrackingNo: { contains: search, mode: 'insensitive' } },
+                      { imei: { contains: search } },
+                      { serial: { contains: search, mode: 'insensitive' } },
+                      { product: { sku: { contains: search, mode: 'insensitive' } } },
+                      { product: { name: { contains: search, mode: 'insensitive' } } },
+                    ],
+                  },
+                },
+              },
+            },
           ]
         : undefined,
     };
@@ -428,6 +534,10 @@ export class ReportsRepository {
     return insensitive
       ? { contains: trimmed, mode: 'insensitive' as const }
       : { contains: trimmed };
+  }
+
+  private toStringList(values?: string[]) {
+    return [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))];
   }
 
   private trimOptional(value?: string | null) {

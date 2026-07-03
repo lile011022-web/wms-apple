@@ -12,16 +12,19 @@ Before each development task, read:
 
 For this project, Codex can deploy finished local changes to the existing VPS after local validation.
 
-- SSH target: `root@24.199.87.181`
+- SSH target: `root@147.182.133.230`
 - SSH key: `~/.ssh/wms_scan_do`
 - Server project directory: `/opt/wms-scan`
-- Public web URL: `http://24.199.87.181/`
-- Public health check: `http://24.199.87.181/api/v1/health`
+- Public web URL: `http://147.182.133.230/`
+- Public health check: `http://147.182.133.230/api/v1/health`
+- Current Droplet: `ubuntu-s-2vcpu-4gb-120gb-intel-nyc1`
+
+2026-06-30 verification: `147.182.133.230` is the current WMS deployment target and returns WMS health `status: ok`. The other visible Droplet `147.182.186.0` did not return normal WMS health during verification and should not be used as the deployment target unless it is intentionally promoted later. The legacy `24.199.87.181` server may still respond and must not be destroyed until database backups, traffic routing, and production data ownership are confirmed.
 
 Use this SSH form:
 
 ```bash
-ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@24.199.87.181
+ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@147.182.133.230
 ```
 
 Deployment workflow after local changes are complete:
@@ -31,7 +34,7 @@ Deployment workflow after local changes are complete:
 3. Sync the local checkout to `/opt/wms-scan` with `rsync`, preserving server-only files.
 4. Run a production database backup before replacing containers.
 5. Run the production deploy script on the server. Use `infra/scripts/deploy.sh web` for web-only changes and `infra/scripts/deploy.sh api` for API/database changes when the scope allows it.
-6. Verify container status and `http://24.199.87.181/api/v1/health`.
+6. Verify container status and `http://147.182.133.230/api/v1/health`.
 
 For GHCR prebuilt-image deployments, configure `WEB_IMAGE` and `API_IMAGE` in the server-only `.env.production`, then run:
 

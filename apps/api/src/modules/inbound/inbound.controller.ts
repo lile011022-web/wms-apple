@@ -37,6 +37,11 @@ export class InboundController {
     return this.inboundService.createDraft(dto, user);
   }
 
+  @Get('drafts/by-batch/:batchNo')
+  getDraftByBatchNo(@Param('batchNo') batchNo: string) {
+    return this.inboundService.getDraftByBatchNo(batchNo);
+  }
+
   @Get('drafts/:id')
   getDraft(@Param('id') id: string) {
     return this.inboundService.getDraft(id);

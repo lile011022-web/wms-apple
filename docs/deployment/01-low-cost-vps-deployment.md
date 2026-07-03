@@ -29,7 +29,7 @@ sudo apt install -y ca-certificates curl git ufw
 Current internal-test VPS:
 
 ```bash
-ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@24.199.87.181
+ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@147.182.133.230
 ```
 
 Current project directory:
@@ -37,6 +37,19 @@ Current project directory:
 ```text
 /opt/wms-scan
 ```
+
+Current DigitalOcean Droplet:
+
+```text
+ubuntu-s-2vcpu-4gb-120gb-intel-nyc1
+Public IPv4: 147.182.133.230
+```
+
+2026-06-30 verification:
+
+- `http://147.182.133.230/api/v1/health` returned WMS health `status: ok`; this is the current deployment target.
+- `http://147.182.186.0/api/v1/health` did not return normal WMS health; do not deploy there unless it is intentionally promoted.
+- `http://24.199.87.181/api/v1/health` may still respond from the legacy server. Keep it until database backups, routing, and production data ownership are confirmed, then retire it through the cloud provider console.
 
 Create an application directory:
 
@@ -172,7 +185,7 @@ The current VPS directory was uploaded as a working tree without `.git`, so Code
 ```bash
 PROJECT_DIR=/opt/wms-scan infra/scripts/backup-postgres.sh
 PROJECT_DIR=/opt/wms-scan infra/scripts/deploy.sh
-curl http://24.199.87.181/api/v1/health
+curl http://147.182.133.230/api/v1/health
 ```
 
 ## Prebuilt Image Deployments
@@ -231,7 +244,7 @@ For database-sensitive releases, create a backup before updating. Schema migrati
 PostgreSQL is intentionally available only on the Docker internal network. Do not publish port `5432` to the public internet. To inspect or update data directly, use SSH and run `psql` inside the PostgreSQL container:
 
 ```bash
-ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@24.199.87.181
+ssh -i ~/.ssh/wms_scan_do -o IdentitiesOnly=yes root@147.182.133.230
 cd /opt/wms-scan
 docker compose -p wms-scan -f docker-compose.prod.yml --env-file .env.production exec postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```

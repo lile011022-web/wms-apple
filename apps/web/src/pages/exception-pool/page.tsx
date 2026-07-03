@@ -142,7 +142,7 @@ export function ExceptionPoolPage() {
               {result?.items.map((item) => (
                 <tr key={item.id} onClick={() => setSelected(item)}>
                   <td>{item.type}</td>
-                  <td>{item.customer?.code ?? '-'}</td>
+                  <td>{formatCustomerLabel(item.customer)}</td>
                   <td className="mono">{item.rawValue ?? item.imei ?? item.upc ?? '-'}</td>
                   <td>
                     <span className={exceptionStatusClass(item.status)}>{item.status}</span>
@@ -168,6 +168,10 @@ export function ExceptionPoolPage() {
             <div>
               <dt>异常 ID</dt>
               <dd className="mono">{selected?.id ?? '-'}</dd>
+            </div>
+            <div>
+              <dt>客户</dt>
+              <dd>{formatCustomerLabel(selected?.customer)}</dd>
             </div>
             <div>
               <dt>UPC / IMEI / UPS</dt>
@@ -240,6 +244,11 @@ type ExceptionItem = {
   createdAt: string;
   customer?: { code: string; name: string } | null;
 };
+
+function formatCustomerLabel(customer?: { code?: string | null; name?: string | null } | null) {
+  if (!customer) return '-';
+  return [customer.code, customer.name].filter(Boolean).join(' - ') || '-';
+}
 
 function Metric({ label, value, intent }: { label: string; value: number; intent: string }) {
   return (

@@ -72,7 +72,6 @@ export class DashboardRepository {
           customerId: 'desc',
         },
       },
-      take: 5,
     });
   }
 
