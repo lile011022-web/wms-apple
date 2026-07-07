@@ -14,6 +14,7 @@ import { ExceptionsModule } from './modules/exceptions/exceptions.module';
 import { InboundModule } from './modules/inbound/inbound.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { OutboundModule } from './modules/outbound/outbound.module';
+import { PackagePrealertsModule } from './modules/package-prealerts/package-prealerts.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { ProductsModule } from './modules/products/products.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -27,7 +28,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     ConfigModule.forRoot({
       isGlobal: true,
       load: [appConfig, databaseConfig, redisConfig, jwtConfig],
-      envFilePath: ['.env'],
+      envFilePath: ['.env', '../../.env'],
       validate: (config) => envSchema.parse(config),
     }),
     JwtModule.register({ global: true }),
@@ -42,6 +43,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     InboundModule,
     InventoryModule,
     OutboundModule,
+    PackagePrealertsModule,
     ExceptionsModule,
     ReportsModule,
     AuditLogsModule,

@@ -71,6 +71,65 @@ enum ReportExportStatus {
   FAILED
 }
 
+enum PackagePrealertBatchStatus {
+  OPEN
+  COMPLETED
+  VOIDED
+}
+
+enum PackageCarrier {
+  UPS
+  USPS
+  FEDEX
+  OTHER
+  UNKNOWN
+}
+
+enum PackageLogisticsStatus {
+  UNKNOWN
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  EXCEPTION
+}
+
+enum PackageReceivingStatus {
+  NOT_RECEIVED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  VOIDED
+}
+
+enum PackageExchangePushStatus {
+  PENDING
+  PUSHED
+  FAILED
+  SKIPPED
+}
+
+enum PackageAlertType {
+  DELIVERED_NOT_RECEIVED
+  ETA_OVERDUE
+  STALE_TRACKING
+  DUPLICATE_PREALERT
+  CUSTOMER_CONFLICT
+  SYNC_FAILED
+  UNPREALERTED_INBOUND
+}
+
+enum PackageAlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum PackageAlertStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  IGNORED
+}
+
 enum AuditAction {
   LOGIN
   LOGOUT
@@ -92,6 +151,10 @@ enum AuditAction {
   CUSTOMER_BATCH_CHANGE
   UPC_PRODUCT_CHANGE
   CUSTOMER_CHANGE
+  PACKAGE_PREALERT_CHANGE
+  PACKAGE_PREALERT_STATUS_UPDATE
+  PACKAGE_ALERT_HANDLE
+  PACKAGE_PREALERT_INBOUND_LINK
   USER_CHANGE
   ROLE_CHANGE
   PERMISSION_CHANGE
@@ -116,13 +179,14 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  roles              UserRoleAssignment[]
-  inboundBatches     InboundBatch[]       @relation("InboundBatchOperator")
-  outboundBoxes      OutboundBox[]        @relation("OutboundBoxCreator")
-  outboundBoxPhotos  OutboundBoxPhoto[]   @relation("OutboundBoxPhotoUploader")
-  customerChangeLogs CustomerChangeLog[]  @relation("CustomerChangeOperator")
-  reportExports      ReportExport[]       @relation("ReportExportRequester")
-  auditLogs          AuditLog[]           @relation("AuditLogOperator")
+  roles                  UserRoleAssignment[]
+  inboundBatches         InboundBatch[]         @relation("InboundBatchOperator")
+  outboundBoxes          OutboundBox[]          @relation("OutboundBoxCreator")
+  outboundBoxPhotos      OutboundBoxPhoto[]     @relation("OutboundBoxPhotoUploader")
+  customerChangeLogs     CustomerChangeLog[]    @relation("CustomerChangeOperator")
+  reportExports          ReportExport[]         @relation("ReportExportRequester")
+  packagePrealertBatches PackagePrealertBatch[] @relation("PackagePrealertBatchCreator")
+  auditLogs              AuditLog[]             @relation("AuditLogOperator")
 
   @@map("users")
 }
@@ -207,13 +271,15 @@ model Customer {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
-  inboundBatches        InboundBatch[]
-  inboundItems          InboundItem[]
-  inventoryItems        InventoryItem[]
-  outboundBoxes         OutboundBox[]
-  exceptions            ExceptionRecord[]
-  customerChangeLogsOld CustomerChangeLog[] @relation("CustomerChangeOldCustomer")
-  customerChangeLogsNew CustomerChangeLog[] @relation("CustomerChangeNewCustomer")
+  inboundBatches         InboundBatch[]
+  inboundItems           InboundItem[]
+  inventoryItems         InventoryItem[]
+  outboundBoxes          OutboundBox[]
+  exceptions             ExceptionRecord[]
+  customerChangeLogsOld  CustomerChangeLog[]    @relation("CustomerChangeOldCustomer")
+  customerChangeLogsNew  CustomerChangeLog[]    @relation("CustomerChangeNewCustomer")
+  packagePrealertBatches PackagePrealertBatch[]
+  packagePrealertItems   PackagePrealertItem[]
 
   @@map("customers")
 }
@@ -267,11 +333,12 @@ model InboundBatch {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
-  customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  warehouse      Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  operator       User            @relation("InboundBatchOperator", fields: [operatorId], references: [id], onDelete: Restrict)
-  inboundItems   InboundItem[]
-  inventoryItems InventoryItem[]
+  customer             Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  warehouse            Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  operator             User                  @relation("InboundBatchOperator", fields: [operatorId], references: [id], onDelete: Restrict)
+  inboundItems         InboundItem[]
+  inventoryItems       InventoryItem[]
+  packagePrealertItems PackagePrealertItem[]
 
   @@index([customerId, createdAt])
   @@index([warehouseId, createdAt])
@@ -297,11 +364,12 @@ model InboundItem {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
-  inboundBatch  InboundBatch      @relation(fields: [inboundBatchId], references: [id], onDelete: Restrict)
-  customer      Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  product       Product?          @relation(fields: [productId], references: [id], onDelete: Restrict)
-  inventoryItem InventoryItem?    @relation("InboundItemInventoryItem", fields: [inventoryItemId], references: [id], onDelete: SetNull)
-  exceptions    ExceptionRecord[]
+  inboundBatch        InboundBatch         @relation(fields: [inboundBatchId], references: [id], onDelete: Restrict)
+  customer            Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  product             Product?             @relation(fields: [productId], references: [id], onDelete: Restrict)
+  inventoryItem       InventoryItem?       @relation("InboundItemInventoryItem", fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  exceptions          ExceptionRecord[]
+  packagePrealertItem PackagePrealertItem? @relation("PackagePrealertInboundItem")
 
   @@index([customerId, scannedAt])
   @@index([upsTrackingNo])
@@ -309,6 +377,107 @@ model InboundItem {
   @@index([imei])
   @@index([serial])
   @@map("inbound_items")
+}
+
+model PackagePrealertBatch {
+  id          String                     @id @default(cuid())
+  batchNo     String                     @unique
+  customerId  String
+  status      PackagePrealertBatchStatus @default(OPEN)
+  source      String                     @default("MANUAL")
+  notes       String?
+  createdById String
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+
+  customer  Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdBy User                  @relation("PackagePrealertBatchCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  items     PackagePrealertItem[]
+
+  @@index([customerId, createdAt])
+  @@index([status, createdAt])
+  @@map("package_prealert_batches")
+}
+
+model PackagePrealertItem {
+  id                   String                    @id @default(cuid())
+  batchId              String
+  customerId           String
+  carrier              PackageCarrier            @default(UNKNOWN)
+  trackingNo           String
+  originalTrackingLink String?
+  logisticsStatus      PackageLogisticsStatus    @default(UNKNOWN)
+  rawLogisticsStatus   String?
+  logisticsUpdatedAt   DateTime?
+  estimatedArrivalAt   DateTime?
+  deliveredAt          DateTime?
+  receivingStatus      PackageReceivingStatus    @default(NOT_RECEIVED)
+  exchangePushStatus   PackageExchangePushStatus @default(PENDING)
+  exchangeRecordId     String?
+  exchangePushedAt     DateTime?
+  exchangePulledAt     DateTime?
+  exchangeSyncError    String?
+  inboundBatchId       String?
+  inboundItemId        String?                   @unique
+  productModel         String?
+  recipientName        String?
+  notes                String?
+  voidReason           String?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+
+  batch        PackagePrealertBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  customer     Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  inboundBatch InboundBatch?          @relation(fields: [inboundBatchId], references: [id], onDelete: SetNull)
+  inboundItem  InboundItem?           @relation("PackagePrealertInboundItem", fields: [inboundItemId], references: [id], onDelete: SetNull)
+  events       PackageTrackingEvent[]
+  alerts       PackageAlert[]
+
+  @@index([customerId, createdAt])
+  @@index([trackingNo])
+  @@index([logisticsStatus, receivingStatus])
+  @@index([exchangePushStatus, createdAt])
+  @@index([exchangeRecordId])
+  @@index([estimatedArrivalAt])
+  @@index([deliveredAt])
+  @@map("package_prealert_items")
+}
+
+model PackageTrackingEvent {
+  id                 String                 @id @default(cuid())
+  prealertItemId     String
+  status             PackageLogisticsStatus
+  rawStatus          String?
+  eventTime          DateTime?
+  estimatedArrivalAt DateTime?
+  location           String?
+  source             String                 @default("MANUAL")
+  createdAt          DateTime               @default(now())
+
+  prealertItem PackagePrealertItem @relation(fields: [prealertItemId], references: [id], onDelete: Cascade)
+
+  @@index([prealertItemId, createdAt])
+  @@map("package_tracking_events")
+}
+
+model PackageAlert {
+  id             String               @id @default(cuid())
+  prealertItemId String
+  alertType      PackageAlertType
+  severity       PackageAlertSeverity @default(WARNING)
+  status         PackageAlertStatus   @default(OPEN)
+  assignedTo     String?
+  triggeredAt    DateTime             @default(now())
+  resolvedAt     DateTime?
+  resolutionNote String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  prealertItem PackagePrealertItem @relation(fields: [prealertItemId], references: [id], onDelete: Cascade)
+
+  @@index([status, alertType])
+  @@index([prealertItemId, status])
+  @@map("package_alerts")
 }
 
 model InventoryItem {
@@ -349,25 +518,25 @@ model InventoryItem {
 }
 
 model OutboundBox {
-  id          String            @id @default(cuid())
-  boxNo       String
-  boxName     String?
-  sizePreset  String?
-  customSize  String?
-  weightLb    Float?
+  id                 String            @id @default(cuid())
+  boxNo              String
+  boxName            String?
+  sizePreset         String?
+  customSize         String?
+  weightLb           Float?
   shippingTrackingNo String?
-  customerId  String
-  warehouseId String
-  createdById String
-  status      OutboundBoxStatus @default(OPEN)
-  sealedAt    DateTime?
-  notes       String?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  customerId         String
+  warehouseId        String
+  createdById        String
+  status             OutboundBoxStatus @default(OPEN)
+  sealedAt           DateTime?
+  notes              String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
-  customer  Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  warehouse Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  createdBy User              @relation("OutboundBoxCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  customer  Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  warehouse Warehouse          @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  createdBy User               @relation("OutboundBoxCreator", fields: [createdById], references: [id], onDelete: Restrict)
   items     OutboundBoxItem[]
   photos    OutboundBoxPhoto[]
 

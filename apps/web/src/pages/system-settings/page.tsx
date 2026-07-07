@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ChangeEvent, FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import { changePassword } from '../../api/auth';
 import {
   getSystemSettings,
   listWarehouses,
@@ -19,6 +20,11 @@ export function SystemSettingsPage() {
     queryFn: () => listWarehouses({ isActive: true }),
   });
   const [formValue, setFormValue] = useState<SystemSettings | null>(null);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
 
   useEffect(() => {
     if (settingsQuery.data) {
@@ -31,6 +37,16 @@ export function SystemSettingsPage() {
     onSuccess: (settings) => {
       queryClient.setQueryData(['system-settings'], settings);
       setFormValue(settings);
+    },
+  });
+  const changePasswordMutation = useMutation({
+    mutationFn: changePassword,
+    onSuccess: () => {
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
     },
   });
 
@@ -98,6 +114,20 @@ export function SystemSettingsPage() {
     }
   };
 
+  const handlePasswordChange =
+    (key: keyof typeof passwordForm) => (event: ChangeEvent<HTMLInputElement>) => {
+      changePasswordMutation.reset();
+      setPasswordForm((current) => ({
+        ...current,
+        [key]: event.target.value,
+      }));
+    };
+
+  const handlePasswordSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    changePasswordMutation.mutate(passwordForm);
+  };
+
   if (settingsQuery.isLoading) {
     return (
       <section className="page-frame">
@@ -121,6 +151,60 @@ export function SystemSettingsPage() {
   return (
     <section className="page-frame settings-page">
       <PageHeading />
+
+      <form className="settings-grid" onSubmit={handlePasswordSubmit}>
+        <section className="panel settings-section settings-section-wide">
+          <div className="section-title">
+            <h2>账号安全</h2>
+            <span>修改当前登录账号密码</span>
+          </div>
+          <label className="field-row">
+            <span>当前密码</span>
+            <input
+              type="password"
+              value={passwordForm.currentPassword}
+              onChange={handlePasswordChange('currentPassword')}
+              minLength={8}
+              autoComplete="current-password"
+            />
+          </label>
+          <label className="field-row">
+            <span>新密码</span>
+            <input
+              type="password"
+              value={passwordForm.newPassword}
+              onChange={handlePasswordChange('newPassword')}
+              minLength={8}
+              autoComplete="new-password"
+            />
+          </label>
+          <label className="field-row">
+            <span>确认新密码</span>
+            <input
+              type="password"
+              value={passwordForm.confirmPassword}
+              onChange={handlePasswordChange('confirmPassword')}
+              minLength={8}
+              autoComplete="new-password"
+            />
+          </label>
+          <div className="settings-actions">
+            {changePasswordMutation.isError ? (
+              <span className="save-error">
+                {changePasswordMutation.error instanceof Error
+                  ? changePasswordMutation.error.message
+                  : '密码修改失败'}
+              </span>
+            ) : null}
+            {changePasswordMutation.isSuccess ? (
+              <span className="save-success">密码已修改</span>
+            ) : null}
+            <button type="submit" disabled={changePasswordMutation.isPending}>
+              {changePasswordMutation.isPending ? '修改中' : '修改密码'}
+            </button>
+          </div>
+        </section>
+      </form>
 
       <form className="settings-grid" onSubmit={handleSubmit}>
         <section className="panel settings-section">

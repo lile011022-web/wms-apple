@@ -62,6 +62,28 @@ export const inboundApi = {
     request<unknown>('post', '/inbound/records/export-preview', { data }),
 };
 
+export const packagePrealertsApi = {
+  summary: () => request<unknown>('get', '/package-prealerts/summary'),
+  list: (params?: QueryParams) =>
+    request<PaginatedResult<unknown>>('get', '/package-prealerts', { params }),
+  alerts: (params?: QueryParams) =>
+    request<PaginatedResult<unknown>>('get', '/package-prealerts/alerts', { params }),
+  match: (trackingNo: string) =>
+    request<unknown>('get', '/package-prealerts/match', { params: { trackingNo } }),
+  create: (data: Payload) => request<unknown>('post', '/package-prealerts', { data }),
+  deleteItem: (id: string) => request<unknown>('delete', `/package-prealerts/${id}`),
+  deleteItems: (ids: string[]) =>
+    request<unknown>('post', '/package-prealerts/bulk-delete', { data: { ids } }),
+  updateStatus: (id: string, data: Payload) =>
+    request<unknown>('patch', `/package-prealerts/${id}/status`, { data }),
+  handleAlert: (id: string, data: Payload) =>
+    request<unknown>('patch', `/package-prealerts/alerts/${id}`, { data }),
+  sheetsTemplate: () => request<unknown>('get', '/package-prealerts/integrations/sheets/template'),
+  pushSheets: () => request<unknown>('post', '/package-prealerts/integrations/sheets/push'),
+  pullSheets: () => request<unknown>('post', '/package-prealerts/integrations/sheets/pull'),
+  syncSheets: () => request<unknown>('post', '/package-prealerts/integrations/sheets/sync'),
+};
+
 export const inventoryApi = {
   customerSummary: (params?: QueryParams) =>
     request<unknown>('get', '/inventory/customer-summary', { params }),

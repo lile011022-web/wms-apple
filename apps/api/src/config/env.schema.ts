@@ -11,6 +11,11 @@ export const envSchema = z.object({
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
   JWT_ACCESS_SECRET: z.string().min(16).default('dev-only-access-secret'),
   JWT_REFRESH_SECRET: z.string().min(16).default('dev-only-refresh-secret'),
+  GOOGLE_SHEETS_SPREADSHEET_ID: z.string().optional(),
+  GOOGLE_SHEETS_CLIENT_EMAIL: z.string().optional(),
+  GOOGLE_SHEETS_PRIVATE_KEY: z.string().optional(),
+  GOOGLE_SHEETS_PREALERT_SHEET_NAME: z.string().optional(),
+  GOOGLE_SHEETS_STATUS_SHEET_NAME: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -10,6 +10,7 @@ type AuthRefreshData = {
 };
 
 const authFailureCodes = new Set(['AUTHENTICATION_REQUIRED', 'AUTHENTICATION_FAILED']);
+const credentialEndpoints = new Set(['/auth/login', '/auth/register']);
 let refreshPromise: Promise<boolean> | null = null;
 
 export const apiClient = axios.create({
@@ -61,14 +62,14 @@ export async function request<T>(
     logApiTiming(method, url, startedAt, status);
 
     if (apiFailure?.success === false) {
-      if (isAuthFailure(apiFailure) && url !== '/auth/refresh') {
+      if (isAuthFailure(apiFailure) && shouldTryRefresh(url)) {
         const refreshed = await refreshAccessToken();
         if (refreshed) {
           return apiClient.request<ApiResponse<T>>(config);
         }
       }
 
-      throw toApiClientError(apiFailure);
+      throw toApiClientError(apiFailure, { notifyAuthExpired: shouldNotifyAuthExpired(url) });
     }
 
     throw error;
@@ -76,18 +77,20 @@ export async function request<T>(
   logApiTiming(method, url, startedAt, response.status);
 
   if (!response.data.success) {
-    if (isAuthFailure(response.data) && url !== '/auth/refresh') {
+    if (isAuthFailure(response.data) && shouldTryRefresh(url)) {
       const refreshed = await refreshAccessToken();
       if (refreshed) {
         const retryResponse = await apiClient.request<ApiResponse<T>>(config);
         if (retryResponse.data.success) {
           return retryResponse.data.data;
         }
-        throw toApiClientError(retryResponse.data);
+        throw toApiClientError(retryResponse.data, {
+          notifyAuthExpired: shouldNotifyAuthExpired(url),
+        });
       }
     }
 
-    throw toApiClientError(response.data);
+    throw toApiClientError(response.data, { notifyAuthExpired: shouldNotifyAuthExpired(url) });
   }
 
   return response.data.data;
@@ -110,11 +113,24 @@ function isAuthFailure<T>(failure: ApiResponse<T>) {
   return !failure.success && authFailureCodes.has(failure.error.code);
 }
 
-function toApiClientError<T>(failure: ApiResponse<T>) {
+function shouldTryRefresh(url: string) {
+  return url !== '/auth/refresh' && !credentialEndpoints.has(url);
+}
+
+function shouldNotifyAuthExpired(url: string) {
+  return !credentialEndpoints.has(url);
+}
+
+function toApiClientError<T>(
+  failure: ApiResponse<T>,
+  options: { notifyAuthExpired?: boolean } = {},
+) {
   if (!failure.success && isAuthFailure(failure)) {
     authTokenStore.clear();
-    notifyAuthExpired();
-    return new ApiClientError('登录已过期，请重新登录。', failure.error.code, failure.requestId, {
+    if (options.notifyAuthExpired ?? true) {
+      notifyAuthExpired();
+    }
+    return new ApiClientError(failure.error.message, failure.error.code, failure.requestId, {
       ...failure.error.details,
       originalMessage: failure.error.message,
     });

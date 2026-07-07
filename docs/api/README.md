@@ -35,6 +35,7 @@ Current documents:
 - `14-reports.md`: report preview, CSV/Excel export creation, export history, re-download, and download behavior.
 - `15-dashboard-audit-logs.md`: dashboard summary, trends, exception distribution, top inbound customers, and audit-log query APIs.
 - `16-frontend-api-integration.md`: frontend API client behavior, integration order, token handling, and system settings page wiring.
+- `17-package-prealerts.md`: package prealert creation, logistics status updates, alerts, inbound customer matching, and inbound confirmation linking.
 
 Testing commands:
 

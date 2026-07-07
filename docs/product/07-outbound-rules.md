@@ -89,6 +89,11 @@ When the outbound packing customer inventory search box is empty, the page shows
 
 When an operator types or scans a search value in that box, the page may search the selected customer's full inventory for traceability. Already packed rows can appear in search results, but they must show the generated box name or internal box number from `latestOutboundBox` and remain non-selectable. This lets staff answer “which box is this item in” without allowing duplicate packing.
 
+The outbound packing inventory table defaults to 100 rows per page for high-volume same-UPC work.
+When an operator searches UPC/product values, the table should sort unboxed `IN_STOCK` rows before
+already packed rows. Operators can switch the status filter to `仅未装箱` when they only want rows
+that can still be packed.
+
 The outbound packing customer selector may also be set to all customers for global lookup. In that
 mode the inventory table should show paginated inventory across customers for the selected warehouse,
 and the search box should narrow that global list by package tracking number, IMEI/Serial, customer,

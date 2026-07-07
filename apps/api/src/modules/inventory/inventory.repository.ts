@@ -171,7 +171,9 @@ export class InventoryRepository {
     where: Prisma.InventoryItemWhereInput;
     skip: number;
     take: number;
-    orderBy: Prisma.InventoryItemOrderByWithRelationInput;
+    orderBy:
+      | Prisma.InventoryItemOrderByWithRelationInput
+      | Prisma.InventoryItemOrderByWithRelationInput[];
   }) {
     return this.prisma.$transaction([
       this.prisma.inventoryItem.count({ where: params.where }),

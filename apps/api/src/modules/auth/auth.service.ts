@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuditAction, UserStatus } from '@prisma/client';
@@ -9,6 +9,7 @@ import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { AuditContext, AuditLogsService } from '../audit-logs/audit-logs.service';
 import { UsersService } from '../users/users.service';
 import { AuthRepository } from './auth.repository';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -126,6 +127,56 @@ export class AuthService {
     });
 
     return { loggedOut: true };
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto, context: AuditContext) {
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException('New password confirmation does not match.');
+    }
+
+    const user = await this.authRepository.findById(userId);
+    if (!user || user.status !== UserStatus.ACTIVE) {
+      throw new UnauthorizedException('User account is unavailable.');
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    if (!isCurrentPasswordValid) {
+      throw new BusinessError(
+        ErrorCode.AUTHENTICATION_FAILED,
+        'Current password is incorrect.',
+        undefined,
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    const after = await this.authRepository.updatePasswordHash(
+      user.id,
+      await bcrypt.hash(dto.newPassword, 12),
+    );
+
+    await this.auditLogsService.record({
+      ...context,
+      operatorId: user.id,
+      action: AuditAction.USER_CHANGE,
+      resourceType: 'user',
+      resourceId: user.id,
+      beforeSnapshot: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        status: user.status,
+        passwordChanged: false,
+      },
+      afterSnapshot: {
+        id: after.id,
+        email: after.email,
+        name: after.name,
+        status: after.status,
+        passwordChanged: true,
+      },
+    });
+
+    return { passwordChanged: true };
   }
 
   async me(userId: string) {

@@ -13,6 +13,8 @@ const permissions = [
   ['inventory.read', 'View customer inventory'],
   ['outbound.manage', 'Manage outbound packing'],
   ['exceptions.manage', 'Handle exception pool'],
+  ['package-prealerts.read', 'View package prealerts and package alerts'],
+  ['package-prealerts.manage', 'Manage package prealerts and package status updates'],
   ['reports.export', 'Export reports'],
   ['settings.manage', 'Manage system settings'],
   ['users.manage', 'Manage users'],
@@ -28,6 +30,8 @@ const operatorPermissionCodes: readonly string[] = [
   'inventory.read',
   'outbound.manage',
   'exceptions.manage',
+  'package-prealerts.read',
+  'package-prealerts.manage',
   'reports.export',
 ] as const;
 

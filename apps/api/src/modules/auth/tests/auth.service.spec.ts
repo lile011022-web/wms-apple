@@ -40,6 +40,7 @@ function createService(user = activeUser) {
     findByEmail: jest.fn().mockResolvedValue(user),
     findById: jest.fn().mockResolvedValue(user),
     updateLastLoginAt: jest.fn(),
+    updatePasswordHash: jest.fn().mockResolvedValue(user),
   } as unknown as jest.Mocked<AuthRepository>;
   const auditLogsService = {
     record: jest.fn(),
@@ -205,5 +206,65 @@ describe('AuthService', () => {
         operatorId: 'user-1',
       }),
     );
+  });
+
+  it('changes the current user password after validating the current password', async () => {
+    const passwordHash = await bcrypt.hash('old-password', 4);
+    const { service, authRepository, auditLogsService } = createService({
+      ...activeUser,
+      passwordHash,
+    });
+    authRepository.updatePasswordHash.mockResolvedValue({
+      ...activeUser,
+      passwordHash: 'new-password-hash',
+    } as never);
+
+    await expect(
+      service.changePassword(
+        'user-1',
+        {
+          currentPassword: 'old-password',
+          newPassword: 'new-password',
+          confirmPassword: 'new-password',
+        },
+        { requestId: 'req-password' },
+      ),
+    ).resolves.toEqual({ passwordChanged: true });
+
+    expect(authRepository.updatePasswordHash).toHaveBeenCalledWith(
+      'user-1',
+      expect.any(String),
+    );
+    expect(auditLogsService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: AuditAction.USER_CHANGE,
+        operatorId: 'user-1',
+        afterSnapshot: expect.objectContaining({ passwordChanged: true }),
+      }),
+    );
+  });
+
+  it('rejects password changes with the wrong current password', async () => {
+    const passwordHash = await bcrypt.hash('old-password', 4);
+    const { service, authRepository } = createService({
+      ...activeUser,
+      passwordHash,
+    });
+
+    await expect(
+      service.changePassword(
+        'user-1',
+        {
+          currentPassword: 'wrong-password',
+          newPassword: 'new-password',
+          confirmPassword: 'new-password',
+        },
+        {},
+      ),
+    ).rejects.toMatchObject<Partial<BusinessError>>({
+      code: ErrorCode.AUTHENTICATION_FAILED,
+      status: HttpStatus.UNAUTHORIZED,
+    });
+    expect(authRepository.updatePasswordHash).not.toHaveBeenCalled();
   });
 });

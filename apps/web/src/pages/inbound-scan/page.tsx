@@ -21,7 +21,7 @@ import {
   useState,
 } from 'react';
 import { getSystemSettings, listWarehouses } from '../../api/settings';
-import { customersApi, inboundApi } from '../../api/workflow';
+import { customersApi, inboundApi, packagePrealertsApi } from '../../api/workflow';
 import { PaginationControls } from '../../components/pagination-controls';
 import { selectDefaultWarehouseId } from '../../utils/default-warehouse';
 
@@ -82,6 +82,7 @@ export function InboundScanPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [restoreBatchNo, setRestoreBatchNo] = useState('');
   const [trackingWarning, setTrackingWarning] = useState<TrackingWarning | null>(null);
+  const [prealertMatch, setPrealertMatch] = useState<PackagePrealertMatch | null>(null);
   const [isCheckingTracking, setIsCheckingTracking] = useState(false);
   const [pendingScanFocus, setPendingScanFocus] = useState<InboundScanField | null>(null);
   const [importRows, setImportRows] = useState<ImportInboundItemRow[]>([]);
@@ -197,6 +198,7 @@ export function InboundScanPage() {
   const clearLockedContext = () => {
     setDraft(null);
     setLockedContext(null);
+    setPrealertMatch(null);
     removeInboundLock();
   };
 
@@ -241,6 +243,7 @@ export function InboundScanPage() {
     };
     if (!options?.keepTrackingNo) {
       setTrackingWarning(null);
+      setPrealertMatch(null);
     }
     setUpsTrackingNo(nextTrackingNo);
     setUpc('');
@@ -618,6 +621,39 @@ export function InboundScanPage() {
     return () => window.clearTimeout(timer);
   }, [blockingExceptionItem, isCurrentSelectionLocked, trackingWarning, upsTrackingNo]);
 
+  useEffect(() => {
+    const normalized = normalizeTrackingInput(upsTrackingNo);
+    if (!normalized || normalized.length < 8 || blockingExceptionItem) {
+      setPrealertMatch(null);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      packagePrealertsApi
+        .match(normalized)
+        .then((result) => {
+          const match = result as PackagePrealertMatch;
+          setPrealertMatch(match);
+          if (match.matched && match.customer) {
+            if (!isCurrentSelectionLocked) {
+              setCustomerId(match.customer.id);
+              setMessage(`已根据预报单号匹配客户：${match.customer.code} / ${match.customer.name}`);
+              setErrorMessage('');
+            } else if (customerId !== match.customer.id) {
+              setErrorMessage(
+                `该单号预报客户是 ${match.customer.code} / ${match.customer.name}，当前锁定客户不同，请先核对。`,
+              );
+            }
+          }
+        })
+        .catch(() => {
+          setPrealertMatch(null);
+        });
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [blockingExceptionItem, customerId, isCurrentSelectionLocked, upsTrackingNo]);
+
   const handleReuseTrackingChange = async (checked: boolean) => {
     if (!checked) {
       setReuseTrackingNo(false);
@@ -927,6 +963,30 @@ export function InboundScanPage() {
               }}
             />
           </label>
+          {prealertMatch ? (
+            <div
+              className={`prealert-match-card ${prealertMatch.matched ? 'matched' : 'unmatched'}`}
+            >
+              {prealertMatch.matched && prealertMatch.customer ? (
+                <>
+                  <strong>已匹配预报客户</strong>
+                  <span>
+                    {prealertMatch.customer.code} / {prealertMatch.customer.name}
+                    {prealertMatch.prealert ? ` / ${prealertMatch.prealert.batch.batchNo}` : ''}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <strong>未自动匹配</strong>
+                  <span>
+                    {prealertMatch.reason === 'CUSTOMER_CONFLICT'
+                      ? '该单号存在客户冲突，请先处理预报。'
+                      : '该单号暂无有效预报，可按原流程手动选择客户。'}
+                  </span>
+                </>
+              )}
+            </div>
+          ) : null}
           <label>
             <span>UPC</span>
             <input
@@ -1162,6 +1222,22 @@ type ImportInboundResult = {
   failedCount: number;
   failedRows: ImportFailedRow[];
   draft: InboundDraft;
+};
+type PackagePrealertMatch = {
+  matched: boolean;
+  reason?: string;
+  trackingNo: string;
+  customer?: {
+    id: string;
+    code: string;
+    name: string;
+  };
+  prealert?: {
+    id: string;
+    batch: {
+      batchNo: string;
+    };
+  };
 };
 type TrackingWarning = {
   trackingNo: string;

@@ -41,4 +41,12 @@ export class AuthRepository {
       data: { lastLoginAt: new Date() },
     });
   }
+
+  updatePasswordHash(id: string, passwordHash: string) {
+    return this.prisma.user.update({
+      where: { id },
+      data: { passwordHash },
+      include: userWithRolesAndPermissions,
+    });
+  }
 }

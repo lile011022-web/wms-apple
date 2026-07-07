@@ -37,6 +37,7 @@ type WeightUnit = 'lb';
 type OutboundPackingMode = 'DETAILED_SCAN' | 'BULK_BOX';
 type ProductConditionFilter = 'ALL' | 'NEW' | 'REFURBISHED';
 type ProductDeviceFilter = 'ALL' | 'IPHONE' | 'IPAD';
+type OutboundInventoryStatusFilter = 'ALL' | 'IN_STOCK';
 type CreatedBoxView = 'OPEN' | 'WAREHOUSE_TODAY' | 'LAST_7_WAREHOUSE_DAYS' | 'SEALED' | 'ALL';
 
 type BoxSizePreset = {
@@ -163,7 +164,9 @@ export function OutboundPackingPage() {
   const [weight, setWeight] = useState(String(defaultBoxWeight));
   const [note, setNote] = useState('');
   const [availablePage, setAvailablePage] = useState(1);
-  const [availablePageSize, setAvailablePageSize] = useState(10);
+  const [availablePageSize, setAvailablePageSize] = useState(100);
+  const [inventoryStatusFilter, setInventoryStatusFilter] =
+    useState<OutboundInventoryStatusFilter>('ALL');
   const [selectedAvailableItemIds, setSelectedAvailableItemIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -241,6 +244,7 @@ export function OutboundPackingPage() {
     customerId,
     warehouseId,
     activeInventorySearch,
+    inventoryStatusFilter,
     availablePage,
     availablePageSize,
   ] as const;
@@ -261,14 +265,15 @@ export function OutboundPackingPage() {
         warehouseId,
         page: availablePage,
         pageSize: availablePageSize,
+        ...(inventoryStatusFilter === 'IN_STOCK' ? { status: 'IN_STOCK' } : {}),
         ...(activeInventorySearch ? { search: activeInventorySearch } : {}),
       };
       if (activeInventorySearch) {
         return inventoryApi.items({
           ...params,
           customerId: customerId || undefined,
-          sortBy: 'updatedAt',
-          sortOrder: 'desc',
+          sortBy: 'status',
+          sortOrder: 'asc',
         });
       }
       if (!customerId) {
@@ -1351,6 +1356,7 @@ export function OutboundPackingPage() {
           page={availablePage}
           pageSize={availablePageSize}
           search={inventorySearch}
+          statusFilter={inventoryStatusFilter}
           isSearchMode={Boolean(activeInventorySearch)}
           showProductFilters={isBulkPackingMode && Boolean(customerId)}
           conditionFilter={conditionFilter}
@@ -1372,6 +1378,10 @@ export function OutboundPackingPage() {
           selectedTotal={selectedAvailableItemIds.size}
           onSearchChange={(value) => {
             setInventorySearch(value);
+            setAvailablePage(1);
+          }}
+          onStatusFilterChange={(value) => {
+            setInventoryStatusFilter(value);
             setAvailablePage(1);
           }}
           onConditionFilterChange={setConditionFilter}
@@ -1778,6 +1788,7 @@ function InventoryPackingTable(props: {
   page: number;
   pageSize: number;
   search: string;
+  statusFilter: OutboundInventoryStatusFilter;
   isSearchMode: boolean;
   showProductFilters: boolean;
   conditionFilter: ProductConditionFilter;
@@ -1790,6 +1801,7 @@ function InventoryPackingTable(props: {
   selectedItemIds: Set<string>;
   selectedTotal: number;
   onSearchChange: (value: string) => void;
+  onStatusFilterChange: (value: OutboundInventoryStatusFilter) => void;
   onConditionFilterChange: (value: ProductConditionFilter) => void;
   onDeviceFilterChange: (value: ProductDeviceFilter) => void;
   onSelectionChange: (value: Set<string>) => void;
@@ -1873,6 +1885,18 @@ function InventoryPackingTable(props: {
               </label>
             </>
           ) : null}
+          <label className="outbound-mini-select">
+            <span>状态</span>
+            <select
+              value={props.statusFilter}
+              onChange={(event) =>
+                props.onStatusFilterChange(event.target.value as OutboundInventoryStatusFilter)
+              }
+            >
+              <option value="ALL">全部状态</option>
+              <option value="IN_STOCK">仅未装箱</option>
+            </select>
+          </label>
           <label className="outbound-mini-search">
             <Search size={15} />
             <input
@@ -2011,7 +2035,7 @@ function InventoryPackingTable(props: {
         total={props.total}
         page={props.page}
         pageSize={props.pageSize}
-        pageSizeOptions={[10, 20, 50]}
+        pageSizeOptions={[20, 50, 100]}
         onPageChange={props.onPageChange}
         onPageSizeChange={props.onPageSizeChange}
       />

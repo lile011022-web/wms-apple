@@ -8,6 +8,7 @@ import {
   LogIn,
   LogOut,
   PackageCheck,
+  PackageSearch,
   RefreshCw,
   ScanLine,
   Settings,
@@ -19,6 +20,7 @@ import {
 import { type FormEvent, useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { getCurrentUser, login, logout, register } from '../api/auth';
+import { authTokenStore } from '../api/token-store';
 
 const navigationItems = [
   {
@@ -26,6 +28,8 @@ const navigationItems = [
     links: [
       { label: 'Dashboard', to: '/', icon: BarChart3 },
       { label: '入库扫码', to: '/inbound-scan', icon: ScanLine },
+      { label: '包裹预报', to: '/package-prealerts', icon: PackageSearch },
+      { label: '包裹预警', to: '/package-alerts', icon: AlertTriangle },
       { label: '入库记录', to: '/inbound-records', icon: ClipboardList },
       { label: '客户库存', to: '/customer-inventory', icon: Boxes },
       { label: '出库装箱', to: '/outbound-packing', icon: PackageCheck },
@@ -59,15 +63,18 @@ export function AppLayout() {
   const [authNotice, setAuthNotice] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRefreshingData, setIsRefreshingData] = useState(false);
+  const [hasAuthToken, setHasAuthToken] = useState(() => Boolean(authTokenStore.getAccessToken()));
   const currentUserQuery = useQuery({
     queryKey: ['current-user'],
     queryFn: getCurrentUser,
+    enabled: hasAuthToken,
     retry: false,
   });
 
   useEffect(() => {
     const handleAuthExpired = () => {
       queryClient.clear();
+      setHasAuthToken(false);
       setAuthError('登录已过期，请重新登录。');
     };
 
@@ -80,12 +87,17 @@ export function AppLayout() {
     setAuthError('');
     setAuthNotice('');
     setIsLoggingIn(true);
+    authTokenStore.clear();
+    setHasAuthToken(false);
+    await queryClient.cancelQueries({ queryKey: ['current-user'] });
+    queryClient.removeQueries({ queryKey: ['current-user'] });
     try {
       const session =
         authMode === 'register'
           ? await register({ email, name, password })
           : await login({ email, password });
       queryClient.setQueryData(['current-user'], session.user);
+      setHasAuthToken(true);
       await queryClient.invalidateQueries();
       if (authMode === 'register') {
         setAuthNotice('账号已创建，并已自动登录。');
@@ -111,6 +123,7 @@ export function AppLayout() {
   const handleLogout = async () => {
     void logout();
     queryClient.clear();
+    setHasAuthToken(false);
     queryClient.setQueryData(['current-user'], null);
   };
 
@@ -214,19 +227,34 @@ export function AppLayout() {
               {authMode === 'register' ? (
                 <label>
                   <span>姓名</span>
-                  <input value={name} onChange={(event) => setName(event.target.value)} />
+                  <input
+                    value={name}
+                    onChange={(event) => {
+                      setName(event.target.value);
+                      setAuthError('');
+                    }}
+                  />
                 </label>
               ) : null}
               <label>
                 <span>邮箱</span>
-                <input value={email} onChange={(event) => setEmail(event.target.value)} />
+                <input
+                  value={email}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setAuthError('');
+                  }}
+                />
               </label>
               <label>
                 <span>密码</span>
                 <input
                   type="password"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setAuthError('');
+                  }}
                 />
               </label>
               <button type="submit" disabled={isLoggingIn}>

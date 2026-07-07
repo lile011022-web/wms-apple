@@ -38,3 +38,11 @@ export async function logout() {
 export function getCurrentUser() {
   return request<CurrentUser>('get', '/auth/me');
 }
+
+export function changePassword(payload: {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}) {
+  return request<{ passwordChanged: true }>('patch', '/auth/me/password', { data: payload });
+}

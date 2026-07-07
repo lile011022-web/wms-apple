@@ -135,3 +135,36 @@ Frontend usage:
 
 - Call this endpoint during app bootstrap to decide whether the user is logged in.
 - Use `permissions` to show or hide protected settings actions.
+
+## PATCH /auth/me/password
+
+Requires Bearer access token.
+
+Changes the password for the current signed-in user.
+
+Request:
+
+```json
+{
+  "currentPassword": "old-local-password",
+  "newPassword": "new-local-password",
+  "confirmPassword": "new-local-password"
+}
+```
+
+Response `data`:
+
+```json
+{
+  "passwordChanged": true
+}
+```
+
+Business rules:
+
+- `currentPassword`, `newPassword`, and `confirmPassword` must each be at least 8 characters.
+- `newPassword` must match `confirmPassword`.
+- The current password is verified against the stored bcrypt hash before any update.
+- Wrong current password returns `AUTHENTICATION_FAILED`.
+- Password hashes are never returned or written into audit snapshots.
+- Successful password change writes an `AuditLog` with action `USER_CHANGE`.

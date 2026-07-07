@@ -159,6 +159,10 @@ Allowed sort fields:
 - `serial`
 - `status`
 
+When `sortBy=status`, the API sorts inventory status first and then `updatedAt desc` inside the same
+status. Outbound packing uses this when operators search UPC/product values so `IN_STOCK` rows appear
+before already packed rows while still allowing packed rows to be traced.
+
 Rows include customer, warehouse, product, inbound batch, inbound item, latest outbound box, exception summary, and timestamps.
 
 Customer inventory IMEI detail rows should show both time anchors:

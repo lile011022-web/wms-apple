@@ -147,11 +147,15 @@ export class InventoryService {
     ]);
     const sortBy =
       query.sortBy && allowedSortFields.has(query.sortBy) ? query.sortBy : 'receivedAt';
+    const orderBy =
+      sortBy === 'status'
+        ? [{ status: query.sortOrder }, { updatedAt: 'desc' as const }]
+        : ({ [sortBy]: query.sortOrder } as Prisma.InventoryItemOrderByWithRelationInput);
     const [total, items] = await this.inventoryRepository.findItems({
       where: this.toBaseWhere(normalizedQuery),
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
-      orderBy: { [sortBy]: query.sortOrder } as Prisma.InventoryItemOrderByWithRelationInput,
+      orderBy,
     });
 
     return {

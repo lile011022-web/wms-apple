@@ -9,6 +9,8 @@ import { ExceptionPoolPage } from '../pages/exception-pool/page';
 import { InboundRecordsPage } from '../pages/inbound-records/page';
 import { InboundScanPage } from '../pages/inbound-scan/page';
 import { OutboundPackingPage } from '../pages/outbound-packing/page';
+import { PackageAlertsPage } from '../pages/package-alerts/page';
+import { PackagePrealertsPage } from '../pages/package-prealerts/page';
 import { SystemSettingsPage } from '../pages/system-settings/page';
 import { UpcLibraryPage } from '../pages/upc-library/page';
 
@@ -19,6 +21,8 @@ export function AppRouter() {
         <Route element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="inbound-scan" element={<InboundScanPage />} />
+          <Route path="package-prealerts" element={<PackagePrealertsPage />} />
+          <Route path="package-alerts" element={<PackageAlertsPage />} />
           <Route path="inbound-records" element={<InboundRecordsPage />} />
           <Route path="customer-inventory" element={<CustomerInventoryPage />} />
           <Route path="outbound-packing" element={<OutboundPackingPage />} />
