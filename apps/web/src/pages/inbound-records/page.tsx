@@ -226,7 +226,7 @@ export function InboundRecordsPage() {
               setSearch(event.target.value);
               setPage(1);
             }}
-            placeholder="UPS / 商品 / 序列号"
+            placeholder="UPS / 商品 / IMEI后6位 / 序列号"
           />
         </label>
         <button type="button" className="btn" onClick={() => recordsQuery.refetch()}>
@@ -296,7 +296,17 @@ export function InboundRecordsPage() {
                     <td className="mono">
                       {item.batch?.batchNo ?? item.inboundBatch?.batchNo ?? '-'}
                     </td>
-                    <td>{item.customer?.code ?? '-'}</td>
+                    <td>
+                      <strong>{item.customer?.code ?? '-'}</strong>
+                      {item.customerAlias ? (
+                        <span>
+                          子客户{' '}
+                          {[item.customerAlias.code, item.customerAlias.name]
+                            .filter(Boolean)
+                            .join(' - ')}
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="mono">{item.upc}</td>
                     <td className="mono">{item.imei ?? item.serial ?? '-'}</td>
                     <td>{item.product?.name ?? '-'}</td>
@@ -482,6 +492,7 @@ type InboundRecord = {
   scannedAt?: string | null;
   createdAt: string;
   customer?: { code: string; name: string } | null;
+  customerAlias?: { code: string; name: string } | null;
   product?: { id?: string; name: string; modelCode?: string | null } | null;
   batch?: {
     batchNo: string;

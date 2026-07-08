@@ -43,6 +43,36 @@ export class CustomersRepository {
     });
   }
 
+  findAliasOptions(params: { customerId?: string; search?: string; includeInactive?: boolean }) {
+    const search = params.search?.trim();
+    return this.prisma.customerAlias.findMany({
+      where: {
+        customerId: params.customerId,
+        status: params.includeInactive ? undefined : CustomerStatus.ACTIVE,
+        OR: search
+          ? [
+              { code: { contains: search, mode: 'insensitive' } },
+              { name: { contains: search, mode: 'insensitive' } },
+              { customer: { code: { contains: search, mode: 'insensitive' } } },
+              { customer: { name: { contains: search, mode: 'insensitive' } } },
+            ]
+          : undefined,
+      },
+      take: 100,
+      orderBy: [{ customer: { code: 'asc' } }, { status: 'asc' }, { code: 'asc' }],
+      include: {
+        customer: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            status: true,
+          },
+        },
+      },
+    });
+  }
+
   findById(id: string) {
     return this.prisma.customer.findUnique({ where: { id } });
   }
@@ -51,12 +81,46 @@ export class CustomersRepository {
     return this.prisma.customer.findUnique({ where: { code } });
   }
 
+  findAliasById(id: string) {
+    return this.prisma.customerAlias.findUnique({
+      where: { id },
+      include: { customer: true },
+    });
+  }
+
+  findAliasByCustomerAndCode(customerId: string, code: string) {
+    return this.prisma.customerAlias.findUnique({
+      where: {
+        customerId_code: {
+          customerId,
+          code,
+        },
+      },
+      include: { customer: true },
+    });
+  }
+
+  findAliasesByCustomerId(customerId: string) {
+    return this.prisma.customerAlias.findMany({
+      where: { customerId },
+      orderBy: [{ status: 'asc' }, { code: 'asc' }],
+    });
+  }
+
   create(data: Prisma.CustomerCreateInput) {
     return this.prisma.customer.create({ data });
   }
 
   update(id: string, data: Prisma.CustomerUpdateInput) {
     return this.prisma.customer.update({ where: { id }, data });
+  }
+
+  createAlias(data: Prisma.CustomerAliasCreateInput) {
+    return this.prisma.customerAlias.create({ data, include: { customer: true } });
+  }
+
+  updateAlias(id: string, data: Prisma.CustomerAliasUpdateInput) {
+    return this.prisma.customerAlias.update({ where: { id }, data, include: { customer: true } });
   }
 
   async getSummary(customerId: string, monthStart: Date) {

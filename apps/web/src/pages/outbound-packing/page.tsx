@@ -62,6 +62,7 @@ type PackingItem = {
   imeiOrSerial?: string;
   customerId: string;
   customerName: string;
+  customerAliasName?: string;
   status: ItemStatus;
   availableForOutbound?: boolean;
   receivedAt?: string | null;
@@ -1976,6 +1977,7 @@ function InventoryPackingTable(props: {
                   <td>{formatShortDateTime(item.receivedAt)}</td>
                   <td>
                     <strong>{item.customerName}</strong>
+                    {item.customerAliasName ? <span>子客户 {item.customerAliasName}</span> : null}
                   </td>
                   <td>
                     <strong className="mono">{item.trackingNumber || '-'}</strong>
@@ -3171,7 +3173,12 @@ function BoxDetailModal(props: {
                         ) : null}
                       </td>
                       <td className="mono">{item.imeiOrSerial ?? '-'}</td>
-                      <td>{item.customerName}</td>
+                      <td>
+                        <strong>{item.customerName}</strong>
+                        {item.customerAliasName ? (
+                          <span>子客户 {item.customerAliasName}</span>
+                        ) : null}
+                      </td>
                       <td>{formatShortDateTime(item.addedAt)}</td>
                       <td>
                         <ItemStatusBadge status={item.status} />
@@ -3446,6 +3453,7 @@ type InventorySearchItem = {
   availableForOutbound?: boolean;
   latestOutboundBox?: LatestOutboundBox | null;
   customer?: { id: string; name: string };
+  customerAlias?: { id: string; code?: string; name: string } | null;
   product: {
     id?: string;
     sku?: string;
@@ -3485,6 +3493,7 @@ type OutboundBox = {
       serial: string | null;
       status: string;
       customer?: { id: string; name: string };
+      customerAlias?: { id: string; code?: string; name: string } | null;
       product: {
         id?: string;
         sku?: string;
@@ -3611,6 +3620,7 @@ function toPackingItem(item: AvailableItem, selectedCustomer?: CustomerOption): 
     imeiOrSerial: item.imei ?? item.serial ?? undefined,
     customerId: item.customer?.id ?? selectedCustomer?.id ?? '',
     customerName: item.customer?.name ?? selectedCustomer?.label ?? '-',
+    customerAliasName: formatAliasLabel(item.customerAlias),
     status: toItemStatus(item.status),
     availableForOutbound: item.availableForOutbound ?? item.status === 'IN_STOCK',
     receivedAt: item.receivedAt,
@@ -3652,6 +3662,7 @@ function toPackingBox(box: OutboundBox, reworkBoxIds: Set<string>): PackingBox {
         imeiOrSerial: item.inventoryItem.imei ?? item.inventoryItem.serial ?? undefined,
         customerId: item.inventoryItem.customer?.id ?? box.customer?.id ?? '',
         customerName: item.inventoryItem.customer?.name ?? box.customer?.name ?? '-',
+        customerAliasName: formatAliasLabel(item.inventoryItem.customerAlias),
         status: 'packed',
         receivedAt: item.inventoryItem.receivedAt,
         addedAt: item.packedAt,
@@ -4341,6 +4352,13 @@ function formatShortDateTime(value?: string | null) {
     minute: '2-digit',
     second: '2-digit',
   });
+}
+
+function formatAliasLabel(alias?: { code?: string | null; name?: string | null } | null) {
+  if (!alias) {
+    return undefined;
+  }
+  return [alias.code, alias.name].filter(Boolean).join(' - ') || undefined;
 }
 
 function downloadReportFile(file: ReportDownload) {

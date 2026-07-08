@@ -145,6 +145,7 @@ export class OutboundService {
         inventoryItem: {
           id: item.inventoryItem.id,
           customer: item.inventoryItem.customer,
+          customerAlias: item.inventoryItem.customerAlias,
           product: item.inventoryItem.product,
           upc: item.inventoryItem.upc,
           upsTrackingNo: item.inventoryItem.upsTrackingNo,
@@ -471,6 +472,13 @@ export class OutboundService {
         packedAt: item.packedAt,
         inventoryItem: {
           id: item.inventoryItem.id,
+          customerAlias: item.inventoryItem.customerAlias
+            ? {
+                id: item.inventoryItem.customerAlias.id,
+                code: item.inventoryItem.customerAlias.code,
+                name: item.inventoryItem.customerAlias.name,
+              }
+            : null,
           product: {
             id: item.inventoryItem.product.id,
             sku: item.inventoryItem.product.sku,

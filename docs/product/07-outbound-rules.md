@@ -163,6 +163,9 @@ Detailed scan packing:
 Bulk box packing:
 
 - The operator starts from the selected customer's available outbound inventory.
+- Inventory received under that customer's aliases / sub-customers is still selected by the parent
+  customer. The available-inventory table and box detail should display the source alias when
+  present, but packing ownership remains the parent customer.
 - The operator can filter available inventory by product class, manually tick rows, and keep those
   selected rows remembered while paging or changing filters. Product class filters only appear in
   bulk box packing mode.

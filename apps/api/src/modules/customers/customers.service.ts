@@ -3,13 +3,17 @@ import { AuditAction, CustomerStatus, Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CustomersRepository } from './customers.repository';
+import { CreateCustomerAliasDto } from './dto/create-customer-alias.dto';
 import { CreateCustomerDto } from './dto/create-customer.dto';
+import { ListCustomerAliasOptionsQueryDto } from './dto/list-customer-alias-options-query.dto';
 import { ListCustomerOptionsQueryDto } from './dto/list-customer-options-query.dto';
 import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
+import { UpdateCustomerAliasDto } from './dto/update-customer-alias.dto';
 import { UpdateCustomerStatusDto } from './dto/update-customer-status.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 
 type CustomerRecord = NonNullable<Awaited<ReturnType<CustomersRepository['findById']>>>;
+type CustomerAliasRecord = NonNullable<Awaited<ReturnType<CustomersRepository['findAliasById']>>>;
 
 @Injectable()
 export class CustomersService {
@@ -56,6 +60,25 @@ export class CustomersService {
     }));
   }
 
+  async aliasOptions(query: ListCustomerAliasOptionsQueryDto) {
+    const aliases = await this.customersRepository.findAliasOptions({
+      customerId: this.trimOptional(query.customerId),
+      search: this.trimOptional(query.search),
+      includeInactive: query.includeInactive,
+    });
+    return aliases.map((alias) => ({
+      id: alias.id,
+      customerId: alias.customerId,
+      code: alias.code,
+      name: alias.name,
+      status: alias.status,
+      label: `${alias.customer.code} - ${alias.customer.name} / ${alias.code} - ${alias.name}`,
+      disabled:
+        alias.status !== CustomerStatus.ACTIVE || alias.customer.status !== CustomerStatus.ACTIVE,
+      customer: alias.customer,
+    }));
+  }
+
   async getById(id: string) {
     const customer = await this.findExistingCustomer(id);
     return this.toCustomerResponse(customer);
@@ -64,6 +87,111 @@ export class CustomersService {
   async getSummary(id: string) {
     await this.findExistingCustomer(id);
     return this.customersRepository.getSummary(id, this.getCurrentMonthStart());
+  }
+
+  async listAliases(customerId: string) {
+    await this.findExistingCustomer(customerId);
+    const aliases = await this.customersRepository.findAliasesByCustomerId(customerId);
+    return aliases.map((alias) => this.toAliasResponse(alias));
+  }
+
+  async createAlias(customerId: string, dto: CreateCustomerAliasDto, operator: AuthenticatedUser) {
+    await this.findExistingCustomer(customerId);
+    const code = this.normalizeCode(dto.code);
+    const existingAlias = await this.customersRepository.findAliasByCustomerAndCode(
+      customerId,
+      code,
+    );
+    if (existingAlias) {
+      throw new ConflictException('Customer alias code already exists under this customer.');
+    }
+
+    const alias = await this.customersRepository.createAlias({
+      customer: { connect: { id: customerId } },
+      code,
+      name: dto.name.trim(),
+      status: dto.status ?? CustomerStatus.ACTIVE,
+      notes: this.trimOptional(dto.notes),
+    });
+
+    await this.auditLogsService.record({
+      operatorId: operator.id,
+      action: AuditAction.CUSTOMER_CHANGE,
+      resourceType: 'customer-alias',
+      resourceId: alias.id,
+      afterSnapshot: this.toAliasAuditSnapshot(alias),
+      metadata: {
+        customerId,
+      },
+    });
+
+    return this.toAliasResponse(alias);
+  }
+
+  async updateAlias(
+    customerId: string,
+    aliasId: string,
+    dto: UpdateCustomerAliasDto,
+    operator: AuthenticatedUser,
+  ) {
+    const before = await this.findExistingAlias(customerId, aliasId);
+    const code = dto.code ? this.normalizeCode(dto.code) : undefined;
+    if (code && code !== before.code) {
+      const existingAlias = await this.customersRepository.findAliasByCustomerAndCode(
+        customerId,
+        code,
+      );
+      if (existingAlias) {
+        throw new ConflictException('Customer alias code already exists under this customer.');
+      }
+    }
+
+    const after = await this.customersRepository.updateAlias(aliasId, {
+      code,
+      name: dto.name?.trim(),
+      notes: dto.notes === undefined ? undefined : this.trimOptional(dto.notes),
+    });
+
+    await this.auditLogsService.record({
+      operatorId: operator.id,
+      action: AuditAction.CUSTOMER_CHANGE,
+      resourceType: 'customer-alias',
+      resourceId: after.id,
+      beforeSnapshot: this.toAliasAuditSnapshot(before),
+      afterSnapshot: this.toAliasAuditSnapshot(after),
+      metadata: {
+        customerId,
+      },
+    });
+
+    return this.toAliasResponse(after);
+  }
+
+  async updateAliasStatus(
+    customerId: string,
+    aliasId: string,
+    dto: UpdateCustomerStatusDto,
+    operator: AuthenticatedUser,
+  ) {
+    const before = await this.findExistingAlias(customerId, aliasId);
+    const after = await this.customersRepository.updateAlias(aliasId, {
+      status: dto.status,
+    });
+
+    await this.auditLogsService.record({
+      operatorId: operator.id,
+      action: AuditAction.CUSTOMER_CHANGE,
+      resourceType: 'customer-alias',
+      resourceId: after.id,
+      beforeSnapshot: this.toAliasAuditSnapshot(before),
+      afterSnapshot: this.toAliasAuditSnapshot(after),
+      metadata: {
+        customerId,
+        changedFields: ['status'],
+      },
+    });
+
+    return this.toAliasResponse(after);
   }
 
   async create(dto: CreateCustomerDto, operator: AuthenticatedUser) {
@@ -152,6 +280,14 @@ export class CustomersService {
     return customer;
   }
 
+  private async findExistingAlias(customerId: string, aliasId: string) {
+    const alias = await this.customersRepository.findAliasById(aliasId);
+    if (!alias || alias.customerId !== customerId) {
+      throw new NotFoundException('Customer alias not found.');
+    }
+    return alias;
+  }
+
   private normalizeCode(code: string) {
     return code.trim().toUpperCase();
   }
@@ -182,5 +318,26 @@ export class CustomersService {
 
   private toAuditSnapshot(customer: CustomerRecord) {
     return this.toCustomerResponse(customer);
+  }
+
+  private toAliasResponse(
+    alias:
+      | CustomerAliasRecord
+      | Awaited<ReturnType<CustomersRepository['findAliasesByCustomerId']>>[number],
+  ) {
+    return {
+      id: alias.id,
+      customerId: alias.customerId,
+      code: alias.code,
+      name: alias.name,
+      status: alias.status,
+      notes: alias.notes,
+      createdAt: alias.createdAt,
+      updatedAt: alias.updatedAt,
+    };
+  }
+
+  private toAliasAuditSnapshot(alias: CustomerAliasRecord) {
+    return this.toAliasResponse(alias);
   }
 }

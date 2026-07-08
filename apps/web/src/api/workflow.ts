@@ -17,11 +17,20 @@ export const customersApi = {
   list: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/customers', { params }),
   options: (params?: QueryParams) => request<unknown[]>('get', '/customers/options', { params }),
+  aliasOptions: (params?: QueryParams) =>
+    request<unknown[]>('get', '/customers/alias-options', { params }),
+  aliases: (customerId: string) => request<unknown[]>('get', `/customers/${customerId}/aliases`),
   get: (id: string) => request<unknown>('get', `/customers/${id}`),
   create: (data: Payload) => request<unknown>('post', '/customers', { data }),
+  createAlias: (customerId: string, data: Payload) =>
+    request<unknown>('post', `/customers/${customerId}/aliases`, { data }),
   update: (id: string, data: Payload) => request<unknown>('patch', `/customers/${id}`, { data }),
+  updateAlias: (customerId: string, aliasId: string, data: Payload) =>
+    request<unknown>('patch', `/customers/${customerId}/aliases/${aliasId}`, { data }),
   updateStatus: (id: string, data: Payload) =>
     request<unknown>('patch', `/customers/${id}/status`, { data }),
+  updateAliasStatus: (customerId: string, aliasId: string, data: Payload) =>
+    request<unknown>('patch', `/customers/${customerId}/aliases/${aliasId}/status`, { data }),
 };
 
 export const productsApi = {

@@ -132,6 +132,7 @@ export class ReportsRepository {
           orderBy: { scannedAt: 'desc' },
           include: {
             customer: true,
+            customerAlias: true,
             product: true,
             inboundBatch: { include: { warehouse: true } },
             inventoryItem: true,
@@ -144,7 +145,7 @@ export class ReportsRepository {
           orderBy: { packedAt: 'desc' },
           include: {
             outboundBox: { include: { customer: true, warehouse: true } },
-            inventoryItem: { include: { product: true } },
+            inventoryItem: { include: { product: true, customerAlias: true } },
           },
         });
       case ReportType.INVENTORY_DETAIL:
@@ -154,6 +155,7 @@ export class ReportsRepository {
           orderBy: { receivedAt: 'desc' },
           include: {
             customer: true,
+            customerAlias: true,
             warehouse: true,
             product: true,
             inboundBatch: true,
@@ -303,6 +305,7 @@ export class ReportsRepository {
     return {
       inboundBatchId: this.trimOptional(filters.batchId),
       customerId: this.trimOptional(filters.customerId),
+      customerAliasId: this.trimOptional(filters.customerAliasId),
       productId: this.trimOptional(filters.productId),
       status: filters.inboundStatus,
       upc: this.contains(filters.upc),
@@ -321,6 +324,8 @@ export class ReportsRepository {
             { serial: { contains: search, mode: 'insensitive' } },
             { customer: { code: { contains: search, mode: 'insensitive' } } },
             { customer: { name: { contains: search, mode: 'insensitive' } } },
+            { customerAlias: { code: { contains: search, mode: 'insensitive' } } },
+            { customerAlias: { name: { contains: search, mode: 'insensitive' } } },
             { product: { sku: { contains: search, mode: 'insensitive' } } },
             { product: { name: { contains: search, mode: 'insensitive' } } },
           ]
@@ -333,6 +338,7 @@ export class ReportsRepository {
     const boxNos = this.toStringList(filters.boxNos);
     return {
       customerId: this.trimOptional(filters.customerId),
+      customerAliasId: this.trimOptional(filters.customerAliasId),
       warehouseId: this.trimOptional(filters.warehouseId),
       productId: this.trimOptional(filters.productId),
       status: filters.inventoryStatus,
@@ -360,6 +366,8 @@ export class ReportsRepository {
             { upsTrackingNo: { contains: search, mode: 'insensitive' } },
             { customer: { code: { contains: search, mode: 'insensitive' } } },
             { customer: { name: { contains: search, mode: 'insensitive' } } },
+            { customerAlias: { code: { contains: search, mode: 'insensitive' } } },
+            { customerAlias: { name: { contains: search, mode: 'insensitive' } } },
             { product: { sku: { contains: search, mode: 'insensitive' } } },
             { product: { name: { contains: search, mode: 'insensitive' } } },
           ]
@@ -379,6 +387,7 @@ export class ReportsRepository {
         boxNo: boxNos.length ? { in: boxNos } : this.contains(filters.boxNo, true),
       },
       inventoryItem: {
+        customerAliasId: this.trimOptional(filters.customerAliasId),
         productId: this.trimOptional(filters.productId),
         upc: this.contains(filters.upc),
         imei: this.contains(filters.imei),
@@ -394,6 +403,12 @@ export class ReportsRepository {
             { inventoryItem: { upsTrackingNo: { contains: search, mode: 'insensitive' } } },
             { inventoryItem: { imei: { contains: search } } },
             { inventoryItem: { serial: { contains: search, mode: 'insensitive' } } },
+            {
+              inventoryItem: { customerAlias: { code: { contains: search, mode: 'insensitive' } } },
+            },
+            {
+              inventoryItem: { customerAlias: { name: { contains: search, mode: 'insensitive' } } },
+            },
             { inventoryItem: { product: { sku: { contains: search, mode: 'insensitive' } } } },
             { inventoryItem: { product: { name: { contains: search, mode: 'insensitive' } } } },
           ]

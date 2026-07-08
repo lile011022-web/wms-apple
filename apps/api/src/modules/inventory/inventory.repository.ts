@@ -5,6 +5,7 @@ import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 
 const inventoryItemInclude = {
   customer: true,
+  customerAlias: true,
   warehouse: true,
   product: {
     include: {

@@ -35,7 +35,10 @@ Supported `sortBy` values:
 - `serial`
 - `status`
 
-Search covers UPS, UPC, IMEI, Serial, customer code/name, product SKU, and product name.
+Search covers UPS, UPC, IMEI, Serial, customer code/name, customer alias code/name, product SKU,
+and product name. When the search value is exactly six letters or digits, the backend also matches
+IMEI and Serial values by their last six characters so operators can look up a device from the
+visible suffix.
 When `customerId`, `dateFrom`, and `dateTo` are omitted, the list searches all customers and all
 historical inbound records. This is the preferred lookup path when operators need to verify one
 package tracking number without knowing which customer received it.

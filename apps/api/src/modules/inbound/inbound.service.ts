@@ -55,6 +55,19 @@ export class InboundService {
     if (customer.status !== CustomerStatus.ACTIVE) {
       throw new ConflictException('Inactive customer cannot be locked for inbound scanning.');
     }
+    const customerAliasId = dto.customerAliasId?.trim();
+    const customerAlias = customerAliasId
+      ? await this.inboundRepository.findCustomerAliasById(customerAliasId)
+      : undefined;
+    if (customerAliasId && !customerAlias) {
+      throw new NotFoundException('Customer alias not found.');
+    }
+    if (customerAlias && customerAlias.customerId !== customer.id) {
+      throw new ConflictException('Customer alias does not belong to the selected customer.');
+    }
+    if (customerAlias && customerAlias.status !== CustomerStatus.ACTIVE) {
+      throw new ConflictException('Inactive customer alias cannot be used for inbound scanning.');
+    }
 
     const warehouseId = dto.warehouseId?.trim() || settings.warehouse.defaultWarehouseId;
     if (!warehouseId) {
@@ -71,6 +84,7 @@ export class InboundService {
     const draft = await this.inboundRepository.createDraft({
       batchNo: this.generateBatchNo(),
       customer: { connect: { id: customer.id } },
+      customerAlias: customerAlias ? { connect: { id: customerAlias.id } } : undefined,
       warehouse: { connect: { id: warehouse.id } },
       operator: { connect: { id: operator.id } },
       status: InboundBatchStatus.DRAFT,
@@ -555,6 +569,7 @@ export class InboundService {
     return {
       inboundBatch: { connect: { id: draft.id } },
       customer: { connect: { id: draft.customerId } },
+      customerAlias: draft.customerAliasId ? { connect: { id: draft.customerAliasId } } : undefined,
       product: input.productId ? { connect: { id: input.productId } } : undefined,
       upsTrackingNo: input.upsTrackingNo,
       upc: input.upc,
@@ -703,6 +718,7 @@ export class InboundService {
       search: this.trimOptional(query.search),
       batchId: this.trimOptional(query.batchId),
       customerId: this.trimOptional(query.customerId),
+      customerAliasId: this.trimOptional(query.customerAliasId),
       warehouseId: this.trimOptional(query.warehouseId),
       status: query.status,
       inventoryStatus: query.inventoryStatus,
@@ -790,6 +806,13 @@ export class InboundService {
         code: draft.customer.code,
         name: draft.customer.name,
       },
+      customerAlias: draft.customerAlias
+        ? {
+            id: draft.customerAlias.id,
+            code: draft.customerAlias.code,
+            name: draft.customerAlias.name,
+          }
+        : null,
       warehouse: {
         id: draft.warehouse.id,
         code: draft.warehouse.code,
@@ -827,6 +850,13 @@ export class InboundService {
       imei: item.imei,
       serial: item.serial,
       status: item.status,
+      customerAlias: item.customerAlias
+        ? {
+            id: item.customerAlias.id,
+            code: item.customerAlias.code,
+            name: item.customerAlias.name,
+          }
+        : null,
       scannedAt: item.scannedAt,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
@@ -865,6 +895,13 @@ export class InboundService {
         code: item.customer.code,
         name: item.customer.name,
       },
+      customerAlias: item.customerAlias
+        ? {
+            id: item.customerAlias.id,
+            code: item.customerAlias.code,
+            name: item.customerAlias.name,
+          }
+        : null,
       product: item.product ? this.toProductResponse(item.product) : null,
       inventoryItemId: item.inventoryItemId,
       forcedInbound: item.forcedInbound,

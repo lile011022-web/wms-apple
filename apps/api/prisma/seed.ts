@@ -151,6 +151,38 @@ async function main() {
     },
   });
 
+  await prisma.customerAlias.upsert({
+    where: {
+      customerId_code: {
+        customerId: customer.id,
+        code: 'APPLE-DEMO-A1',
+      },
+    },
+    update: { name: 'Apple Demo Recipient A1' },
+    create: {
+      customerId: customer.id,
+      code: 'APPLE-DEMO-A1',
+      name: 'Apple Demo Recipient A1',
+      notes: 'Development-only sample sub-customer for alias receiving.',
+    },
+  });
+
+  await prisma.customerAlias.upsert({
+    where: {
+      customerId_code: {
+        customerId: customer.id,
+        code: 'APPLE-DEMO-A2',
+      },
+    },
+    update: { name: 'Apple Demo Recipient A2' },
+    create: {
+      customerId: customer.id,
+      code: 'APPLE-DEMO-A2',
+      name: 'Apple Demo Recipient A2',
+      notes: 'Development-only sample sub-customer for alias receiving.',
+    },
+  });
+
   const product = await prisma.product.upsert({
     where: { sku: 'IPHONE-15-PRO-128-BLK' },
     update: {},

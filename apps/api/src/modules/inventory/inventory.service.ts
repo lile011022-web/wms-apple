@@ -262,6 +262,7 @@ export class InventoryService {
   private normalizeItemQuery(query: ListInventoryItemsQueryDto) {
     return {
       customerId: this.trimOptional(query.customerId),
+      customerAliasId: this.trimOptional(query.customerAliasId),
       warehouseId: this.trimOptional(query.warehouseId),
       productId: this.trimOptional(query.productId),
       status: query.availableForOutbound ? InventoryStatus.IN_STOCK : query.status,
@@ -278,6 +279,7 @@ export class InventoryService {
 
   private toBaseWhere(params: {
     customerId?: string;
+    customerAliasId?: string;
     warehouseId?: string;
     productId?: string;
     productIds?: string[];
@@ -307,6 +309,7 @@ export class InventoryService {
     return {
       AND: andFilters.length ? andFilters : undefined,
       customerId: params.customerId,
+      customerAliasId: params.customerAliasId,
       warehouseId: params.warehouseId,
       productId: params.productIds?.length ? { in: params.productIds } : params.productId,
       status: params.status,
@@ -400,6 +403,13 @@ export class InventoryService {
         code: item.customer.code,
         name: item.customer.name,
       },
+      customerAlias: item.customerAlias
+        ? {
+            id: item.customerAlias.id,
+            code: item.customerAlias.code,
+            name: item.customerAlias.name,
+          }
+        : null,
       warehouse: {
         id: item.warehouse.id,
         code: item.warehouse.code,

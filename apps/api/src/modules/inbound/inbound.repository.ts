@@ -12,6 +12,7 @@ import { PrismaService } from '../../database/prisma.service';
 
 const inboundBatchInclude = {
   customer: true,
+  customerAlias: true,
   warehouse: true,
   operator: {
     select: {
@@ -32,6 +33,7 @@ const inboundBatchInclude = {
       },
       exceptions: true,
       inventoryItem: true,
+      customerAlias: true,
     },
   },
 };
@@ -51,6 +53,7 @@ const inboundItemInclude = {
     },
   },
   customer: true,
+  customerAlias: true,
   product: {
     include: {
       upcs: {
@@ -73,6 +76,10 @@ export class InboundRepository {
 
   findCustomerById(id: string) {
     return this.prisma.customer.findUnique({ where: { id } });
+  }
+
+  findCustomerAliasById(id: string) {
+    return this.prisma.customerAlias.findUnique({ where: { id }, include: { customer: true } });
   }
 
   findWarehouseById(id: string) {
@@ -321,6 +328,7 @@ export class InboundRepository {
 
           const inventoryItem = await this.createInventoryItemOrThrowReadableIdentityConflict(tx, {
             customerId: draft.customerId,
+            customerAliasId: draft.customerAliasId,
             warehouseId: draft.warehouseId,
             productId: item.productId,
             inboundBatchId: draft.id,
@@ -428,6 +436,7 @@ export class InboundRepository {
     tx: Prisma.TransactionClient,
     data: {
       customerId: string;
+      customerAliasId: string | null;
       warehouseId: string;
       productId: string;
       inboundBatchId: string;
@@ -471,6 +480,7 @@ export class InboundRepository {
       const inventoryItem = await tx.inventoryItem.create({
         data: {
           customerId: item.customerId,
+          customerAliasId: item.customerAliasId,
           warehouseId: item.inboundBatch.warehouseId,
           productId: item.productId,
           inboundBatchId: item.inboundBatchId,
@@ -577,6 +587,7 @@ export class InboundRepository {
         (await tx.inventoryItem.create({
           data: {
             customerId: item.customerId,
+            customerAliasId: item.customerAliasId,
             warehouseId: item.inboundBatch.warehouseId,
             productId: input.productId,
             inboundBatchId: item.inboundBatchId,
@@ -591,6 +602,7 @@ export class InboundRepository {
         await tx.inventoryItem.update({
           where: { id: existingInventoryItem.id },
           data: {
+            customerAliasId: item.customerAliasId,
             upsTrackingNo: input.upsTrackingNo,
             upc: input.upc,
             imei: input.imei ?? null,
@@ -697,6 +709,7 @@ export class InboundRepository {
     search?: string;
     batchId?: string;
     customerId?: string;
+    customerAliasId?: string;
     warehouseId?: string;
     status?: InboundItemStatus;
     inventoryStatus?: InventoryStatus;
@@ -725,6 +738,7 @@ export class InboundRepository {
     search?: string;
     batchId?: string;
     customerId?: string;
+    customerAliasId?: string;
     warehouseId?: string;
     status?: InboundItemStatus;
     inventoryStatus?: InventoryStatus;
@@ -761,6 +775,7 @@ export class InboundRepository {
     search?: string;
     batchId?: string;
     customerId?: string;
+    customerAliasId?: string;
     warehouseId?: string;
     status?: InboundItemStatus;
     inventoryStatus?: InventoryStatus;
@@ -774,6 +789,7 @@ export class InboundRepository {
     return {
       inboundBatchId: params.batchId,
       customerId: params.customerId,
+      customerAliasId: params.customerAliasId,
       inboundBatch: {
         warehouseId: params.warehouseId,
       },
@@ -792,18 +808,41 @@ export class InboundRepository {
               lte: params.dateTo,
             }
           : undefined,
-      OR: params.search
-        ? [
-            { upsTrackingNo: { contains: params.search, mode: 'insensitive' } },
-            { upc: { contains: params.search } },
-            { imei: { contains: params.search } },
-            { serial: { contains: params.search, mode: 'insensitive' } },
-            { customer: { name: { contains: params.search, mode: 'insensitive' } } },
-            { customer: { code: { contains: params.search, mode: 'insensitive' } } },
-            { product: { sku: { contains: params.search, mode: 'insensitive' } } },
-            { product: { name: { contains: params.search, mode: 'insensitive' } } },
-          ]
-        : undefined,
+      OR: this.toRecordSearchWhere(params.search),
     };
+  }
+
+  private toRecordSearchWhere(search?: string): Prisma.InboundItemWhereInput[] | undefined {
+    if (!search) {
+      return undefined;
+    }
+
+    const identitySuffix = this.toIdentitySuffix(search);
+    const searchWhere: Prisma.InboundItemWhereInput[] = [
+      { upsTrackingNo: { contains: search, mode: 'insensitive' } },
+      { upc: { contains: search } },
+      { imei: { contains: search } },
+      { serial: { contains: search, mode: 'insensitive' } },
+      { customer: { name: { contains: search, mode: 'insensitive' } } },
+      { customer: { code: { contains: search, mode: 'insensitive' } } },
+      { customerAlias: { name: { contains: search, mode: 'insensitive' } } },
+      { customerAlias: { code: { contains: search, mode: 'insensitive' } } },
+      { product: { sku: { contains: search, mode: 'insensitive' } } },
+      { product: { name: { contains: search, mode: 'insensitive' } } },
+    ];
+
+    if (identitySuffix) {
+      searchWhere.push(
+        { imei: { endsWith: identitySuffix } },
+        { serial: { endsWith: identitySuffix, mode: 'insensitive' } },
+      );
+    }
+
+    return searchWhere;
+  }
+
+  private toIdentitySuffix(search: string) {
+    const normalized = search.trim().toUpperCase();
+    return /^[A-Z0-9]{6}$/.test(normalized) ? normalized : undefined;
   }
 }

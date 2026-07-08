@@ -13,6 +13,7 @@ Current controllers require `inbound.manage`.
 ```json
 {
   "customerId": "customer-1",
+  "customerAliasId": "alias-1",
   "warehouseId": "warehouse-1",
   "notes": "Morning receiving lane A"
 }
@@ -22,6 +23,8 @@ Rules:
 
 - `customerId` is required when `scan.inbound.requiresLockedCustomer` is enabled.
 - Inactive customers cannot be locked for new inbound drafts.
+- `customerAliasId` is optional. When present, it must belong to the selected customer and be active.
+  The alias records the receiving name; inventory ownership remains on `customerId`.
 - `warehouseId` is optional; when omitted, `warehouse.defaultId` is used.
 - Inactive warehouses cannot receive inbound scans.
 
@@ -29,7 +32,7 @@ Rules:
 
 `GET /api/v1/inbound/drafts/:id`
 
-Returns the draft header, locked customer, warehouse, preview summary, and non-voided preview items.
+Returns the draft header, locked customer, optional customer alias, warehouse, preview summary, and non-voided preview items.
 The web client uses this response to compute the confirmation review panel in real time, including
 unique UPC count, product count, package tracking count, total product units, exception count, and
 per-UPC product counts. No separate summary endpoint is required for this draft-level review.
@@ -221,6 +224,7 @@ Confirmation runs inside one database transaction:
 - Rejects IMEI or Serial values that already exist in inventory before inventory writes.
 - Rechecks duplicate package tracking values.
 - Creates `inventory_items` for confirmable preview rows.
+- Copies the draft's optional `customerAliasId` to confirmed inbound rows and inventory rows.
 - Links each confirmed inbound row to its inventory item.
 - Marks duplicate package-tracking rows as `EXCEPTION`.
 - Marks the batch `CONFIRMED`.

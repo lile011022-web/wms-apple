@@ -24,6 +24,7 @@ Permission: `reports.export`
   "reportType": "INVENTORY_DETAIL",
   "filters": {
     "customerId": "customer-1",
+    "customerAliasId": "alias-1",
     "warehouseId": "warehouse-1",
     "inventoryStatus": "IN_STOCK",
     "dateFrom": "2026-06-01T00:00:00.000Z",
@@ -48,8 +49,8 @@ inventory rows do not store a separate quantity column, so each raw item contrib
 a quantity value is present on the report row.
 
 When the customer inventory page needs a table-shaped detail export, it passes explicit fields such
-as `customerCode`, `customerName`, `inboundBatchNo`, `outboundBoxNo`, `modelCode`, `receivedAt`,
-and `status`. In that mode, `INVENTORY_DETAIL` keeps item-level rows instead of the
+as `customerCode`, `customerName`, `customerAliasCode`, `customerAliasName`, `inboundBatchNo`,
+`outboundBoxNo`, `modelCode`, `receivedAt`, and `status`. In that mode, `INVENTORY_DETAIL` keeps item-level rows instead of the
 default grouped quantity summary, so the downloaded file matches the visible inventory detail table.
 
 When `reportType = INVENTORY_DETAIL`, `format = EXCEL`, and `exportLayout = "WAREHOUSE_HOLD"`, the
@@ -69,6 +70,8 @@ six-column layout.
 `filters.dateFrom` and `filters.dateTo` are optional ISO datetimes. They filter the report's primary business time: inbound `scannedAt`, outbound `packedAt`, inventory `receivedAt`, exception `createdAt`, customer-change log `createdAt`, and audit log `createdAt`.
 
 For inbound detail downloads, pass `filters.batchId` to download one confirmed inbound batch.
+Pass `filters.customerAliasId` with a parent `customerId` to download only rows received under one
+sub-customer / alias. Omitting `customerAliasId` keeps the parent-customer full-file behavior.
 Pass `filters.inboundStatus` to limit rows by inbound item status. The detail-download page
 defaults this to `CONFIRMED` so customer-facing downloads do not mix in `PENDING`, `EXCEPTION`,
 or `VOIDED` rows unless the operator intentionally selects another status or all statuses. When a
@@ -116,6 +119,7 @@ selector is read-only; actual preview/export still uses `POST /reports/preview` 
   "format": "CSV",
   "filters": {
     "customerId": "customer-1",
+    "customerAliasId": "alias-1",
     "outboundStatus": "SEALED"
   },
   "fields": [
@@ -141,7 +145,7 @@ Supported formats:
 
 The current implementation completes small exports synchronously. Reports over the configured synchronous row limit are rejected for background-job handling. A successful export writes an `AuditLog` with action `REPORT_EXPORT`.
 
-For sealed packing detail downloads, use `reportType = OUTBOUND_DETAIL` with `filters.outboundStatus = SEALED`. Search supports box number, customer, UPC, tracking number, IMEI, Serial, SKU, and product name. Include `boxNotes` when the download needs each box's remark, and include `shippingTrackingNo` when the download needs the uploaded outbound shipment or label number.
+For sealed packing detail downloads, use `reportType = OUTBOUND_DETAIL` with `filters.outboundStatus = SEALED`. Search supports box number, customer, customer alias, UPC, tracking number, IMEI, Serial, SKU, and product name. Include `boxNotes` when the download needs each box's remark, and include `shippingTrackingNo` when the download needs the uploaded outbound shipment or label number.
 
 The detail-download page can pass `filters.boxNos` to preview or export exact selected boxes. These
 box numbers combine with customer, date, search, and status filters. If operators want the full

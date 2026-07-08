@@ -24,6 +24,9 @@ Controllers and guards should later resolve authorization from `User -> Role -> 
 
 - `Warehouse`: warehouse code, name, timezone, active state, and relationships to inbound, inventory, outbound, and exceptions.
 - `Customer`: customer code, customer name, contact data, status, notes, and relationships to inbound, inventory, outbound, exceptions, and batch change logs.
+- `CustomerAlias`: sub-customer / receiving-name alias under one parent customer. Alias codes are
+  unique within the parent customer. Inbound batches, inbound rows, and inventory rows may store an
+  optional alias for source traceability while their `customerId` remains the parent owner.
 
 Inbound and outbound flows must reference a customer by ID. Outbound code must not change customer ownership during packing.
 
@@ -36,9 +39,12 @@ Inbound and outbound flows must reference a customer by ID. Outbound code must n
 
 ## Inbound And Inventory
 
-- `InboundBatch`: one confirmed inbound operation, locked to a customer, warehouse, and operator.
-- `InboundItem`: scanned UPS, UPC, IMEI, and Serial detail row under an inbound batch.
-- `InventoryItem`: item-level inventory record for customer-owned stock.
+- `InboundBatch`: one inbound operation, locked to a parent customer, optional customer alias,
+  warehouse, and operator.
+- `InboundItem`: scanned UPS, UPC, IMEI, and Serial detail row under an inbound batch, with optional
+  customer alias copied from the draft.
+- `InventoryItem`: item-level inventory record for customer-owned stock, with optional customer
+  alias copied from inbound for reporting.
 
 Important constraints:
 

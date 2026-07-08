@@ -42,6 +42,8 @@ type OutboundDetailExportRow = {
   destinationAddress: string;
   customerCode: string;
   customerName: string;
+  customerAliasCode: string;
+  customerAliasName: string;
   warehouseCode: string;
   productName: string;
   upc: string;
@@ -1018,6 +1020,12 @@ export class ReportsService {
       destinationAddress: '',
       customerCode: this.formatValue(this.readPath(row, 'outboundBox', 'customer', 'code')),
       customerName: this.formatValue(this.readPath(row, 'outboundBox', 'customer', 'name')),
+      customerAliasCode: this.formatValue(
+        this.readPath(row, 'inventoryItem', 'customerAlias', 'code'),
+      ),
+      customerAliasName: this.formatValue(
+        this.readPath(row, 'inventoryItem', 'customerAlias', 'name'),
+      ),
       warehouseCode: this.formatValue(this.readPath(row, 'outboundBox', 'warehouse', 'code')),
       productName: this.formatValue(this.readPath(row, 'inventoryItem', 'product', 'name')),
       upc: this.formatValue(this.readPath(row, 'inventoryItem', 'upc')),
@@ -1286,6 +1294,8 @@ export class ReportsService {
         field('batchNo', 'Inbound Batch', 'inboundBatch', 'batchNo'),
         field('customerCode', 'Customer Code', 'customer', 'code'),
         field('customerName', 'Customer Name', 'customer', 'name'),
+        field('customerAliasCode', 'Sub-customer Code', 'customerAlias', 'code'),
+        field('customerAliasName', 'Sub-customer Name', 'customerAlias', 'name'),
         field('warehouseCode', 'Warehouse Code', 'inboundBatch', 'warehouse', 'code'),
         field('sku', 'SKU', 'product', 'sku'),
         field('productName', 'Product Name', 'product', 'name'),
@@ -1305,6 +1315,8 @@ export class ReportsService {
         field('boxStatus', 'Box Status', 'outboundBox', 'status'),
         field('customerCode', 'Customer Code', 'outboundBox', 'customer', 'code'),
         field('customerName', 'Customer Name', 'outboundBox', 'customer', 'name'),
+        field('customerAliasCode', 'Sub-customer Code', 'inventoryItem', 'customerAlias', 'code'),
+        field('customerAliasName', 'Sub-customer Name', 'inventoryItem', 'customerAlias', 'name'),
         field('warehouseCode', 'Warehouse Code', 'outboundBox', 'warehouse', 'code'),
         field('sku', 'SKU', 'inventoryItem', 'product', 'sku'),
         field('productName', 'Product Name', 'inventoryItem', 'product', 'name'),
@@ -1320,6 +1332,8 @@ export class ReportsService {
         field('upsTrackingNo', '单号', 'upsTrackingNo'),
         field('customerCode', '客户代码', 'customer', 'code'),
         field('customerName', '客户名称', 'customer', 'name'),
+        field('customerAliasCode', '子客户代码', 'customerAlias', 'code'),
+        field('customerAliasName', '子客户名称', 'customerAlias', 'name'),
         field('inboundBatchNo', '入库单号', 'inboundBatch', 'batchNo'),
         computedField('outboundBoxNo', '出单号/箱号', (row) =>
           this.readPath(row, 'outboundBoxItems', 0, 'outboundBox', 'boxNo'),

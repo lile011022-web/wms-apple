@@ -7,7 +7,10 @@ Reports provide traceable downloads for operational review, customer reconciliat
 - Operators must select a report type before previewing or exporting.
 - Every report type has a fixed field whitelist.
 - Requested fields outside the whitelist must be rejected.
-- Filters may include customer, warehouse, product, date range, UPC, IMEI, Serial, UPS tracking number, status, and search text when applicable.
+- Filters may include customer, customer alias, warehouse, product, date range, UPC, IMEI, Serial, UPS tracking number, status, and search text when applicable.
+- For inbound, inventory, and outbound detail reports, selecting only the parent customer exports the
+  full parent-customer file; selecting both parent customer and alias exports the sub-customer source
+  detail.
 - Preview must return estimated row count before export creation.
 - Preview should include a small sample of formatted rows so operators can confirm the upcoming download content before creating the file.
 - Small exports can complete synchronously.
@@ -30,7 +33,7 @@ Reports provide traceable downloads for operational review, customer reconciliat
 ## Supported Report Types
 
 - `INBOUND_DETAIL`: item-level inbound rows with customer, warehouse, product, scan, and linked inventory status. Excel can use the `飞书入库登记表` layout for the six-column customer registration shape.
-- `OUTBOUND_DETAIL`: packed item rows with box, box note, customer, warehouse, product, tracking number, packing time, and sealed time. When operators need sealed box downloads, the report must filter `outboundStatus = SEALED`.
+- `OUTBOUND_DETAIL`: packed item rows with box, box note, customer, optional source alias, warehouse, product, tracking number, packing time, and sealed time. When operators need sealed box downloads, the report must filter `outboundStatus = SEALED`.
 - `INVENTORY_DETAIL`: current item inventory rows exported for operators with the fixed headers
   `单号`, `入库时间`, `UPC`, `IMEI`, `商品名称`, and `数量`. Rows should be grouped by `单号 + UPC + 商品名称`, with
   `数量` summed only across matching rows inside the same tracking number. The same UPC under

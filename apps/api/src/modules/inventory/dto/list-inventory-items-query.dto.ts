@@ -10,6 +10,11 @@ export class ListInventoryItemsQueryDto extends PaginationQueryDto {
   @IsString()
   customerId?: string;
 
+  @ApiPropertyOptional({ example: 'alias_01H...' })
+  @IsOptional()
+  @IsString()
+  customerAliasId?: string;
+
   @ApiPropertyOptional({ example: 'warehouse_123' })
   @IsOptional()
   @IsString()

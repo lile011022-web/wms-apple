@@ -83,6 +83,52 @@ Business rules:
 - Inactive customers are excluded by default.
 - When inactive customers are explicitly included, the API marks them as `disabled` so new inbound workflows can block selection.
 
+## GET /customers/alias-options
+
+Returns compact customer alias selector data for inbound receiving and detail-download filters.
+
+Query parameters:
+
+- `customerId`: optional parent customer filter.
+- `search`: optional alias code/name or parent customer code/name search.
+- `includeInactive`: optional boolean. Defaults to active aliases only.
+
+Rows include alias ID, alias code/name, parent customer, label, and disabled state. A row is disabled
+when either the alias or its parent customer is inactive.
+
+## GET /customers/:id/aliases
+
+Lists aliases under one parent customer.
+
+## POST /customers/:id/aliases
+
+Creates an alias under one parent customer.
+
+Request:
+
+```json
+{
+  "code": "A1",
+  "name": "A receiving name",
+  "notes": "Packages addressed to A1."
+}
+```
+
+Business rules:
+
+- Alias code is normalized to uppercase.
+- Alias code must be unique within the parent customer.
+- Creation writes an `AuditLog` with action `CUSTOMER_CHANGE` and `resourceType = customer-alias`.
+
+## PATCH /customers/:id/aliases/:aliasId
+
+Updates alias code, name, or notes. The alias must belong to the parent customer in the URL.
+
+## PATCH /customers/:id/aliases/:aliasId/status
+
+Activates or deactivates an alias. Inactive aliases remain visible for historical rows and downloads
+but cannot be selected for new inbound receiving.
+
 ## GET /customers/:id
 
 Returns one customer profile.
@@ -178,3 +224,6 @@ Summary definitions:
 There is intentionally no physical delete endpoint in phase five.
 
 Customers are historical owners for inbound items, inventory, outbound boxes, exceptions, customer change logs, and audit records. Use `PATCH /customers/:id/status` to deactivate instead.
+
+Customer aliases are historical receiving-source markers for inbound and inventory rows. Use
+`PATCH /customers/:id/aliases/:aliasId/status` to deactivate an alias instead of deleting it.

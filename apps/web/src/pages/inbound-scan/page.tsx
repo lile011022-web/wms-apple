@@ -70,6 +70,9 @@ export function InboundScanPage() {
     readInboundLock(),
   );
   const [customerId, setCustomerId] = useState(() => readInboundLock()?.customerId ?? '');
+  const [customerAliasId, setCustomerAliasId] = useState(
+    () => readInboundLock()?.customerAliasId ?? '',
+  );
   const [warehouseId, setWarehouseId] = useState(() => readInboundLock()?.warehouseId ?? '');
   const [draft, setDraft] = useState<InboundDraft | null>(null);
   const [upsTrackingNo, setUpsTrackingNo] = useState(inboundScanInputCache.upsTrackingNo);
@@ -98,6 +101,11 @@ export function InboundScanPage() {
     queryKey: ['customer-options'],
     queryFn: () => customersApi.options(),
   });
+  const customerAliasesQuery = useQuery({
+    queryKey: ['customer-alias-options', customerId],
+    queryFn: () => customersApi.aliasOptions({ customerId }),
+    enabled: Boolean(customerId),
+  });
   const warehousesQuery = useQuery({
     queryKey: ['warehouses', 'active'],
     queryFn: () => listWarehouses({ isActive: true }),
@@ -107,6 +115,7 @@ export function InboundScanPage() {
     queryFn: getSystemSettings,
   });
   const customers = (customersQuery.data as CustomerOption[] | undefined) ?? [];
+  const customerAliases = (customerAliasesQuery.data as CustomerAliasOption[] | undefined) ?? [];
   const warehouses = warehousesQuery.data ?? [];
 
   useEffect(() => {
@@ -142,6 +151,7 @@ export function InboundScanPage() {
 
         const nextContext = {
           customerId: lockedContext.customerId,
+          customerAliasId: lockedContext.customerAliasId,
           warehouseId: lockedContext.warehouseId,
         };
         setLockedContext(nextContext);
@@ -156,6 +166,7 @@ export function InboundScanPage() {
   const isCurrentSelectionLocked =
     !!lockedContext &&
     lockedContext.customerId === customerId &&
+    (lockedContext.customerAliasId ?? '') === customerAliasId &&
     lockedContext.warehouseId === warehouseId;
   const isDraftOpen = draft?.status === 'DRAFT';
   const latestDraftItem = draft?.items.at(-1);
@@ -274,11 +285,12 @@ export function InboundScanPage() {
 
     const nextDraft = (await inboundApi.createDraft({
       customerId,
+      customerAliasId: customerAliasId || undefined,
       warehouseId,
       notes: 'Web local test',
     })) as InboundDraft;
     setDraft(nextDraft);
-    persistLockedContext({ customerId, warehouseId, draftId: nextDraft.id });
+    persistLockedContext({ customerId, customerAliasId, warehouseId, draftId: nextDraft.id });
     return nextDraft;
   };
 
@@ -339,7 +351,13 @@ export function InboundScanPage() {
   ]);
 
   const createDraftMutation = useMutation({
-    mutationFn: () => inboundApi.createDraft({ customerId, warehouseId, notes: 'Web local test' }),
+    mutationFn: () =>
+      inboundApi.createDraft({
+        customerId,
+        customerAliasId: customerAliasId || undefined,
+        warehouseId,
+        notes: 'Web local test',
+      }),
     onMutate: () => {
       setMessage('');
       setErrorMessage('');
@@ -347,7 +365,7 @@ export function InboundScanPage() {
     onSuccess: (data) => {
       const nextDraft = data as InboundDraft;
       setDraft(nextDraft);
-      persistLockedContext({ customerId, warehouseId, draftId: nextDraft.id });
+      persistLockedContext({ customerId, customerAliasId, warehouseId, draftId: nextDraft.id });
       setMessage('已锁定客户并创建入库草稿');
       hasFocusedLockedDraftRef.current = true;
       focusNextScanStart();
@@ -372,9 +390,11 @@ export function InboundScanPage() {
       const restoredDraft = data as InboundDraft;
       setDraft(restoredDraft);
       setCustomerId(restoredDraft.customer.id);
+      setCustomerAliasId(restoredDraft.customerAlias?.id ?? '');
       setWarehouseId(restoredDraft.warehouse.id);
       persistLockedContext({
         customerId: restoredDraft.customer.id,
+        customerAliasId: restoredDraft.customerAlias?.id ?? '',
         warehouseId: restoredDraft.warehouse.id,
         draftId: restoredDraft.id,
       });
@@ -423,7 +443,7 @@ export function InboundScanPage() {
     onSuccess: (data) => {
       const updated = data.draft;
       setDraft(updated);
-      persistLockedContext({ customerId, warehouseId, draftId: updated.id });
+      persistLockedContext({ customerId, customerAliasId, warehouseId, draftId: updated.id });
       setLastInboundItem(data.item);
       const keepTrackingNo = reuseTrackingNo && data.item.status !== 'EXCEPTION';
       const nextFocusField =
@@ -457,7 +477,7 @@ export function InboundScanPage() {
     onSuccess: (data) => {
       const confirmedDraft = data as InboundDraft;
       setDraft(confirmedDraft);
-      persistLockedContext({ customerId, warehouseId });
+      persistLockedContext({ customerId, customerAliasId, warehouseId });
       setMessage('入库已确认，库存已生成');
       queryClient.invalidateQueries({ queryKey: ['inventory-customer-summary'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-products'] });
@@ -482,7 +502,7 @@ export function InboundScanPage() {
     onSuccess: (data) => {
       const updated = data as InboundDraft;
       setDraft(updated);
-      persistLockedContext({ customerId, warehouseId, draftId: updated.id });
+      persistLockedContext({ customerId, customerAliasId, warehouseId, draftId: updated.id });
       setMessage('已删除入库明细');
       if (updated.status === 'DRAFT' && updated.items.at(-1)?.status !== 'EXCEPTION') {
         focusNextScanStart();
@@ -512,7 +532,7 @@ export function InboundScanPage() {
     },
     onSuccess: (data) => {
       setDraft(data.draft);
-      persistLockedContext({ customerId, warehouseId, draftId: data.draft.id });
+      persistLockedContext({ customerId, customerAliasId, warehouseId, draftId: data.draft.id });
       setLastInboundItem(data.item);
       setMessage(
         data.item.status === 'EXCEPTION'
@@ -543,7 +563,7 @@ export function InboundScanPage() {
     onSuccess: (data) => {
       const result = data as ImportInboundResult;
       setDraft(result.draft);
-      persistLockedContext({ customerId, warehouseId, draftId: result.draft.id });
+      persistLockedContext({ customerId, customerAliasId, warehouseId, draftId: result.draft.id });
       setImportFailedRows(result.failedRows);
       setImportRows([]);
       setImportFileName('');
@@ -888,11 +908,30 @@ export function InboundScanPage() {
             onChange={(event) => {
               clearLockedContext();
               setCustomerId(event.target.value);
+              setCustomerAliasId('');
             }}
           >
             {customers.map((customer) => (
               <option key={customer.id} value={customer.id}>
                 {customer.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>子客户 / 别名</span>
+          <select
+            value={customerAliasId}
+            disabled={!customerId || isCurrentSelectionLocked}
+            onChange={(event) => {
+              clearLockedContext();
+              setCustomerAliasId(event.target.value);
+            }}
+          >
+            <option value="">不选择，直接归父客户</option>
+            {customerAliases.map((alias) => (
+              <option key={alias.id} value={alias.id}>
+                {alias.code} - {alias.name}
               </option>
             ))}
           </select>
@@ -1150,8 +1189,10 @@ export function InboundScanPage() {
 }
 
 type CustomerOption = { id: string; label: string };
+type CustomerAliasOption = { id: string; code: string; name: string; label: string };
 type InboundLockContext = {
   customerId: string;
+  customerAliasId?: string;
   warehouseId: string;
   draftId?: string;
 };
@@ -1189,6 +1230,11 @@ type InboundDraft = {
     code: string;
     name: string;
   };
+  customerAlias?: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
   warehouse: {
     id: string;
     code: string;
@@ -1910,6 +1956,8 @@ function readInboundLock(): InboundLockContext | null {
     if (typeof parsed.customerId === 'string' && typeof parsed.warehouseId === 'string') {
       return {
         customerId: parsed.customerId,
+        customerAliasId:
+          typeof parsed.customerAliasId === 'string' ? parsed.customerAliasId : undefined,
         warehouseId: parsed.warehouseId,
         draftId: typeof parsed.draftId === 'string' ? parsed.draftId : undefined,
       };

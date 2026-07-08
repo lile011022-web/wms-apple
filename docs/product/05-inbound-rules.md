@@ -9,6 +9,10 @@ The customer must be locked before scan data becomes operational inventory. Pack
 ## Customer Lock
 
 - New inbound drafts require an active customer when the locked-customer setting is enabled.
+- Operators may optionally select an active customer alias / sub-customer after selecting the parent
+  customer. The alias records the receiving name, while the parent customer remains the inventory
+  owner.
+- An alias can be used only when it belongs to the selected parent customer and is active.
 - Operators cannot change the customer on an existing draft.
 - If a customer assignment was wrong after confirmation, later phases must use the batch customer change workflow and keep change logs.
 
@@ -75,6 +79,7 @@ The system must:
 - Convert database-level IMEI/Serial uniqueness conflicts into operator-readable duplicate
   messages instead of exposing a generic server error.
 - Create inventory only for valid preview rows.
+- Copy the draft's customer alias to confirmed inbound rows and inventory rows when one was selected.
 - Mark duplicate rows as exceptions instead of creating inventory.
 - Link confirmed inbound items to the created inventory items.
 - Write an `INBOUND_CONFIRM` audit log.
@@ -102,6 +107,9 @@ through this flow.
 The inbound records page must support all-customer, all-time lookup. When an operator is checking a
 package tracking number and does not know the customer, the customer filter can stay on `全部客户`,
 and the search should cover all historical inbound rows across every customer.
+The same search box must also support device suffix lookup: when the operator enters the last six
+characters of an IMEI or Serial, the inbound records page returns rows whose IMEI or Serial ends
+with that value.
 
 ## Force Inbound
 

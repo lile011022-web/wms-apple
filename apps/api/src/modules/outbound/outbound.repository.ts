@@ -17,6 +17,7 @@ const outboundBoxInclude = {
     include: {
       inventoryItem: {
         include: {
+          customerAlias: true,
           product: {
             include: {
               upcs: {
@@ -190,6 +191,7 @@ export class OutboundRepository {
           inventoryItem: {
             include: {
               customer: { select: { id: true, code: true, name: true } },
+              customerAlias: { select: { id: true, code: true, name: true } },
               product: {
                 select: {
                   id: true,
@@ -263,6 +265,7 @@ export class OutboundRepository {
       where: { id },
       include: {
         customer: true,
+        customerAlias: true,
         warehouse: true,
         product: {
           include: {

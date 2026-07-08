@@ -15,6 +15,11 @@ export class ReportFilterDto {
   @IsString()
   customerId?: string;
 
+  @ApiPropertyOptional({ example: 'alias_01H...' })
+  @IsOptional()
+  @IsString()
+  customerAliasId?: string;
+
   @ApiPropertyOptional({ example: 'wh_01H...' })
   @IsOptional()
   @IsString()

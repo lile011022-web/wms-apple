@@ -47,6 +47,7 @@ export function DetailDownloadPage() {
   const [reportType, setReportType] = useState('INVENTORY_DETAIL');
   const [format, setFormat] = useState('CSV');
   const [customerId, setCustomerId] = useState('');
+  const [customerAliasId, setCustomerAliasId] = useState('');
   const [batchId, setBatchId] = useState('');
   const [inboundStatus, setInboundStatus] = useState('CONFIRMED');
   const [dateFrom, setDateFrom] = useState('');
@@ -67,6 +68,12 @@ export function DetailDownloadPage() {
     queryFn: () => customersApi.options(),
   });
   const customers = (customersQuery.data as CustomerOption[] | undefined) ?? [];
+  const customerAliasesQuery = useQuery({
+    queryKey: ['customer-alias-options', customerId],
+    queryFn: () => customersApi.aliasOptions({ customerId }),
+    enabled: Boolean(customerId),
+  });
+  const customerAliases = (customerAliasesQuery.data as CustomerAliasOption[] | undefined) ?? [];
   const inboundBatchesQuery = useQuery({
     queryKey: ['report-inbound-batches', customerId],
     queryFn: () =>
@@ -108,6 +115,7 @@ export function DetailDownloadPage() {
   const filters = useMemo(
     () => ({
       customerId: customerId || undefined,
+      customerAliasId: customerAliasId || undefined,
       batchId: reportType === 'INBOUND_DETAIL' ? batchId || undefined : undefined,
       inboundStatus: reportType === 'INBOUND_DETAIL' && inboundStatus ? inboundStatus : undefined,
       dateFrom: toIsoDateTime(dateFrom),
@@ -131,6 +139,7 @@ export function DetailDownloadPage() {
     [
       batchId,
       customerId,
+      customerAliasId,
       dateFrom,
       dateTo,
       exportLayout,
@@ -231,6 +240,7 @@ export function DetailDownloadPage() {
 
   useEffect(() => {
     setBatchId('');
+    setCustomerAliasId('');
   }, [customerId, reportType]);
 
   useEffect(() => {
@@ -323,6 +333,21 @@ export function DetailDownloadPage() {
             {customers.map((customer) => (
               <option key={customer.id} value={customer.id}>
                 {customer.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>子客户 / 别名</span>
+          <select
+            value={customerAliasId}
+            disabled={!customerId}
+            onChange={(event) => setCustomerAliasId(event.target.value)}
+          >
+            <option value="">全部子客户</option>
+            {customerAliases.map((alias) => (
+              <option key={alias.id} value={alias.id}>
+                {alias.code} - {alias.name}
               </option>
             ))}
           </select>
@@ -631,6 +656,7 @@ export function DetailDownloadPage() {
 }
 
 type CustomerOption = { id: string; label: string };
+type CustomerAliasOption = { id: string; code: string; name: string; label: string };
 type ExportBatchResult = { items: InboundBatchOption[]; total: number };
 type InboundBatchOption = {
   id: string;

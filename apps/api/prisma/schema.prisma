@@ -280,8 +280,30 @@ model Customer {
   customerChangeLogsNew  CustomerChangeLog[]    @relation("CustomerChangeNewCustomer")
   packagePrealertBatches PackagePrealertBatch[]
   packagePrealertItems   PackagePrealertItem[]
+  aliases                CustomerAlias[]
 
   @@map("customers")
+}
+
+model CustomerAlias {
+  id         String         @id @default(cuid())
+  customerId String
+  code       String
+  name       String
+  status     CustomerStatus @default(ACTIVE)
+  notes      String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  inboundBatches InboundBatch[]
+  inboundItems   InboundItem[]
+  inventoryItems InventoryItem[]
+
+  @@unique([customerId, code])
+  @@index([customerId, status])
+  @@index([code])
+  @@map("customer_aliases")
 }
 
 model Product {
@@ -322,18 +344,20 @@ model ProductUpc {
 }
 
 model InboundBatch {
-  id          String             @id @default(cuid())
-  batchNo     String             @unique
-  customerId  String
-  warehouseId String
-  operatorId  String
-  status      InboundBatchStatus @default(CONFIRMED)
-  confirmedAt DateTime?
-  notes       String?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id              String             @id @default(cuid())
+  batchNo         String             @unique
+  customerId      String
+  customerAliasId String?
+  warehouseId     String
+  operatorId      String
+  status          InboundBatchStatus @default(CONFIRMED)
+  confirmedAt     DateTime?
+  notes           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
   customer             Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerAlias        CustomerAlias?        @relation(fields: [customerAliasId], references: [id], onDelete: SetNull)
   warehouse            Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
   operator             User                  @relation("InboundBatchOperator", fields: [operatorId], references: [id], onDelete: Restrict)
   inboundItems         InboundItem[]
@@ -341,6 +365,7 @@ model InboundBatch {
   packagePrealertItems PackagePrealertItem[]
 
   @@index([customerId, createdAt])
+  @@index([customerAliasId, createdAt])
   @@index([warehouseId, createdAt])
   @@map("inbound_batches")
 }
@@ -349,6 +374,7 @@ model InboundItem {
   id              String            @id @default(cuid())
   inboundBatchId  String
   customerId      String
+  customerAliasId String?
   productId       String?
   inventoryItemId String?           @unique
   upsTrackingNo   String?
@@ -366,12 +392,14 @@ model InboundItem {
 
   inboundBatch        InboundBatch         @relation(fields: [inboundBatchId], references: [id], onDelete: Restrict)
   customer            Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerAlias       CustomerAlias?       @relation(fields: [customerAliasId], references: [id], onDelete: SetNull)
   product             Product?             @relation(fields: [productId], references: [id], onDelete: Restrict)
   inventoryItem       InventoryItem?       @relation("InboundItemInventoryItem", fields: [inventoryItemId], references: [id], onDelete: SetNull)
   exceptions          ExceptionRecord[]
   packagePrealertItem PackagePrealertItem? @relation("PackagePrealertInboundItem")
 
   @@index([customerId, scannedAt])
+  @@index([customerAliasId, scannedAt])
   @@index([upsTrackingNo])
   @@index([upc])
   @@index([imei])
@@ -481,24 +509,26 @@ model PackageAlert {
 }
 
 model InventoryItem {
-  id             String          @id @default(cuid())
-  customerId     String
-  warehouseId    String
-  productId      String
-  inboundBatchId String
-  imei           String?
-  serial         String?
-  upc            String
-  upsTrackingNo  String?
-  status         InventoryStatus @default(IN_STOCK)
-  receivedAt     DateTime        @default(now())
-  packedAt       DateTime?
-  outboundAt     DateTime?
-  voidedAt       DateTime?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id              String          @id @default(cuid())
+  customerId      String
+  customerAliasId String?
+  warehouseId     String
+  productId       String
+  inboundBatchId  String
+  imei            String?
+  serial          String?
+  upc             String
+  upsTrackingNo   String?
+  status          InventoryStatus @default(IN_STOCK)
+  receivedAt      DateTime        @default(now())
+  packedAt        DateTime?
+  outboundAt      DateTime?
+  voidedAt        DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   customer         Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerAlias    CustomerAlias?    @relation(fields: [customerAliasId], references: [id], onDelete: SetNull)
   warehouse        Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
   product          Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
   inboundBatch     InboundBatch      @relation(fields: [inboundBatchId], references: [id], onDelete: Restrict)
@@ -509,6 +539,7 @@ model InventoryItem {
   @@unique([imei])
   @@unique([serial])
   @@index([customerId, status])
+  @@index([customerAliasId, status])
   @@index([warehouseId, status])
   @@index([productId, status])
   @@index([customerId, warehouseId, status, receivedAt])
