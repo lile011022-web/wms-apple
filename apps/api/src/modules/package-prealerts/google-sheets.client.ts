@@ -24,6 +24,10 @@ export class GoogleSheetsClient {
     return this.configService.get<string>('GOOGLE_SHEETS_STATUS_SHEET_NAME') || '状态';
   }
 
+  getOrderSheetName() {
+    return this.configService.get<string>('GOOGLE_SHEETS_ORDER_SHEET_NAME') || '订单';
+  }
+
   async appendPrealertRows(headers: string[], rows: string[][]) {
     if (rows.length === 0) {
       return { updatedRows: 0 };
@@ -55,9 +59,59 @@ export class GoogleSheetsClient {
   }
 
   async readStatusRows() {
+    return this.readRows(this.getStatusSheetName(), 'A:Z');
+  }
+
+  async readOrderRows() {
+    return this.readRows(this.getOrderSheetName(), 'A:Z');
+  }
+
+  async readPrealertRows() {
+    return this.readRows(this.getPrealertSheetName(), 'A:Z');
+  }
+
+  async updatePrealertRows(rows: Array<{ rowNumber: number; values: string[] }>) {
+    if (rows.length === 0) {
+      return { updatedRows: 0 };
+    }
     const spreadsheetId = this.requireConfig('GOOGLE_SHEETS_SPREADSHEET_ID');
-    const sheetName = this.getStatusSheetName();
-    const range = `${this.quoteSheetName(sheetName)}!A:Z`;
+    const sheetName = this.getPrealertSheetName();
+    const token = await this.getAccessToken();
+    const data = rows.map((row) => ({
+      range: `${this.quoteSheetName(sheetName)}!A${row.rowNumber}:${this.columnName(row.values.length)}${
+        row.rowNumber
+      }`,
+      values: [row.values],
+    }));
+    const response = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          valueInputOption: 'USER_ENTERED',
+          data,
+        }),
+      },
+    );
+    const payload = (await response.json()) as {
+      totalUpdatedRows?: number;
+      error?: GoogleError;
+    };
+    if (!response.ok || payload.error) {
+      throw new ServiceUnavailableException(
+        `Google Sheets update failed: ${payload.error?.message ?? response.statusText}`,
+      );
+    }
+    return { updatedRows: payload.totalUpdatedRows ?? rows.length };
+  }
+
+  private async readRows(sheetName: string, rangeA1: string) {
+    const spreadsheetId = this.requireConfig('GOOGLE_SHEETS_SPREADSHEET_ID');
+    const range = `${this.quoteSheetName(sheetName)}!${rangeA1}`;
     const token = await this.getAccessToken();
     const response = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(

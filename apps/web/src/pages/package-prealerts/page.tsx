@@ -174,9 +174,12 @@ export function PackagePrealertsPage() {
   });
 
   const sheetsSyncMutation = useMutation({
-    mutationFn: (mode: 'push' | 'pull' | 'sync') => {
+    mutationFn: (mode: 'push' | 'orders' | 'pull' | 'sync') => {
       if (mode === 'push') {
         return packagePrealertsApi.pushSheets();
+      }
+      if (mode === 'orders') {
+        return packagePrealertsApi.syncOrders();
       }
       if (mode === 'pull') {
         return packagePrealertsApi.pullSheets();
@@ -188,9 +191,11 @@ export function PackagePrealertsPage() {
       setMessage(
         mode === 'push'
           ? '预报 sheet 写入完成'
-          : mode === 'pull'
-            ? '状态 sheet 读取完成'
-            : 'Google 表格同步完成',
+          : mode === 'orders'
+            ? '订单 sheet 补全完成'
+            : mode === 'pull'
+              ? '状态 sheet 读取完成'
+              : 'Google 表格同步完成',
       );
       setErrorMessage('');
       void queryClient.invalidateQueries({ queryKey: ['package-prealerts'] });
@@ -306,9 +311,9 @@ export function PackagePrealertsPage() {
       </div>
 
       <section className="summary-grid">
-        <SummaryCard label="未入库预报" value={summary?.totalOpen ?? 0} />
+        <SummaryCard label="未扫码入库预报" value={summary?.totalOpen ?? 0} />
         <SummaryCard label="今日预计到达" value={summary?.todayExpected ?? 0} />
-        <SummaryCard label="送达未入库" value={summary?.deliveredNotReceived ?? 0} tone="danger" />
+        <SummaryCard label="已送达但未扫码" value={summary?.deliveredNotReceived ?? 0} tone="danger" />
         <SummaryCard label="ETA 已过" value={summary?.etaOverdue ?? 0} tone="warning" />
       </section>
 
@@ -379,7 +384,7 @@ export function PackagePrealertsPage() {
       <section className="panel data-panel">
         <div className="section-title">
           <h2>Google 表格同步</h2>
-          <span>只写“预报”，只读“状态”</span>
+          <span>写“预报”，读“订单”补全，再读“状态”回传</span>
         </div>
         <div className="customer-row-actions">
           <button
@@ -389,6 +394,14 @@ export function PackagePrealertsPage() {
           >
             <RefreshCw size={16} />
             写入预报
+          </button>
+          <button
+            type="button"
+            onClick={() => sheetsSyncMutation.mutate('orders')}
+            disabled={sheetsSyncMutation.isPending}
+          >
+            <RefreshCw size={16} />
+            读取订单补全
           </button>
           <button
             type="button"
@@ -461,7 +474,7 @@ export function PackagePrealertsPage() {
               <th>物流状态</th>
               <th>预计到达</th>
               <th>实际送达</th>
-              <th>入库状态</th>
+              <th>WMS入库状态</th>
               <th>表格同步</th>
               <th>风险</th>
               <th>操作</th>
@@ -596,7 +609,7 @@ function statusLabel(status: string) {
 
 function receivingLabel(status: string) {
   const labels: Record<string, string> = {
-    NOT_RECEIVED: '未入库',
+    NOT_RECEIVED: '未扫码入库',
     PARTIALLY_RECEIVED: '部分入库',
     RECEIVED: '已入库',
     VOIDED: '已作废',
@@ -610,7 +623,7 @@ function canDeletePrealert(item: PackagePrealertItem) {
 
 function alertLabel(type: string) {
   const labels: Record<string, string> = {
-    DELIVERED_NOT_RECEIVED: '送达未入库',
+    DELIVERED_NOT_RECEIVED: '已送达但未扫码',
     ETA_OVERDUE: 'ETA 已过',
     STALE_TRACKING: '长时间未更新',
     DUPLICATE_PREALERT: '重复预报',

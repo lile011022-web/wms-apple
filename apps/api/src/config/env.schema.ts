@@ -15,6 +15,7 @@ export const envSchema = z.object({
   GOOGLE_SHEETS_CLIENT_EMAIL: z.string().optional(),
   GOOGLE_SHEETS_PRIVATE_KEY: z.string().optional(),
   GOOGLE_SHEETS_PREALERT_SHEET_NAME: z.string().optional(),
+  GOOGLE_SHEETS_ORDER_SHEET_NAME: z.string().optional(),
   GOOGLE_SHEETS_STATUS_SHEET_NAME: z.string().optional(),
 });
 

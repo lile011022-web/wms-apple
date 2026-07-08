@@ -124,7 +124,7 @@ export function PackageAlertsPage() {
 
 function alertLabel(type: string) {
   const labels: Record<string, string> = {
-    DELIVERED_NOT_RECEIVED: '送达未入库',
+    DELIVERED_NOT_RECEIVED: '已送达但未扫码',
     ETA_OVERDUE: 'ETA 已过',
     STALE_TRACKING: '长时间未更新',
     DUPLICATE_PREALERT: '重复预报',

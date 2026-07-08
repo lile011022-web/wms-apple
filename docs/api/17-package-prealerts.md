@@ -226,17 +226,19 @@ The current external-system integration mode uses the provided Google spreadshee
 Spreadsheet:
 
 - URL: `https://docs.google.com/spreadsheets/d/1YUMuLn8acn6S-Bn8-Vn78DzbnOgL0Wmc_XmccApEY5s/edit`
-- WMS writes only to sheet `预报`.
-- WMS reads only from sheet `状态`.
+- WMS writes and updates only sheet `预报`.
+- WMS reads sheet `订单` to enrich Apple-order prealerts with real tracking data.
+- WMS reads sheet `状态` to pull warehouse receiving results.
 - Other sheets in the spreadsheet are not read or modified by this integration.
-- Both `预报` and `状态` must keep the first row as headers matching the template fields.
+- `预报`, `订单`, and `状态` must keep the first row as headers matching the template fields.
 
 Flow:
 
 1. WMS writes new prealerts to `预报`.
-2. The partner system reads `预报`.
-3. The partner system or warehouse writes receiving results to `状态`.
-4. WMS reads `状态` and updates receiving status and alerts.
+2. WMS reads `订单`, matches Apple links, completes missing tracking/model/name/warehouse data in WMS, and updates the matching row in `预报`.
+3. The partner system reads `预报`.
+4. The partner system or warehouse writes receiving results to `状态`.
+5. WMS reads `状态` and updates receiving status and alerts.
 
 Required environment variables:
 
@@ -244,9 +246,10 @@ Required environment variables:
 - `GOOGLE_SHEETS_CLIENT_EMAIL`
 - `GOOGLE_SHEETS_PRIVATE_KEY`
 - `GOOGLE_SHEETS_PREALERT_SHEET_NAME` defaults to `预报`
+- `GOOGLE_SHEETS_ORDER_SHEET_NAME` defaults to `订单`
 - `GOOGLE_SHEETS_STATUS_SHEET_NAME` defaults to `状态`
 
-The Google spreadsheet must be shared with the service account email as Editor so WMS can append to `预报` and read `状态`.
+The Google spreadsheet must be shared with the service account email as Editor so WMS can append/update `预报` and read `订单` and `状态`.
 
 ### GET /package-prealerts/integrations/sheets/template
 
@@ -278,6 +281,31 @@ Successful pushes update the WMS row:
 
 Push failures are stored in `exchangeSyncError`, and the row stays retryable with `exchangePushStatus = FAILED`.
 
+### POST /package-prealerts/integrations/sheets/orders
+
+Reads all rows from Google Sheet `订单`, enriches matching WMS prealerts, and updates the corresponding row in Google Sheet `预报`.
+
+`订单` fields used by WMS:
+
+- `预报仓库` or `仓库`: stored as item warehouse/notes and later written to `预报`.`仓库`.
+- `单号` or `物流单号`: real UPS/USPS/FedEx tracking number.
+- `邮箱`: accepted for matching context, not currently stored in WMS.
+- `名字` or `姓名`: stored as recipient name and later written to `预报`.`姓名`.
+- `超链接`, `链接`, `订单链接`, or `Apple订单链接`: Apple order link used to match WMS prealerts.
+
+Matching rule:
+
+1. Prefer Apple link or Apple order number extracted from `/vieworder/W.../...`.
+2. Fall back to `单号` / `物流单号` when it already matches a WMS prealert.
+
+Enrichment rules:
+
+- If WMS still has a temporary `APPLE-W...` order reference and `订单`.`单号` or `订单`.`物流单号` contains a real tracking number, WMS replaces the local tracking number with the real one.
+- Carrier is detected from the real tracking number, such as `1Z...` for UPS, or from known carrier links when available.
+- `订单`.`预报仓库` updates WMS item notes and is written back to `预报`.`仓库`.
+- `订单`.`名字` updates WMS recipient name and is written back to `预报`.`姓名`.
+- WMS updates the matching existing `预报` row instead of appending a duplicate row.
+
 ### POST /package-prealerts/integrations/sheets/pull
 
 Reads all rows from the Google Sheet `状态` and updates WMS records.
@@ -301,7 +329,11 @@ If the status row matches but has no receiving status, inbound date, delivered d
 
 ### POST /package-prealerts/integrations/sheets/sync
 
-Runs push first, then pull.
+Runs push first, then order enrichment, then status pull:
+
+1. Append missing WMS prealerts to `预报`.
+2. Read `订单`, enrich WMS local data, and update existing `预报` rows.
+3. Read `状态` and update receiving state and alerts.
 
 This endpoint is intended for manual local verification first. Once the Google Sheet writeback format is stable, the same service can be wired to a scheduled worker.
 
