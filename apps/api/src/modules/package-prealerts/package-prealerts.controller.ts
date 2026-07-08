@@ -79,12 +79,6 @@ export class PackagePrealertsController {
     return this.sheetsSyncService.pullWarehouseReturns();
   }
 
-  @Post('integrations/sheets/orders')
-  @Permissions('package-prealerts.manage')
-  syncSheetsOrders() {
-    return this.sheetsSyncService.syncOrderEnrichment();
-  }
-
   @Post('integrations/sheets/sync')
   @Permissions('package-prealerts.manage')
   syncSheetsExchange() {

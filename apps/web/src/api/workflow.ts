@@ -89,7 +89,6 @@ export const packagePrealertsApi = {
     request<unknown>('patch', `/package-prealerts/alerts/${id}`, { data }),
   sheetsTemplate: () => request<unknown>('get', '/package-prealerts/integrations/sheets/template'),
   pushSheets: () => request<unknown>('post', '/package-prealerts/integrations/sheets/push'),
-  syncOrders: () => request<unknown>('post', '/package-prealerts/integrations/sheets/orders'),
   pullSheets: () => request<unknown>('post', '/package-prealerts/integrations/sheets/pull'),
   syncSheets: () => request<unknown>('post', '/package-prealerts/integrations/sheets/sync'),
 };

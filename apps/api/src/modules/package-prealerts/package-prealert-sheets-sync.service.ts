@@ -41,8 +41,6 @@ const statusHeaders = [
   '更新时间',
 ];
 
-const orderHeaders = ['预报仓库', '单号/物流单号', '邮箱', '名字', '超链接'];
-
 const returnStatusReceivedValues = new Set(['RECEIVED', '已收到', '已入库']);
 const returnStatusNotReceivedValues = new Set(['NOT_RECEIVED', '未收到', '异常']);
 
@@ -113,16 +111,19 @@ export class PackagePrealertSheetsSyncService {
     this.assertConfigured();
     const rows = await this.sheetsClient.readStatusRows();
     const records = this.toStatusRecords(rows);
+    const prealertRows = this.toStatusRecords(await this.sheetsClient.readPrealertRows());
     let matched = 0;
     let received = 0;
     let alerted = 0;
     let skipped = 0;
+    let updatedPrealertSheet = 0;
     const unmatched: Array<{
       rowNumber: number;
       trackingNo?: string;
       prealertId?: string;
       prealertLink?: string;
     }> = [];
+    const sheetUpdates: Array<{ rowNumber: number; values: string[] }> = [];
 
     for (const record of records) {
       const row = this.toReturnRow(record.fields);
@@ -143,83 +144,22 @@ export class PackagePrealertSheetsSyncService {
       }
 
       const result = this.classifyReturn(row);
-      await this.applyReturn(item, row, result);
+      const updated = await this.applyReturn(item, row, result);
+      if (updated) {
+        const prealertSheetRow = this.findPrealertSheetRow(prealertRows, updated);
+        if (prealertSheetRow) {
+          sheetUpdates.push({
+            rowNumber: prealertSheetRow.rowNumber,
+            values: this.toPrealertRow(updated, this.toPrealertOverridesFromStatus(row)),
+          });
+        }
+      }
       matched += 1;
       if (result === 'RECEIVED') {
         received += 1;
       }
       if (result === 'ALERT') {
         alerted += 1;
-      }
-    }
-
-    return {
-      configured: true,
-      sourceSheet: this.sheetsClient.getStatusSheetName(),
-      scanned: records.length,
-      matched,
-      received,
-      alerted,
-      skipped,
-      unmatched,
-    };
-  }
-
-  async syncExchange() {
-    const push = await this.pushPendingPrealerts();
-    const orders = await this.syncOrderEnrichment();
-    const pull = await this.pullWarehouseReturns();
-    return { push, orders, pull };
-  }
-
-  async syncOrderEnrichment() {
-    this.assertConfigured();
-    const rows = await this.sheetsClient.readOrderRows();
-    const records = this.toStatusRecords(rows);
-    const orderRows = records
-      .map((record) => ({ rowNumber: record.rowNumber, row: this.toOrderRow(record.fields) }))
-      .filter((record) => record.row.prealertLink || record.row.trackingNo);
-    const prealertRows = this.toStatusRecords(await this.sheetsClient.readPrealertRows());
-
-    let matched = 0;
-    let updatedLocal = 0;
-    let updatedPrealertSheet = 0;
-    let skipped = 0;
-    const unmatched: Array<{ rowNumber: number; trackingNo?: string; prealertLink?: string }> = [];
-    const errors: Array<{ rowNumber: number; trackingNo?: string; error: string }> = [];
-    const sheetUpdates: Array<{ rowNumber: number; values: string[] }> = [];
-
-    for (const record of orderRows) {
-      const item = await this.findPrealertForOrder(record.row);
-      if (!item) {
-        unmatched.push({
-          rowNumber: record.rowNumber,
-          trackingNo: record.row.trackingNo,
-          prealertLink: record.row.prealertLink,
-        });
-        skipped += 1;
-        continue;
-      }
-
-      matched += 1;
-      try {
-        const result = await this.applyOrderEnrichment(item, record.row);
-        if (result.changed) {
-          updatedLocal += 1;
-        }
-        const prealertSheetRow = this.findPrealertSheetRow(prealertRows, result.item);
-        if (prealertSheetRow) {
-          sheetUpdates.push({
-            rowNumber: prealertSheetRow.rowNumber,
-            values: this.toPrealertRow(result.item, this.toPrealertOverrides(record.row)),
-          });
-        }
-      } catch (error) {
-        errors.push({
-          rowNumber: record.rowNumber,
-          trackingNo: record.row.trackingNo,
-          error: error instanceof Error ? error.message : 'Unknown order enrichment error.',
-        });
       }
     }
 
@@ -230,16 +170,22 @@ export class PackagePrealertSheetsSyncService {
 
     return {
       configured: true,
-      sourceSheet: this.sheetsClient.getOrderSheetName(),
+      sourceSheet: this.sheetsClient.getStatusSheetName(),
       targetSheet: this.sheetsClient.getPrealertSheetName(),
       scanned: records.length,
       matched,
-      updatedLocal,
+      received,
+      alerted,
       updatedPrealertSheet,
       skipped,
       unmatched,
-      errors,
     };
+  }
+
+  async syncExchange() {
+    const push = await this.pushPendingPrealerts();
+    const pull = await this.pullWarehouseReturns();
+    return { push, pull };
   }
 
   template() {
@@ -261,13 +207,8 @@ export class PackagePrealertSheetsSyncService {
           direction: '对方写入，WMS 读取',
           requiredFields: statusHeaders,
         },
-        {
-          name: '订单',
-          direction: 'WMS 读取，按 Apple 链接补全物流单号，再回写预报',
-          requiredFields: orderHeaders,
-        },
       ],
-      matching: '状态回传优先使用预报ID，缺失时使用物流单号；订单补全优先使用 Apple 链接或订单号。',
+      matching: '状态回传优先使用预报ID，其次使用 Apple 链接或物流单号。',
       alertRule: '订单状态为 DELIVERED 且入库日期为空，或提醒包含“未收到”，系统标记为异常。',
     };
   }
@@ -314,17 +255,27 @@ export class PackagePrealertSheetsSyncService {
   }
 
   private toReturnRow(fields: Record<string, unknown>) {
+    const trackingNo = (
+      this.fieldText(fields, '物流单号') ?? this.fieldText(fields, '单号')
+    )
+      ?.replace(/\s+/g, '')
+      .toUpperCase();
     return {
       prealertId: this.fieldText(fields, '预报ID'),
-      trackingNo: this.fieldText(fields, '物流单号')?.replace(/\s+/g, '').toUpperCase(),
+      trackingNo,
       carrier: this.fieldText(fields, '物流类型'),
       trackingLink: this.fieldText(fields, '物流查询链接'),
       prealertLink:
+        this.fieldText(fields, '超链接') ??
         this.fieldText(fields, '链接') ??
         this.fieldText(fields, '订单链接') ??
         this.fieldText(fields, 'Apple订单链接'),
       customerName: this.fieldText(fields, '客户'),
       warehouse: this.fieldText(fields, '仓库'),
+      productModel: this.fieldText(fields, '型号'),
+      recipientName: this.fieldText(fields, '名字') ?? this.fieldText(fields, '姓名'),
+      estimatedDelivery: this.fieldText(fields, '预计交付日期'),
+      billingName: this.fieldText(fields, '账单姓名'),
       receivingStatus: this.fieldText(fields, '入库状态'),
       inboundDate: this.fieldText(fields, '入库日期') ?? this.fieldText(fields, '入库时间'),
       deliveredDate: this.fieldText(fields, '送达日期'),
@@ -335,54 +286,6 @@ export class PackagePrealertSheetsSyncService {
     };
   }
 
-  private toOrderRow(fields: Record<string, unknown>) {
-    const trackingNo = (
-      this.fieldText(fields, '单号') ?? this.fieldText(fields, '物流单号')
-    )
-      ?.replace(/\s+/g, '')
-      .toUpperCase();
-    return {
-      warehouse: this.fieldText(fields, '预报仓库') ?? this.fieldText(fields, '仓库'),
-      trackingNo,
-      email: this.fieldText(fields, '邮箱'),
-      recipientName: this.fieldText(fields, '名字') ?? this.fieldText(fields, '姓名'),
-      productModel: this.fieldText(fields, '型号'),
-      carrier: this.fieldText(fields, '物流类型'),
-      estimatedDelivery: this.fieldText(fields, '预计交付日期'),
-      trackingLink: this.fieldText(fields, '物流查询链接'),
-      queriedAt: this.fieldText(fields, '查询时间'),
-      billingName: this.fieldText(fields, '账单姓名'),
-      orderStatus: this.fieldText(fields, '订单状态'),
-      prealertLink:
-        this.fieldText(fields, '超链接') ??
-        this.fieldText(fields, '链接') ??
-        this.fieldText(fields, '订单链接') ??
-        this.fieldText(fields, 'Apple订单链接'),
-    };
-  }
-
-  private async findPrealertForOrder(row: OrderSheetRow) {
-    if (row.prealertLink) {
-      const item = await this.findPrealertByReturnLink(row.prealertLink);
-      if (item) {
-        return this.findPrealertPushRecord(item.id);
-      }
-    }
-
-    if (!row.trackingNo) {
-      return null;
-    }
-
-    const item = await this.prisma.packagePrealertItem.findFirst({
-      where: {
-        trackingNo: row.trackingNo,
-        receivingStatus: { not: PackageReceivingStatus.VOIDED },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    return item ? this.findPrealertPushRecord(item.id) : null;
-  }
-
   private findPrealertPushRecord(id: string) {
     return this.prisma.packagePrealertItem.findUnique({
       where: { id },
@@ -390,51 +293,14 @@ export class PackagePrealertSheetsSyncService {
     });
   }
 
-  private async applyOrderEnrichment(item: PrealertPushRecord, row: OrderSheetRow) {
-    const updateData: Prisma.PackagePrealertItemUpdateInput = {};
-    const returnedTrackingNo = row.trackingNo;
-
-    if (
-      returnedTrackingNo &&
-      this.shouldReplaceOrderReference(item.trackingNo, returnedTrackingNo)
-    ) {
-      updateData.trackingNo = returnedTrackingNo;
-      updateData.carrier = this.detectCarrier(returnedTrackingNo);
-      updateData.exchangePushStatus = PackageExchangePushStatus.PUSHED;
-      updateData.exchangeSyncError = null;
-    }
-
-    if (row.prealertLink && row.prealertLink !== item.originalTrackingLink) {
-      updateData.originalTrackingLink = row.prealertLink;
-    }
-    if (row.recipientName && row.recipientName !== item.recipientName) {
-      updateData.recipientName = row.recipientName;
-    }
-    if (row.warehouse && row.warehouse !== item.notes) {
-      updateData.notes = row.warehouse;
-    }
-
-    const hasChanges = Object.keys(updateData).length > 0;
-    if (!hasChanges) {
-      return { item, changed: false };
-    }
-
-    const updated = await this.prisma.packagePrealertItem.update({
-      where: { id: item.id },
-      data: updateData,
-      include: { batch: true, customer: true },
-    });
-    return { item: updated, changed: true };
-  }
-
-  private toPrealertOverrides(row: OrderSheetRow): Partial<PrealertSheetFields> {
+  private toPrealertOverridesFromStatus(row: WarehouseReturnRow): Partial<PrealertSheetFields> {
     const carrier = row.carrier ?? (row.trackingNo ? this.detectCarrier(row.trackingNo) : '');
     return {
       型号: row.productModel ?? '',
       物流类型: carrier,
       预计交付日期: row.estimatedDelivery ?? '',
       物流查询链接: row.trackingLink ?? (row.trackingNo ? this.toTrackingUrlFor(row.trackingNo, carrier) : ''),
-      查询时间: row.queriedAt ?? this.formatDateTime(new Date()),
+      查询时间: row.updatedAt ?? this.formatDateTime(new Date()),
       账单姓名: row.billingName ?? '',
       订单状态: row.orderStatus ?? '',
     };
@@ -549,9 +415,19 @@ export class PackagePrealertSheetsSyncService {
     ) {
       updateData.trackingNo = returnedTrackingNo;
       updateData.carrier = this.detectCarrier(returnedTrackingNo, row.trackingLink, row.carrier);
-      if (item.receivingStatus !== PackageReceivingStatus.RECEIVED && result !== 'RECEIVED') {
-        updateData.exchangePushStatus = PackageExchangePushStatus.PENDING;
-      }
+      updateData.exchangePushStatus = PackageExchangePushStatus.PUSHED;
+    }
+    if (row.prealertLink && row.prealertLink !== item.originalTrackingLink) {
+      updateData.originalTrackingLink = row.prealertLink;
+    }
+    if (row.productModel && row.productModel !== item.productModel) {
+      updateData.productModel = row.productModel;
+    }
+    if (row.recipientName && row.recipientName !== item.recipientName) {
+      updateData.recipientName = row.recipientName;
+    }
+    if (row.warehouse && row.warehouse !== item.notes) {
+      updateData.notes = row.warehouse;
     }
 
     if (deliveredAt || row.orderStatus?.toUpperCase() === 'DELIVERED') {
@@ -615,6 +491,8 @@ export class PackagePrealertSheetsSyncService {
         }
       }
     });
+
+    return this.findPrealertPushRecord(item.id);
   }
 
   private fieldText(fields: Record<string, unknown>, key: string) {
@@ -725,5 +603,4 @@ type PrealertPushRecord = Prisma.PackagePrealertItemGetPayload<{
 }>;
 
 type WarehouseReturnRow = ReturnType<PackagePrealertSheetsSyncService['toReturnRow']>;
-type OrderSheetRow = ReturnType<PackagePrealertSheetsSyncService['toOrderRow']>;
 type PrealertSheetFields = Record<(typeof prealertHeaders)[number], string>;

@@ -174,12 +174,9 @@ export function PackagePrealertsPage() {
   });
 
   const sheetsSyncMutation = useMutation({
-    mutationFn: (mode: 'push' | 'orders' | 'pull' | 'sync') => {
+    mutationFn: (mode: 'push' | 'pull' | 'sync') => {
       if (mode === 'push') {
         return packagePrealertsApi.pushSheets();
-      }
-      if (mode === 'orders') {
-        return packagePrealertsApi.syncOrders();
       }
       if (mode === 'pull') {
         return packagePrealertsApi.pullSheets();
@@ -191,11 +188,9 @@ export function PackagePrealertsPage() {
       setMessage(
         mode === 'push'
           ? '预报 sheet 写入完成'
-          : mode === 'orders'
-            ? '订单 sheet 补全完成'
-            : mode === 'pull'
-              ? '状态 sheet 读取完成'
-              : 'Google 表格同步完成',
+          : mode === 'pull'
+            ? '状态 sheet 补全完成'
+            : 'Google 表格同步完成',
       );
       setErrorMessage('');
       void queryClient.invalidateQueries({ queryKey: ['package-prealerts'] });
@@ -384,7 +379,7 @@ export function PackagePrealertsPage() {
       <section className="panel data-panel">
         <div className="section-title">
           <h2>Google 表格同步</h2>
-          <span>写“预报”，读“订单”补全，再读“状态”回传</span>
+          <span>写“预报”，读“状态”补全单号和入库结果</span>
         </div>
         <div className="customer-row-actions">
           <button
@@ -397,19 +392,11 @@ export function PackagePrealertsPage() {
           </button>
           <button
             type="button"
-            onClick={() => sheetsSyncMutation.mutate('orders')}
-            disabled={sheetsSyncMutation.isPending}
-          >
-            <RefreshCw size={16} />
-            读取订单补全
-          </button>
-          <button
-            type="button"
             onClick={() => sheetsSyncMutation.mutate('pull')}
             disabled={sheetsSyncMutation.isPending}
           >
             <RefreshCw size={16} />
-            读取状态
+            读取状态补全
           </button>
           <button
             type="button"

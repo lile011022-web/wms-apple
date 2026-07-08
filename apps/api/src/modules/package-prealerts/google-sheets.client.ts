@@ -24,10 +24,6 @@ export class GoogleSheetsClient {
     return this.configService.get<string>('GOOGLE_SHEETS_STATUS_SHEET_NAME') || '状态';
   }
 
-  getOrderSheetName() {
-    return this.configService.get<string>('GOOGLE_SHEETS_ORDER_SHEET_NAME') || '订单';
-  }
-
   async appendPrealertRows(headers: string[], rows: string[][]) {
     if (rows.length === 0) {
       return { updatedRows: 0 };
@@ -60,10 +56,6 @@ export class GoogleSheetsClient {
 
   async readStatusRows() {
     return this.readRows(this.getStatusSheetName(), 'A:Z');
-  }
-
-  async readOrderRows() {
-    return this.readRows(this.getOrderSheetName(), 'A:Z');
   }
 
   async readPrealertRows() {
