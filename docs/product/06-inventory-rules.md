@@ -105,6 +105,9 @@ The IMEI/detail inventory table may expose destructive cleanup controls:
 - Operators can select one or more visible inventory detail rows and delete those exact customer
   inventory rows.
 - Operators can delete all detail rows in the current detail page.
+- Operators can delete one SKU summary row after selecting a customer. This deletes only the
+  inventory rows matching the current customer, warehouse, status, date range, and SKU row; it does
+  not delete UPC/SKU/product catalog data.
 - Deletion requires a selected customer; all-customer lookup views remain read-only for destructive
   cleanup.
 - Deletion must show a confirmation prompt before calling the API.

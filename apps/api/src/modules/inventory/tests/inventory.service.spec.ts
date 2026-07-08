@@ -139,7 +139,6 @@ function createService(repositoryOverrides: Partial<Record<keyof InventoryReposi
     findItemById: jest.fn().mockResolvedValue(inventoryItem),
     deleteProducts: jest.fn().mockResolvedValue({
       deletedInventoryItems: 3,
-      deletedOutboundBoxItems: 1,
       clearedInboundLinks: 3,
       clearedExceptionLinks: 0,
     }),
@@ -362,17 +361,34 @@ describe('InventoryService', () => {
           customerId: ' customer-1 ',
           warehouseId: ' warehouse-1 ',
           productIds: ['product-1', 'product-1', ' product-2 '],
+          status: InventoryStatus.IN_STOCK,
+          dateFrom: '2026-07-08',
+          dateTo: '2026-07-08',
         },
         operator,
       ),
     ).resolves.toMatchObject({
       deletedInventoryItems: 3,
-      deletedOutboundBoxItems: 1,
     });
     expect(repository.deleteProducts).toHaveBeenCalledWith({
       customerId: 'customer-1',
       warehouseId: 'warehouse-1',
       productIds: ['product-1', 'product-2'],
+      where: expect.objectContaining({
+        customerId: 'customer-1',
+        warehouseId: 'warehouse-1',
+        productId: { in: ['product-1', 'product-2'] },
+        status: InventoryStatus.IN_STOCK,
+        AND: expect.arrayContaining([
+          expect.objectContaining({
+            status: InventoryStatus.IN_STOCK,
+            receivedAt: expect.objectContaining({
+              gte: new Date('2026-07-08T00:00:00.000Z'),
+              lte: new Date('2026-07-08T23:59:59.999Z'),
+            }),
+          }),
+        ]),
+      }),
       operator,
     });
   });

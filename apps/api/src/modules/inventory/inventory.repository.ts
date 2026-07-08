@@ -202,16 +202,12 @@ export class InventoryRepository {
     customerId: string;
     warehouseId?: string;
     productIds: string[];
+    where: Prisma.InventoryItemWhereInput;
     operator: AuthenticatedUser;
   }) {
     return this.prisma.$transaction(async (tx) => {
-      const where: Prisma.InventoryItemWhereInput = {
-        customerId: input.customerId,
-        warehouseId: input.warehouseId,
-        productId: { in: input.productIds },
-      };
       const inventoryItems = await tx.inventoryItem.findMany({
-        where,
+        where: input.where,
         select: {
           id: true,
           productId: true,
@@ -219,6 +215,17 @@ export class InventoryRepository {
           imei: true,
           serial: true,
           status: true,
+          outboundBoxItems: {
+            select: {
+              id: true,
+              outboundBox: {
+                select: {
+                  boxNo: true,
+                  status: true,
+                },
+              },
+            },
+          },
         },
       });
       const inventoryItemIds = inventoryItems.map((item) => item.id);
@@ -226,15 +233,27 @@ export class InventoryRepository {
       if (!inventoryItemIds.length) {
         return {
           deletedInventoryItems: 0,
-          deletedOutboundBoxItems: 0,
           clearedInboundLinks: 0,
           clearedExceptionLinks: 0,
         };
       }
 
-      const deletedOutboundBoxItems = await tx.outboundBoxItem.deleteMany({
-        where: { inventoryItemId: { in: inventoryItemIds } },
-      });
+      const blockedItems = inventoryItems.filter(
+        (item) =>
+          item.status === InventoryStatus.PACKED ||
+          item.status === InventoryStatus.OUTBOUND ||
+          item.outboundBoxItems.length > 0,
+      );
+      if (blockedItems.length > 0) {
+        const labels = blockedItems
+          .slice(0, 10)
+          .map((item) => item.imei ?? item.serial ?? item.upc)
+          .join(', ');
+        throw new BadRequestException(
+          `已装箱或已出库的库存 SKU 不能在客户库存页删除，请先处理出库箱关联: ${labels}`,
+        );
+      }
+
       const clearedInboundLinks = await tx.inboundItem.updateMany({
         where: { inventoryItemId: { in: inventoryItemIds } },
         data: { inventoryItemId: null },
@@ -263,7 +282,6 @@ export class InventoryRepository {
           },
           afterSnapshot: {
             deletedInventoryItems: deletedInventoryItems.count,
-            deletedOutboundBoxItems: deletedOutboundBoxItems.count,
             clearedInboundLinks: clearedInboundLinks.count,
             clearedExceptionLinks: clearedExceptionLinks.count,
           },
@@ -279,7 +297,6 @@ export class InventoryRepository {
 
       return {
         deletedInventoryItems: deletedInventoryItems.count,
-        deletedOutboundBoxItems: deletedOutboundBoxItems.count,
         clearedInboundLinks: clearedInboundLinks.count,
         clearedExceptionLinks: clearedExceptionLinks.count,
       };

@@ -118,19 +118,24 @@ Request body:
 {
   "customerId": "customer-1",
   "warehouseId": "warehouse-1",
-  "productIds": ["product-1", "product-2"]
+  "productIds": ["product-1", "product-2"],
+  "status": "IN_STOCK",
+  "dateFrom": "2026-07-08T00:00:00.000Z",
+  "dateTo": "2026-07-08T23:59:59.999Z"
 }
 ```
 
-The backend deletes inventory rows matching the selected customer, optional warehouse, and selected
-products. Before deleting the inventory rows, it removes related outbound box item rows and clears
-linked `inbound_items.inventoryItemId` and `exception_records.inventoryItemId` values so foreign keys
-do not block the cleanup. The customer record, product catalog, inbound batch, and inbound item rows
-remain in place for historical review. The operation writes an audit log with the deleted item count.
+The backend deletes inventory rows matching the selected customer, optional warehouse, selected
+products, optional status, and optional status-aware business date range. Packed or outbound rows, or
+rows already linked to outbound box items, are rejected so operators do not silently break shipping
+history. Before deleting the inventory rows, it clears linked `inbound_items.inventoryItemId` and
+`exception_records.inventoryItemId` values so foreign keys do not block the cleanup. The customer
+record, product catalog, inbound batch, and inbound item rows remain in place for historical review.
+The operation writes an audit log with the deleted item count.
 
-This route is retained for API compatibility. The operator-facing customer inventory page should use
-`DELETE /inventory/items` so staff delete exact IMEI/Serial inventory detail rows rather than acting
-from the SKU summary.
+The operator-facing customer inventory page uses this route for SKU summary row cleanup after a
+specific customer is selected. All-customer SKU lookup views remain read-only for destructive
+cleanup.
 
 ## GET /inventory/items
 

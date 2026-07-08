@@ -146,6 +146,27 @@ export function CustomerInventoryPage() {
       window.alert(error instanceof Error ? error.message : '删除库存明细失败');
     },
   });
+  const deleteInventoryProductMutation = useMutation({
+    mutationFn: (row: ProductSummaryItem) =>
+      inventoryApi.deleteProducts({
+        customerId,
+        warehouseId: warehouseId || undefined,
+        productIds: [row.product.id],
+        status: statusFilter || undefined,
+        dateFrom: toIsoDateTime(activityDateFrom),
+        dateTo: toIsoDateTime(activityDateTo),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['inventory-customer-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-products'] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-items'] }),
+      ]);
+    },
+    onError: (error) => {
+      window.alert(error instanceof Error ? error.message : '删除 SKU 库存失败');
+    },
+  });
   const downloadInventoryDetailMutation = useMutation({
     mutationFn: async () => {
       const created = (await reportsApi.createExport({
@@ -234,6 +255,19 @@ export function CustomerInventoryPage() {
       return;
     }
     deleteInventoryItemsMutation.mutate(normalizedItemIds);
+  };
+
+  const deleteInventoryProduct = (row: ProductSummaryItem) => {
+    if (!customerId || deleteInventoryProductMutation.isPending) {
+      return;
+    }
+    const confirmed = window.confirm(
+      `确认删除这个 SKU 的当前库存？\n\n客户：${formatCustomerLabel(row.customer)}\nSKU：${row.product.sku}\n数量：${row.summary.totalQuantity}\n\n系统只会删除当前客户、仓库、日期和状态筛选下的库存行，不会删除 UPC、SKU 或商品资料。已装箱/已出库明细会被系统拦截。`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    deleteInventoryProductMutation.mutate(row);
   };
 
   return (
@@ -457,6 +491,7 @@ export function CustomerInventoryPage() {
               <th>已装箱</th>
               <th>已出库</th>
               <th>异常</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -476,11 +511,23 @@ export function CustomerInventoryPage() {
                 <td>{row.summary.packedQuantity}</td>
                 <td>{row.summary.outboundQuantity}</td>
                 <td>{row.summary.exceptionQuantity}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="table-action danger"
+                    disabled={!customerId || deleteInventoryProductMutation.isPending}
+                    onClick={() => deleteInventoryProduct(row)}
+                    title={customerId ? '删除这个 SKU 的当前库存' : '请选择客户后删除'}
+                  >
+                    <Trash2 size={15} />
+                    删除
+                  </button>
+                </td>
               </tr>
             ))}
             {!productSummary || productSummary.items.length === 0 ? (
               <tr>
-                <td colSpan={12}>暂无 SKU 汇总</td>
+                <td colSpan={13}>暂无 SKU 汇总</td>
               </tr>
             ) : null}
           </tbody>

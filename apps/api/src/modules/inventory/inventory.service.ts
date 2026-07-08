@@ -196,6 +196,14 @@ export class InventoryService {
       customerId,
       warehouseId: this.trimOptional(dto.warehouseId),
       productIds,
+      where: this.toBaseWhere({
+        customerId,
+        warehouseId: this.trimOptional(dto.warehouseId),
+        productIds,
+        status: dto.status,
+        dateFrom: dto.dateFrom,
+        dateTo: dto.dateTo,
+      }),
       operator,
     });
   }
@@ -272,6 +280,7 @@ export class InventoryService {
     customerId?: string;
     warehouseId?: string;
     productId?: string;
+    productIds?: string[];
     status?: InventoryStatus;
     upc?: string;
     imei?: string;
@@ -299,7 +308,7 @@ export class InventoryService {
       AND: andFilters.length ? andFilters : undefined,
       customerId: params.customerId,
       warehouseId: params.warehouseId,
-      productId: params.productId,
+      productId: params.productIds?.length ? { in: params.productIds } : params.productId,
       status: params.status,
       upc: params.upc ? { contains: params.upc } : undefined,
       imei: params.imei ? { contains: params.imei } : undefined,
