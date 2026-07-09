@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   CustomerStatus,
   ExceptionType,
@@ -36,6 +37,7 @@ export class InboundService {
   constructor(
     private readonly inboundRepository: InboundRepository,
     private readonly settingsService: SettingsService,
+    private readonly configService: ConfigService,
   ) {}
 
   async createDraft(dto: CreateInboundDraftDto, operator: AuthenticatedUser) {
@@ -267,6 +269,7 @@ export class InboundService {
       operatorId: operator.id,
       duplicateImeiExceptionEnabled: settings.exceptionHandling.createDuplicateImeiException,
       duplicateUpsExceptionEnabled: settings.exceptionHandling.createDuplicateUpsException,
+      packagePrealertsEnabled: this.arePackagePrealertsEnabled(),
     });
 
     return this.toDraftResponse(confirmed);
@@ -729,6 +732,11 @@ export class InboundService {
       dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
       dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
     };
+  }
+
+  private arePackagePrealertsEnabled() {
+    const value = this.configService.get<string>('PACKAGE_PREALERTS_ENABLED') ?? 'false';
+    return ['true', '1', 'yes'].includes(value.toLowerCase());
   }
 
   private normalizeUpc(value: string) {

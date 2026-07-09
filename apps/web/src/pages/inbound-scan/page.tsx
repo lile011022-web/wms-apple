@@ -23,6 +23,7 @@ import {
 import { getSystemSettings, listWarehouses } from '../../api/settings';
 import { customersApi, inboundApi, packagePrealertsApi } from '../../api/workflow';
 import { PaginationControls } from '../../components/pagination-controls';
+import { packagePrealertsEnabled } from '../../config/feature-flags';
 import { selectDefaultWarehouseId } from '../../utils/default-warehouse';
 
 const inboundLockStorageKey = 'wms_scan_inbound_lock';
@@ -643,7 +644,7 @@ export function InboundScanPage() {
 
   useEffect(() => {
     const normalized = normalizeTrackingInput(upsTrackingNo);
-    if (!normalized || normalized.length < 8 || blockingExceptionItem) {
+    if (!packagePrealertsEnabled || !normalized || normalized.length < 8 || blockingExceptionItem) {
       setPrealertMatch(null);
       return;
     }
@@ -1002,7 +1003,7 @@ export function InboundScanPage() {
               }}
             />
           </label>
-          {prealertMatch ? (
+          {packagePrealertsEnabled && prealertMatch ? (
             <div
               className={`prealert-match-card ${prealertMatch.matched ? 'matched' : 'unmatched'}`}
             >

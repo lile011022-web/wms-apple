@@ -1,5 +1,6 @@
 /* global jest */
 import { ConflictException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   CustomerStatus,
   InboundBatchStatus,
@@ -205,9 +206,15 @@ describe('Core inbound, outbound, and customer-change workflow', () => {
         inboundItems: [confirmedInboundItem],
       }),
     } as unknown as jest.Mocked<InboundRepository>;
-    const inboundService = new InboundService(inboundRepository, {
-      getSettings: jest.fn().mockResolvedValue(settings),
-    } as unknown as SettingsService);
+    const inboundService = new InboundService(
+      inboundRepository,
+      {
+        getSettings: jest.fn().mockResolvedValue(settings),
+      } as unknown as SettingsService,
+      {
+        get: jest.fn().mockReturnValue('false'),
+      } as unknown as ConfigService,
+    );
 
     const createdDraft = await inboundService.createDraft(
       { customerId: currentCustomer.id, warehouseId: warehouse.id },

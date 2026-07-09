@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { packagePrealertsEnabled } from '../config/feature-flags';
 import { AppLayout } from '../layouts/app-layout';
 import { BatchCustomerChangePage } from '../pages/batch-customer-change/page';
 import { CustomerInventoryPage } from '../pages/customer-inventory/page';
@@ -21,8 +22,12 @@ export function AppRouter() {
         <Route element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="inbound-scan" element={<InboundScanPage />} />
-          <Route path="package-prealerts" element={<PackagePrealertsPage />} />
-          <Route path="package-alerts" element={<PackageAlertsPage />} />
+          {packagePrealertsEnabled ? (
+            <>
+              <Route path="package-prealerts" element={<PackagePrealertsPage />} />
+              <Route path="package-alerts" element={<PackageAlertsPage />} />
+            </>
+          ) : null}
           <Route path="inbound-records" element={<InboundRecordsPage />} />
           <Route path="customer-inventory" element={<CustomerInventoryPage />} />
           <Route path="outbound-packing" element={<OutboundPackingPage />} />

@@ -10,6 +10,23 @@ Prealert records are not inventory. Inventory is created only by the existing in
 
 ETA and delivered time are logistics-query outputs. Operators should not need to manually provide ETA during prealert creation.
 
+## Runtime Status
+
+As of 2026-07-09, the package prealert implementation is retained but disabled by default.
+When disabled:
+
+- Frontend prealert and alert routes are hidden.
+- Inbound scanning does not call `/package-prealerts/match`.
+- Inbound confirmation does not link package prealerts or resolve prealert alerts.
+- Package prealert API routes return `404 Package prealerts are currently disabled.`
+
+Enable the retained implementation only when the workflow is approved:
+
+```bash
+PACKAGE_PREALERTS_ENABLED=true
+VITE_ENABLE_PACKAGE_PREALERTS=true
+```
+
 ## Permissions
 
 - `package-prealerts.read`: list prealerts, alerts, summaries, and inbound matching results.

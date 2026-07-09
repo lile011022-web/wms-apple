@@ -21,6 +21,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { getCurrentUser, login, logout, register } from '../api/auth';
 import { authTokenStore } from '../api/token-store';
+import { packagePrealertsEnabled } from '../config/feature-flags';
 
 const navigationItems = [
   {
@@ -28,8 +29,12 @@ const navigationItems = [
     links: [
       { label: 'Dashboard', to: '/', icon: BarChart3 },
       { label: '入库扫码', to: '/inbound-scan', icon: ScanLine },
-      { label: '包裹预报', to: '/package-prealerts', icon: PackageSearch },
-      { label: '包裹预警', to: '/package-alerts', icon: AlertTriangle },
+      ...(packagePrealertsEnabled
+        ? [
+            { label: '包裹预报', to: '/package-prealerts', icon: PackageSearch },
+            { label: '包裹预警', to: '/package-alerts', icon: AlertTriangle },
+          ]
+        : []),
       { label: '入库记录', to: '/inbound-records', icon: ClipboardList },
       { label: '客户库存', to: '/customer-inventory', icon: Boxes },
       { label: '出库装箱', to: '/outbound-packing', icon: PackageCheck },

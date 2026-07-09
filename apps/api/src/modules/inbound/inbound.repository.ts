@@ -243,6 +243,7 @@ export class InboundRepository {
     operatorId: string;
     duplicateImeiExceptionEnabled: boolean;
     duplicateUpsExceptionEnabled: boolean;
+    packagePrealertsEnabled?: boolean;
   }) {
     return this.prisma.$transaction(
       async (tx) => {
@@ -377,47 +378,49 @@ export class InboundRepository {
           },
         });
 
-        const firstConfirmedItemByTrackingNo = new Map<string, string>();
-        for (const item of confirmableItems) {
-          if (item.upsTrackingNo && confirmedItemIds.includes(item.id)) {
-            firstConfirmedItemByTrackingNo.set(
-              item.upsTrackingNo,
-              firstConfirmedItemByTrackingNo.get(item.upsTrackingNo) ?? item.id,
-            );
+        if (input.packagePrealertsEnabled) {
+          const firstConfirmedItemByTrackingNo = new Map<string, string>();
+          for (const item of confirmableItems) {
+            if (item.upsTrackingNo && confirmedItemIds.includes(item.id)) {
+              firstConfirmedItemByTrackingNo.set(
+                item.upsTrackingNo,
+                firstConfirmedItemByTrackingNo.get(item.upsTrackingNo) ?? item.id,
+              );
+            }
           }
-        }
 
-        for (const [trackingNo, inboundItemId] of firstConfirmedItemByTrackingNo.entries()) {
-          const prealertItem = await tx.packagePrealertItem.findFirst({
-            where: {
-              trackingNo,
-              receivingStatus: 'NOT_RECEIVED',
-            },
-            orderBy: { createdAt: 'desc' },
-          });
-          if (!prealertItem) {
-            continue;
+          for (const [trackingNo, inboundItemId] of firstConfirmedItemByTrackingNo.entries()) {
+            const prealertItem = await tx.packagePrealertItem.findFirst({
+              where: {
+                trackingNo,
+                receivingStatus: 'NOT_RECEIVED',
+              },
+              orderBy: { createdAt: 'desc' },
+            });
+            if (!prealertItem) {
+              continue;
+            }
+            await tx.packagePrealertItem.update({
+              where: { id: prealertItem.id },
+              data: {
+                receivingStatus: 'RECEIVED',
+                inboundBatchId: draft.id,
+                inboundItemId,
+              },
+            });
+            await tx.packageAlert.updateMany({
+              where: {
+                prealertItemId: prealertItem.id,
+                status: { in: ['OPEN', 'IN_PROGRESS'] },
+                alertType: { in: ['DELIVERED_NOT_RECEIVED', 'ETA_OVERDUE'] },
+              },
+              data: {
+                status: 'RESOLVED',
+                resolvedAt: new Date(),
+                resolutionNote: 'Package linked to confirmed inbound batch.',
+              },
+            });
           }
-          await tx.packagePrealertItem.update({
-            where: { id: prealertItem.id },
-            data: {
-              receivingStatus: 'RECEIVED',
-              inboundBatchId: draft.id,
-              inboundItemId,
-            },
-          });
-          await tx.packageAlert.updateMany({
-            where: {
-              prealertItemId: prealertItem.id,
-              status: { in: ['OPEN', 'IN_PROGRESS'] },
-              alertType: { in: ['DELIVERED_NOT_RECEIVED', 'ETA_OVERDUE'] },
-            },
-            data: {
-              status: 'RESOLVED',
-              resolvedAt: new Date(),
-              resolutionNote: 'Package linked to confirmed inbound batch.',
-            },
-          });
         }
 
         return tx.inboundBatch.findUniqueOrThrow({

@@ -8,6 +8,7 @@ import {
   ProductStatus,
   InventoryStatus,
 } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
 import { SettingsService } from '../../settings/settings.service';
 import { InboundRepository } from '../inbound.repository';
 import { InboundService } from '../inbound.service';
@@ -207,10 +208,13 @@ function createService(repositoryOverrides: Partial<Record<keyof InboundReposito
   const settingsService = {
     getSettings: jest.fn().mockResolvedValue(settings),
   } as unknown as jest.Mocked<SettingsService>;
+  const configService = {
+    get: jest.fn().mockReturnValue('false'),
+  } as unknown as jest.Mocked<ConfigService>;
 
   return {
     repository,
-    service: new InboundService(repository, settingsService),
+    service: new InboundService(repository, settingsService, configService),
   };
 }
 

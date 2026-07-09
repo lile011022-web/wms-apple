@@ -24,12 +24,13 @@ import {
 } from './dto/list-package-prealerts-query.dto';
 import { MatchPackagePrealertQueryDto } from './dto/match-package-prealert-query.dto';
 import { PackagePrealertSheetsSyncService } from './package-prealert-sheets-sync.service';
+import { PackagePrealertsEnabledGuard } from './package-prealerts-enabled.guard';
 import { UpdatePackagePrealertStatusDto } from './dto/update-package-prealert-status.dto';
 import { PackagePrealertsService } from './package-prealerts.service';
 
 @ApiTags('Package Prealerts')
 @ApiBearerAuth('access-token')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(PackagePrealertsEnabledGuard, JwtAuthGuard, PermissionsGuard)
 @Controller('package-prealerts')
 export class PackagePrealertsController {
   constructor(
