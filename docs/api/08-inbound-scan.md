@@ -81,6 +81,24 @@ Example response:
 
 ## Add Preview Item
 
+## Restore My Latest Draft
+
+`GET /api/v1/inbound/drafts/latest/my`
+
+Returns the current authenticated operator's latest open `DRAFT` inbound batch, or `null` when that
+operator has no unfinished draft. The inbound scan page uses this endpoint when opening the page
+without a valid locally locked draft, so operators can leave for another page and come back to their
+own latest unfinished receiving batch.
+
+Rules:
+
+- Only the current operator's own `DRAFT` batch can be returned.
+- Confirmed or closed batches are not returned.
+- The web page should restore the draft's customer, customer alias, warehouse, review summary, and
+  pending detail rows before the operator continues scanning.
+
+## Add Preview Item
+
 `POST /api/v1/inbound/drafts/:id/items`
 
 ```json
@@ -98,34 +116,34 @@ Rules:
 - `upsTrackingNo` is required for scan entry. The API keeps the legacy field name, but the business
   meaning is package tracking number.
 - `trackingExceptionConfirmed` is optional. It should only be sent after the operator confirms a
-  package tracking warning. When true, USPS, non-9622 FedEx, duplicate tracking numbers from
-  confirmed records or the current draft, or other unsupported tracking formats can be saved to the
-  draft instead of being rejected. `BB0000` warehouse compensation package numbers, including the
-  exact value `BB0000`, do not need this exception flag unless a duplicate warning is being
-  deliberately confirmed.
+  package tracking warning. When true, USPS, non-9622 FedEx, and duplicate tracking numbers from
+  confirmed records or the current draft can be saved to the draft. Completely unsupported package
+  tracking values, random text, and non-tracking values are still rejected. `BB0000` warehouse
+  compensation package numbers, including the exact value `BB0000`, do not need this exception flag
+  unless a duplicate warning is being deliberately confirmed.
 - `scanMode` is optional and defaults to `STANDARD`.
 - `STANDARD` mode is the strict mode used by the web page's `一版模式`: package tracking number, UPC,
   and IMEI/Serial are required according to product rules.
 - `TRACKING_UPC` mode is the simplified web page mode: package tracking number and UPC can create a
   normal pending preview item without IMEI/Serial, as long as the UPC matches an active product.
-- UPC must match an active UPC mapping and active product, otherwise the preview item is saved as `EXCEPTION`.
-- If unmatched UPC exceptions are enabled, an `UPC_NOT_MATCHED` exception record is created.
+- UPC must match an active UPC mapping and active product. Unmatched UPC values are rejected before
+  a preview row is saved, so the operator must first maintain the UPC in 商品管理 and scan again.
 - In `STANDARD` mode, products with `requiresImei = true` require a valid IMEI. IMEI validation accepts 15-digit numeric phone IMEI values and 10-18 character uppercase alphanumeric iPad identifiers such as `SH9LRL91YFC`.
 - In `STANDARD` mode, products with `requiresImei = false` require either Serial or IMEI in this phase.
 - IMEI or Serial duplicated inside the same active draft is rejected immediately and must not create
   another `PENDING` preview row.
-- IMEI or Serial duplicated against existing inventory creates an exception preview item when
-  duplicate detection is enabled.
+- IMEI or Serial duplicated against existing inventory is rejected before a preview row is saved
+  when duplicate detection is enabled.
 - If the latest non-voided preview item in the active draft is still `EXCEPTION`, the API rejects
   adding another item with a conflict error. The operator must correct or remove that latest
   exception row first.
 
-The web client shows the latest added row below the scanner inputs. When exception rows exist in the
-active draft, clicking the exception metric locates the first exception row and opens that row for
-inline editing. Saving the row overwrites the original preview item and re-runs the same validation
-rules; it does not create a second preview item.
-The draft detail table stays in scan-time ascending order, so earlier rows remain at the top and
-the newest scan is shown at the bottom.
+The web client shows the current inbound draft directly below the customer lock area and above the
+scanner inputs. The draft detail table is the pre-confirmation review area: `PENDING` and
+`EXCEPTION` rows can be edited, saved, cancelled, or removed before final inbound confirmation.
+Saving the row overwrites the original preview item and re-runs the same validation rules; it does
+not create a second preview item. The draft detail table stays in scan-time ascending order, so
+earlier rows remain at the top and the newest scan is shown at the bottom.
 
 ## Update Preview Item
 
@@ -152,6 +170,8 @@ Rules:
 - Existing open exception records for the corrected row are marked `INVALID`, then the corrected row
   is validated again. If the corrected values are still invalid, a new open exception can be created
   for the same row.
+- Web table actions must stay usable at normal desktop widths; when the table is narrower than its
+  content, the action column remains visible while the row can scroll horizontally.
 
 ## Import Preview Items
 
@@ -182,10 +202,12 @@ Rules:
 - Up to 1000 rows can be submitted in one import.
 - If the latest non-voided preview item in the active draft is still `EXCEPTION`, import is rejected
   before any CSV row is appended. Correct or remove that latest exception row first.
-- Each row is added with the same validation and exception behavior as `POST /drafts/:id/items`.
+- Each row is added with the same validation behavior as `POST /drafts/:id/items`.
 - Standard CSV imports use three required columns: package tracking number (`单号`), UPC, and IMEI.
 - Valid rows are appended to the current draft immediately.
 - Failed rows are reported with row number and error message; other valid rows can still be imported.
+- Unmatched UPC rows, unsupported tracking rows, and inventory-duplicate IMEI/Serial rows are
+  reported as failed rows instead of being appended as draft exceptions.
 - Importing rows does not confirm inventory. Operators must still review the draft summary and click
   confirm inbound.
 

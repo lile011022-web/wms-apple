@@ -46,6 +46,7 @@ export const productsApi = {
 export const inboundApi = {
   createDraft: (data: Payload) => request<unknown>('post', '/inbound/drafts', { data }),
   getDraft: (id: string) => request<unknown>('get', `/inbound/drafts/${id}`),
+  getLatestDraft: () => request<unknown>('get', '/inbound/drafts/latest/my'),
   getDraftByBatchNo: (batchNo: string) =>
     request<unknown>('get', `/inbound/drafts/by-batch/${encodeURIComponent(batchNo)}`),
   scanUps: (id: string, data: Payload) =>

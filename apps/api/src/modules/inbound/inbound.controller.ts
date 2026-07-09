@@ -42,6 +42,11 @@ export class InboundController {
     return this.inboundService.getDraftByBatchNo(batchNo);
   }
 
+  @Get('drafts/latest/my')
+  getLatestDraft(@CurrentUser() user: AuthenticatedUser) {
+    return this.inboundService.getLatestDraftForOperator(user);
+  }
+
   @Get('drafts/:id')
   getDraft(@Param('id') id: string) {
     return this.inboundService.getDraft(id);

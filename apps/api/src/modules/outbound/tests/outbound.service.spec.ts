@@ -423,7 +423,7 @@ describe('OutboundService', () => {
     const renamedBox = {
       ...emptyBox,
       boxName: 'Apple Reseller Custom Box',
-      sizePreset: '14*14*14',
+      sizePreset: '16*16*12',
       weightLb: 42,
     };
     const { repository, service } = createService({
@@ -435,7 +435,7 @@ describe('OutboundService', () => {
         emptyBox.id,
         {
           boxName: '  Apple Reseller Custom Box  ',
-          sizePreset: '14*14*14',
+          sizePreset: '16*16*12',
           weightLb: 42,
         },
         user,
@@ -456,7 +456,7 @@ describe('OutboundService', () => {
         operatorId: user.id,
         data: expect.objectContaining({
           boxName: 'Apple Reseller Custom Box',
-          sizePreset: '14*14*14',
+          sizePreset: '16*16*12',
           weightLb: 42,
         }),
       }),

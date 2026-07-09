@@ -2,7 +2,13 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsIn, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
-export const outboundBoxSizePresets = ['12*12*12', '14*14*14', 'CUSTOM'] as const;
+export const outboundBoxSizePresets = [
+  '12*12*12',
+  '16*16*12',
+  '18*18*12',
+  '18*18*16',
+  'CUSTOM',
+] as const;
 
 export class CreateOutboundBoxDto {
   @ApiPropertyOptional({ example: 'cust_01H...' })

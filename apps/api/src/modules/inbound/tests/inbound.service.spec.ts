@@ -174,6 +174,7 @@ function createService(repositoryOverrides: Partial<Record<keyof InboundReposito
     createDraft: jest.fn().mockResolvedValue(draft),
     findDraftById: jest.fn().mockResolvedValue(draft),
     findDraftByBatchNo: jest.fn().mockResolvedValue(draft),
+    findLatestDraftByOperator: jest.fn().mockResolvedValue(draft),
     findProductByUpc: jest.fn().mockResolvedValue({
       id: 'upc-1',
       upc: '194253149189',
@@ -293,6 +294,27 @@ describe('InboundService', () => {
     expect(repository.findDraftByBatchNo).toHaveBeenCalledWith('INB-20260617000000-ABC123');
   });
 
+  it('restores the current operator latest open draft automatically', async () => {
+    const { repository, service } = createService({
+      findLatestDraftByOperator: jest.fn().mockResolvedValue(draft),
+    });
+
+    await expect(service.getLatestDraftForOperator(operator)).resolves.toMatchObject({
+      id: 'draft-1',
+      batchNo: 'INB-20260617000000-ABC123',
+      status: InboundBatchStatus.DRAFT,
+    });
+    expect(repository.findLatestDraftByOperator).toHaveBeenCalledWith(operator.id);
+  });
+
+  it('returns null when the current operator has no open draft to restore', async () => {
+    const { service } = createService({
+      findLatestDraftByOperator: jest.fn().mockResolvedValue(null),
+    });
+
+    await expect(service.getLatestDraftForOperator(operator)).resolves.toBeNull();
+  });
+
   it('rejects restoring a non-draft batch by batch number', async () => {
     const { service } = createService({
       findDraftByBatchNo: jest.fn().mockResolvedValue({
@@ -373,7 +395,7 @@ describe('InboundService', () => {
     ).rejects.toThrow('Invalid package tracking number format.');
   });
 
-  it('allows unsupported package tracking after operator confirmation', async () => {
+  it('rejects arbitrary package tracking even after operator confirmation', async () => {
     const { repository, service } = createService({});
 
     await expect(
@@ -383,14 +405,31 @@ describe('InboundService', () => {
         imei: '356789012345678',
         trackingExceptionConfirmed: true,
       }),
-    ).resolves.toMatchObject({ status: InboundItemStatus.PENDING });
-    expect(repository.createItem).toHaveBeenCalledWith(
-      expect.objectContaining({
-        upsTrackingNo: 'NOT-A-TRACKING-NUMBER',
-        status: InboundItemStatus.PENDING,
+    ).rejects.toThrow('Invalid package tracking number format.');
+    expect(repository.createItem).not.toHaveBeenCalled();
+  });
+
+  it('allows valid USPS and non-9622 FedEx tracking only after operator confirmation', async () => {
+    const { repository, service } = createService({});
+
+    await expect(
+      service.addItem('draft-1', {
+        upsTrackingNo: '9400111899223857000000',
+        upc: '194253149189',
+        imei: '356789012345678',
+        trackingExceptionConfirmed: true,
       }),
-      undefined,
-    );
+    ).resolves.toMatchObject({ status: InboundItemStatus.PENDING });
+    await expect(
+      service.addItem('draft-1', {
+        upsTrackingNo: '9611020987654312345672',
+        upc: '194253149189',
+        imei: '356789012345679',
+        trackingExceptionConfirmed: true,
+      }),
+    ).resolves.toMatchObject({ status: InboundItemStatus.PENDING });
+
+    expect(repository.createItem).toHaveBeenCalledTimes(2);
   });
 
   it('allows warehouse compensation package tracking without exception confirmation', async () => {
@@ -709,64 +748,19 @@ describe('InboundService', () => {
     ).rejects.toThrow('Cannot force inbound with duplicated IMEI or Serial.');
   });
 
-  it('creates an unmatched UPC exception item for preview', async () => {
-    const exceptionItem = {
-      ...pendingItem,
-      productId: null,
-      product: null,
-      upc: '884909876543',
-      status: InboundItemStatus.EXCEPTION,
-      exceptions: [
-        {
-          id: 'exception-1',
-          type: ExceptionType.UPC_NOT_MATCHED,
-          status: ExceptionStatus.OPEN,
-          customerId: 'customer-1',
-          warehouseId: 'warehouse-1',
-          productId: null,
-          inboundItemId: 'item-1',
-          inventoryItemId: null,
-          rawValue: '884909876543',
-          upsTrackingNo: null,
-          upc: '884909876543',
-          imei: null,
-          serial: null,
-          resolutionNote: null,
-          resolvedById: null,
-          resolvedAt: null,
-          beforeSnapshot: null,
-          afterSnapshot: null,
-          createdAt: new Date('2026-06-17T00:00:00Z'),
-          updatedAt: new Date('2026-06-17T00:00:00Z'),
-        },
-      ],
-    };
+  it('rejects UPC values that are not in the active product library before saving a preview row', async () => {
     const { repository, service } = createService({
       findProductByUpc: jest.fn().mockResolvedValue(null),
-      createItem: jest.fn().mockResolvedValue(exceptionItem),
     });
 
     await expect(
       service.addItem('draft-1', {
         upsTrackingNo: '1Z999AA10123456784',
         upc: '884909876543',
+        imei: '356789012345678',
       }),
-    ).resolves.toMatchObject({
-      status: InboundItemStatus.EXCEPTION,
-      product: null,
-      exceptions: [{ type: ExceptionType.UPC_NOT_MATCHED }],
-    });
-    expect(repository.createItem).toHaveBeenCalledWith(
-      expect.objectContaining({
-        upsTrackingNo: '1Z999AA10123456784',
-        upc: '884909876543',
-        status: InboundItemStatus.EXCEPTION,
-      }),
-      expect.objectContaining({
-        type: ExceptionType.UPC_NOT_MATCHED,
-        rawValue: '884909876543',
-      }),
-    );
+    ).rejects.toThrow('UPC 未匹配商品库，请先在商品管理中维护这个 UPC 后再扫码入库。');
+    expect(repository.createItem).not.toHaveBeenCalled();
   });
 
   it('imports inbound items into an open draft and reports failed rows', async () => {
@@ -816,39 +810,20 @@ describe('InboundService', () => {
     expect(repository.createItem).toHaveBeenCalledTimes(1);
   });
 
-  it('creates a duplicate IMEI exception item before confirmation', async () => {
+  it('rejects existing inventory IMEI before saving another preview row', async () => {
     const duplicateInventory = { id: 'inventory-1' };
-    const exceptionItem = {
-      ...pendingItem,
-      status: InboundItemStatus.EXCEPTION,
-      exceptions: [
-        {
-          id: 'exception-1',
-          type: ExceptionType.IMEI_DUPLICATED,
-          status: ExceptionStatus.OPEN,
-          rawValue: '356789012345678',
-          resolutionNote: null,
-        },
-      ],
-    };
     const { repository, service } = createService({
       findInventoryByImei: jest.fn().mockResolvedValue(duplicateInventory),
-      createItem: jest.fn().mockResolvedValue(exceptionItem),
     });
 
-    await service.addItem('draft-1', {
-      upsTrackingNo: '1Z999AA10123456784',
-      upc: '194253149189',
-      imei: '356789012345678',
-    });
-
-    expect(repository.createItem).toHaveBeenCalledWith(
-      expect.objectContaining({ status: InboundItemStatus.EXCEPTION }),
-      expect.objectContaining({
-        type: ExceptionType.IMEI_DUPLICATED,
-        rawValue: '356789012345678',
+    await expect(
+      service.addItem('draft-1', {
+        upsTrackingNo: '1Z999AA10123456784',
+        upc: '194253149189',
+        imei: '356789012345678',
       }),
-    );
+    ).rejects.toThrow('IMEI 已存在库存记录，不能重复入库: 356789012345678。请修正后再加入明细。');
+    expect(repository.createItem).not.toHaveBeenCalled();
   });
 
   it('rejects duplicate IMEI inside the active draft before saving another preview row', async () => {

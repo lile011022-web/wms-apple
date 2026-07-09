@@ -17,6 +17,7 @@ import {
 import {
   isValidImei,
   isAutoAcceptedPackageTracking,
+  isValidPackageTracking,
   isValidSerial,
   isValidUpc,
   normalizePackageTracking,
@@ -116,6 +117,11 @@ export class InboundService {
     }
 
     return this.toDraftResponse(draft);
+  }
+
+  async getLatestDraftForOperator(operator: AuthenticatedUser) {
+    const draft = await this.inboundRepository.findLatestDraftByOperator(operator.id);
+    return draft ? this.toDraftResponse(draft) : null;
   }
 
   async scanUps(draftId: string, dto: ScanInboundUpsDto) {
@@ -497,25 +503,9 @@ export class InboundService {
       productUpc.status !== ProductStatus.ACTIVE ||
       productUpc.product.status !== ProductStatus.ACTIVE
     ) {
-      return {
-        upc,
-        upsTrackingNo,
-        imei,
-        serial,
-        status: InboundItemStatus.EXCEPTION,
-        exception: settings.exceptionHandling.createUnmatchedUpcException
-          ? {
-              type: ExceptionType.UPC_NOT_MATCHED,
-              customer: { connect: { id: draft.customerId } },
-              warehouse: { connect: { id: draft.warehouseId } },
-              rawValue: upc,
-              upsTrackingNo,
-              upc,
-              imei,
-              serial,
-            }
-          : undefined,
-      };
+      throw new BadRequestException(
+        'UPC 未匹配商品库，请先在商品管理中维护这个 UPC 后再扫码入库。',
+      );
     }
 
     if (scanMode === 'STANDARD' && productUpc.product.requiresImei && !imei) {
@@ -531,28 +521,14 @@ export class InboundService {
 
     const duplicate = await this.findDuplicateIdentity(imei, serial);
     if (duplicate && settings.scanRules.detectDuplicateImei) {
-      return {
-        productId: productUpc.product.id,
-        upc,
-        upsTrackingNo,
-        imei,
-        serial,
-        status: InboundItemStatus.EXCEPTION,
-        exception: settings.exceptionHandling.createDuplicateImeiException
-          ? {
-              type: ExceptionType.IMEI_DUPLICATED,
-              customer: { connect: { id: draft.customerId } },
-              warehouse: { connect: { id: draft.warehouseId } },
-              product: { connect: { id: productUpc.product.id } },
-              inventoryItem: { connect: { id: duplicate.id } },
-              rawValue: imei ?? serial ?? upc,
-              upsTrackingNo,
-              upc,
-              imei,
-              serial,
-            }
-          : undefined,
-      };
+      if (imei) {
+        throw new BadRequestException(
+          `IMEI 已存在库存记录，不能重复入库: ${imei}。请修正后再加入明细。`,
+        );
+      }
+      throw new BadRequestException(
+        `Serial 已存在库存记录，不能重复入库: ${serial}。请修正后再加入明细。`,
+      );
     }
 
     return {
@@ -750,6 +726,9 @@ export class InboundService {
   private normalizeUps(value: string, allowUnsupportedFormat = false) {
     const normalized = normalizePackageTracking(value);
     if (!isAutoAcceptedPackageTracking(normalized) && !allowUnsupportedFormat) {
+      throw new BadRequestException('Invalid package tracking number format.');
+    }
+    if (allowUnsupportedFormat && !isValidPackageTracking(normalized)) {
       throw new BadRequestException('Invalid package tracking number format.');
     }
     return normalized;

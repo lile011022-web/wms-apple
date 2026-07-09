@@ -151,10 +151,25 @@ export class InboundRepository {
     });
   }
 
+  findLatestDraftByOperator(operatorId: string) {
+    return this.prisma.inboundBatch.findFirst({
+      where: {
+        operatorId,
+        status: InboundBatchStatus.DRAFT,
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+      include: inboundBatchInclude,
+    });
+  }
+
   createItem(data: Prisma.InboundItemCreateInput, exception?: Prisma.ExceptionRecordCreateInput) {
     return this.prisma.$transaction(async (tx) => {
       const item = await tx.inboundItem.create({
         data,
+      });
+      await tx.inboundBatch.update({
+        where: { id: item.inboundBatchId },
+        data: { updatedAt: new Date() },
       });
 
       if (exception) {
@@ -196,6 +211,10 @@ export class InboundRepository {
         where: { id },
         data,
       });
+      await tx.inboundBatch.update({
+        where: { id: item.inboundBatchId },
+        data: { updatedAt: new Date() },
+      });
 
       if (exception) {
         await tx.exceptionRecord.create({
@@ -221,20 +240,36 @@ export class InboundRepository {
   }
 
   deleteItem(id: string) {
-    return this.prisma.inboundItem.update({
-      where: { id },
-      data: { status: InboundItemStatus.VOIDED },
-      include: inboundItemInclude,
+    return this.prisma.$transaction(async (tx) => {
+      const item = await tx.inboundItem.update({
+        where: { id },
+        data: { status: InboundItemStatus.VOIDED },
+      });
+      await tx.inboundBatch.update({
+        where: { id: item.inboundBatchId },
+        data: { updatedAt: new Date() },
+      });
+      return tx.inboundItem.findUniqueOrThrow({
+        where: { id },
+        include: inboundItemInclude,
+      });
     });
   }
 
   clearDraftItems(draftId: string) {
-    return this.prisma.inboundItem.updateMany({
-      where: {
-        inboundBatchId: draftId,
-        status: { in: [InboundItemStatus.PENDING, InboundItemStatus.EXCEPTION] },
-      },
-      data: { status: InboundItemStatus.VOIDED },
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.inboundItem.updateMany({
+        where: {
+          inboundBatchId: draftId,
+          status: { in: [InboundItemStatus.PENDING, InboundItemStatus.EXCEPTION] },
+        },
+        data: { status: InboundItemStatus.VOIDED },
+      });
+      await tx.inboundBatch.update({
+        where: { id: draftId },
+        data: { updatedAt: new Date() },
+      });
+      return result;
     });
   }
 

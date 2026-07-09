@@ -10,7 +10,7 @@ export class UpdateOutboundBoxDto {
   @MaxLength(120)
   boxName?: string;
 
-  @ApiPropertyOptional({ enum: outboundBoxSizePresets, example: '14*14*14' })
+  @ApiPropertyOptional({ enum: outboundBoxSizePresets, example: '16*16*12' })
   @IsOptional()
   @IsIn(outboundBoxSizePresets)
   sizePreset?: string;

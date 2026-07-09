@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Archive,
   ArrowDownUp,
+  ArrowUp,
   Box,
   Camera,
   ClipboardList,
@@ -101,6 +102,16 @@ type PackingBoxTaskGroup = {
   openCount: number;
 };
 
+type BoxSettingsValues = {
+  boxName: string;
+  sizeLabel: string;
+  manualSize: { length: number; width: number; height: number };
+  manualSizeOpen: boolean;
+  weight: string;
+  shippingTrackingNo: string;
+  note: string;
+};
+
 const defaultSizePreset: BoxSizePreset = {
   label: '12 × 12 × 12 in',
   length: 12,
@@ -197,6 +208,7 @@ export function OutboundPackingPage() {
   const [bouncingBoxId, setBouncingBoxId] = useState<string | null>(null);
   const [uploadingPhotoBoxId, setUploadingPhotoBoxId] = useState<string | null>(null);
   const [exportingBoxId, setExportingBoxId] = useState<string | null>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -556,6 +568,13 @@ export function OutboundPackingPage() {
   }, [highlightedItemId]);
 
   useEffect(() => {
+    const handleScroll = () => setShowBackToTop(window.scrollY > 420);
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
     setScanValue('');
     setScanUpc('');
     setScanImeiOrSerial('');
@@ -592,7 +611,7 @@ export function OutboundPackingPage() {
       return outboundApi.createBox({
         customerId,
         warehouseId,
-        ...toBackendBoxSize(sizeLabel, manualSize),
+        ...toBackendBoxSize(sizeLabel, manualSize, manualSizeOpen),
         weightLb: toWeightNumber(weight),
         notes: note.trim() || undefined,
       });
@@ -623,9 +642,9 @@ export function OutboundPackingPage() {
       }
       return outboundApi.updateBox(currentBox.id, {
         boxName: nextBoxName,
-        ...toBackendBoxSize(sizeLabel, manualSize),
+        ...toBackendBoxSize(sizeLabel, manualSize, manualSizeOpen),
         weightLb: toWeightNumber(weight),
-        notes: note.trim() || undefined,
+        notes: note.trim(),
       });
     },
     onSuccess: (data) => {
@@ -634,6 +653,21 @@ export function OutboundPackingPage() {
       setErrorMessage('');
     },
     onError: (error) => setErrorMessage(toUserErrorMessage(error, '保存失败')),
+  });
+  const detailBoxSettingsMutation = useMutation({
+    mutationFn: ({ box, values }: { box: PackingBox; values: BoxSettingsValues }) => {
+      const nextBoxName = values.boxName.trim();
+      if (!nextBoxName) {
+        throw new Error('请输入箱子名称');
+      }
+      return outboundApi.updateBox(box.id, toBoxSettingsPayload(values));
+    },
+    onSuccess: (data) => {
+      updateBoxEverywhere(data as OutboundBox);
+      setMessage('已保存箱子明细设置');
+      setErrorMessage('');
+    },
+    onError: (error) => setErrorMessage(toUserErrorMessage(error, '保存箱子明细失败')),
   });
 
   const addItemMutation = useMutation({
@@ -855,7 +889,7 @@ export function OutboundPackingPage() {
           customerId,
           warehouseId,
           ...(boxNameDrafts[index] ? { boxName: boxNameDrafts[index] } : {}),
-          ...toBackendBoxSize(sizeLabel, manualSize),
+          ...toBackendBoxSize(sizeLabel, manualSize, manualSizeOpen),
           weightLb: toWeightNumber(weight),
           notes: note.trim() || undefined,
         })) as OutboundBox;
@@ -1555,7 +1589,9 @@ export function OutboundPackingPage() {
         availableItems={availableItems}
         canMutate={detailBox?.id === currentBox?.id && canMutateCurrentBox}
         isRemoving={removeItemMutation.isPending}
+        isSavingSettings={detailBoxSettingsMutation.isPending}
         onClose={() => setDetailBox(null)}
+        onSaveSettings={(box, values) => detailBoxSettingsMutation.mutate({ box, values })}
         onRemove={(item) => removeItemMutation.mutate(item)}
         onOpenPrint={(box) => setPrintDetailBox(box)}
       />
@@ -1569,6 +1605,17 @@ export function OutboundPackingPage() {
           }
         }}
       />
+
+      {showBackToTop ? (
+        <button
+          type="button"
+          className="outbound-back-to-top"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
+          <ArrowUp size={16} />
+          回到顶部
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -3079,10 +3126,20 @@ function BoxDetailModal(props: {
   availableItems: PackingItem[];
   canMutate: boolean;
   isRemoving: boolean;
+  isSavingSettings: boolean;
   onClose: () => void;
+  onSaveSettings: (box: PackingBox, values: BoxSettingsValues) => void;
   onRemove: (item: PackingItem) => void;
   onOpenPrint: (box: PackingBox) => void;
 }) {
+  const [settingsDraft, setSettingsDraft] = useState<BoxSettingsValues>(() =>
+    props.box ? toBoxSettingsValues(props.box) : createDefaultBoxSettingsValues(),
+  );
+
+  useEffect(() => {
+    setSettingsDraft(props.box ? toBoxSettingsValues(props.box) : createDefaultBoxSettingsValues());
+  }, [props.box?.id, props.box?.updatedAt]);
+
   if (!props.box) {
     return null;
   }
@@ -3123,6 +3180,157 @@ function BoxDetailModal(props: {
           </button>
         </div>
         <div className="outbound-detail-body">
+          <div className="outbound-detail-settings">
+            <div className="outbound-product-summary-head">
+              <h3>箱子设置</h3>
+              <span>确认封箱前可直接修改箱子名称、尺寸、重量、单号和备注</span>
+            </div>
+            <div className="outbound-detail-settings-grid">
+              <label className="outbound-control wide">
+                <span>箱子名称</span>
+                <input
+                  value={settingsDraft.boxName}
+                  disabled={!props.canMutate || props.isSavingSettings}
+                  onChange={(event) =>
+                    setSettingsDraft((current) => ({ ...current, boxName: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="outbound-control medium">
+                <span>尺寸预设</span>
+                <select
+                  value={settingsDraft.sizeLabel}
+                  disabled={!props.canMutate || props.isSavingSettings}
+                  onChange={(event) => {
+                    const nextSizeLabel = event.target.value;
+                    const preset = boxSizePresets.find((item) => item.label === nextSizeLabel);
+                    setSettingsDraft((current) => ({
+                      ...current,
+                      sizeLabel: nextSizeLabel,
+                      manualSize: preset
+                        ? {
+                            length: preset.length,
+                            width: preset.width,
+                            height: preset.height,
+                          }
+                        : current.manualSize,
+                      manualSizeOpen:
+                        nextSizeLabel === customSizePreset ? true : current.manualSizeOpen,
+                    }));
+                  }}
+                >
+                  {boxSizePresets.map((preset) => (
+                    <option key={preset.label} value={preset.label}>
+                      {preset.label}
+                    </option>
+                  ))}
+                  <option value={customSizePreset}>Custom</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                className="outbound-inline-link"
+                disabled={!props.canMutate || props.isSavingSettings}
+                onClick={() =>
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    manualSizeOpen: !current.manualSizeOpen,
+                  }))
+                }
+              >
+                手动调整
+              </button>
+              {settingsDraft.manualSizeOpen ? (
+                <div className="outbound-manual-size">
+                  <NumberField
+                    label="长"
+                    value={settingsDraft.manualSize.length}
+                    onChange={(value) =>
+                      setSettingsDraft((current) => ({
+                        ...current,
+                        manualSize: { ...current.manualSize, length: value },
+                      }))
+                    }
+                  />
+                  <NumberField
+                    label="宽"
+                    value={settingsDraft.manualSize.width}
+                    onChange={(value) =>
+                      setSettingsDraft((current) => ({
+                        ...current,
+                        manualSize: { ...current.manualSize, width: value },
+                      }))
+                    }
+                  />
+                  <NumberField
+                    label="高"
+                    value={settingsDraft.manualSize.height}
+                    onChange={(value) =>
+                      setSettingsDraft((current) => ({
+                        ...current,
+                        manualSize: { ...current.manualSize, height: value },
+                      }))
+                    }
+                  />
+                </div>
+              ) : null}
+              <label className="outbound-control compact">
+                <span>重量</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={settingsDraft.weight}
+                  disabled={!props.canMutate || props.isSavingSettings}
+                  onChange={(event) =>
+                    setSettingsDraft((current) => ({ ...current, weight: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="outbound-control medium">
+                <span>出库单号 / 面单号</span>
+                <input
+                  value={settingsDraft.shippingTrackingNo}
+                  disabled={!props.canMutate || props.isSavingSettings}
+                  onChange={(event) =>
+                    setSettingsDraft((current) => ({
+                      ...current,
+                      shippingTrackingNo: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="outbound-control note">
+                <span>备注</span>
+                <input
+                  value={settingsDraft.note}
+                  disabled={!props.canMutate || props.isSavingSettings}
+                  onChange={(event) =>
+                    setSettingsDraft((current) => ({ ...current, note: event.target.value }))
+                  }
+                />
+              </label>
+              <div className="outbound-detail-settings-actions">
+                <button
+                  type="button"
+                  className="outbound-btn outbound-btn-outline"
+                  disabled={!props.canMutate || props.isSavingSettings}
+                  onClick={() => setSettingsDraft(toBoxSettingsValues(box))}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="outbound-btn outbound-btn-primary"
+                  disabled={!props.canMutate || props.isSavingSettings}
+                  onClick={() => props.onSaveSettings(box, settingsDraft)}
+                >
+                  <Save size={16} />
+                  {props.isSavingSettings ? '保存中' : '保存设置'}
+                </button>
+              </div>
+            </div>
+          </div>
           <div className="outbound-detail-summary">
             <span>箱子名称：{getBoxDisplayName(props.box)}</span>
             <span>
@@ -3917,14 +4125,60 @@ function parseBoxSize(sizePreset?: string | null, customSize?: string | null): B
 function toBackendBoxSize(
   sizeLabel: string,
   manualSize: { length: number; width: number; height: number },
+  manualSizeOpen = false,
 ) {
   const preset = boxSizePresets.find((item) => item.label === sizeLabel);
-  const size = preset ?? { ...manualSize, label: customSizePreset, unit: 'in' as const };
+  const size =
+    preset && !manualSizeOpen
+      ? preset
+      : { ...manualSize, label: customSizePreset, unit: 'in' as const };
   const customSize = `${size.length}*${size.width}*${size.height}`;
-  if (preset) {
+  if (preset && !manualSizeOpen) {
     return { sizePreset: `${preset.length}*${preset.width}*${preset.height}` };
   }
   return { sizePreset: 'CUSTOM', customSize };
+}
+
+function createDefaultBoxSettingsValues(): BoxSettingsValues {
+  return {
+    boxName: '',
+    sizeLabel: defaultSizePreset.label,
+    manualSize: {
+      length: defaultSizePreset.length,
+      width: defaultSizePreset.width,
+      height: defaultSizePreset.height,
+    },
+    manualSizeOpen: false,
+    weight: String(defaultBoxWeight),
+    shippingTrackingNo: '',
+    note: '',
+  };
+}
+
+function toBoxSettingsValues(box: PackingBox): BoxSettingsValues {
+  return {
+    boxName: getBoxDisplayName(box),
+    sizeLabel: box.sizeLabel,
+    manualSize: {
+      length: box.length,
+      width: box.width,
+      height: box.height,
+    },
+    manualSizeOpen: box.sizeLabel === customSizePreset,
+    weight: String(box.weight || defaultBoxWeight),
+    shippingTrackingNo: box.shippingTrackingNo ?? '',
+    note: box.note ?? '',
+  };
+}
+
+function toBoxSettingsPayload(values: BoxSettingsValues) {
+  return {
+    boxName: values.boxName.trim(),
+    ...toBackendBoxSize(values.sizeLabel, values.manualSize, values.manualSizeOpen),
+    weightLb: toWeightNumber(values.weight),
+    shippingTrackingNo: values.shippingTrackingNo.trim(),
+    notes: values.note.trim(),
+  };
 }
 
 function summarizeByUpc(boxItems: PackingItem[], availableItems: PackingItem[]) {

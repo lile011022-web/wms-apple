@@ -20,7 +20,9 @@ The customer must be locked before scan data becomes operational inventory. Pack
 
 - UPC values are normalized and validated with the shared UPC validator.
 - Only active UPC mappings that point to active products can be used for normal inbound preview rows.
-- Unmatched UPC values are saved as exception preview rows and can create `UPC_NOT_MATCHED` exception records.
+- Unmatched UPC values must be rejected during scan entry. Operators need to maintain the UPC in
+  商品管理 first, then scan the item again. The scan page should not add an unmatched UPC row to the
+  current draft.
 
 ## IMEI And Serial
 
@@ -31,8 +33,8 @@ The customer must be locked before scan data becomes operational inventory. Pack
 - Duplicate IMEI or Serial values are blocking conditions and must not create normal inventory.
 - If an IMEI or Serial already exists in the current draft, the scan page and API must reject the new
   preview row immediately instead of allowing another `PENDING` row.
-- If an IMEI or Serial already exists in inventory, confirmation of the draft is rejected until
-  the operator fixes or deletes the duplicate preview row.
+- If an IMEI or Serial already exists in inventory, the scan entry is rejected before saving another
+  preview row. Confirmation also rechecks existing inventory identities before writing inventory.
 
 ## Package Tracking
 
@@ -50,6 +52,9 @@ The customer must be locked before scan data becomes operational inventory. Pack
 - USPS values, non-9622 FedEx values, and all other package tracking formats are abnormal for the
   current receiving workflow. They must pause the scan page and require explicit operator
   confirmation before the item can be added to the draft.
+- Explicit operator confirmation only allows supported package tracking formats such as USPS and
+  non-9622 FedEx. Completely unsupported values, random text, and non-tracking numbers must still
+  be rejected before a row is saved.
 - When a package tracking number is entered, the scan page should warn the operator if the number
   does not match the UPS, `BB0000` warehouse compensation, or 9622 FedEx auto-accept rules, if it
   already appears in confirmed inbound records, or if it already appears in the current draft. The
@@ -135,10 +140,22 @@ The inbound scan page supports two entry modes:
 - `物流+UPC 模式`: package tracking number and UPC are enough to automatically add a row to the
   current draft. UPC must still match an active product before the row can become normal inventory.
 
-The manual add action should remain available as a fallback. The page should show the most recently
-added inbound row below the scan inputs with the same package tracking number, UPC, and IMEI field
-layout as the active scan entry form. Operators can click edit on this latest row and save changes in
-place; saving must overwrite the original preview row and must not create another preview row.
+The manual add action should remain available as a fallback. The page should show the current
+inbound draft directly below the customer lock section and above the scan-mode/input section. This
+area is the pre-confirmation review area, so operators can inspect pending rows before they continue
+scanning.
+
+Pending and exception rows in the current draft table must support basic pre-confirmation actions:
+edit, save, cancel, and delete. Saving an edited row must overwrite the original preview row and
+re-run the same UPC, package tracking, IMEI/Serial, duplicate, and scan-mode rules. It must not add
+another preview row. Deleting a row marks it voided and refreshes the review summary. The table's
+operation buttons must remain visible and usable at normal desktop widths; narrower screens may
+scroll the row content, but edit/save/delete controls should not disappear off the far right.
+
+When the inbound scan page is opened without a valid local draft lock, it should automatically load
+the current operator's latest unfinished `DRAFT` inbound batch. The restored draft must restore its
+customer, optional alias, warehouse, summary, pending rows, and blocking exception state. It must not
+restore another operator's draft or a confirmed batch.
 
 After a row is automatically or manually added, the scan entry form should restore keyboard focus to
 the next receiving input so operators can continue with a scanner without clicking the mouse again.
@@ -161,11 +178,11 @@ Exception rows must pause this focus loop until the abnormal row is corrected or
 Focus restoration must run after the page has rendered the updated draft row so scanner operators do
 not need to click the next input during high-volume receiving.
 
-If the active draft contains exception rows, the exception summary should help the operator jump to
-the exception row and edit that row in place. Saving the correction must overwrite the original
-preview row and re-run the same UPC, package tracking, IMEI/Serial, duplicate, and scan-mode rules.
-It must not add another preview row. The original exception row remains removable during the draft
-lifecycle.
+If the active draft contains exception rows created by supported exception workflows, the exception
+summary should help the operator jump to the exception row and edit that row in place. Saving the
+correction must overwrite the original preview row and re-run the same UPC, package tracking,
+IMEI/Serial, duplicate, and scan-mode rules. It must not add another preview row. The original
+exception row remains removable during the draft lifecycle.
 
 If the latest active preview row is an `EXCEPTION`, the inbound scan workflow must stop before any
 next receiving action. Manual scanning, automatic scanning, CSV import, and final confirmation are
@@ -192,4 +209,5 @@ the standard inbound CSV template.
 
 Each imported row must follow the same UPC matching, IMEI/Serial, duplicate, and exception rules as
 manual scanning. Rows that fail validation should be reported with row-level reasons while other
-valid rows remain in the draft for review.
+valid rows remain in the draft for review. Unmatched UPC rows, unsupported tracking values, and
+inventory-duplicate IMEI/Serial rows should fail import rather than being appended to the draft.

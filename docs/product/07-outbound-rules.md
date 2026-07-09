@@ -209,6 +209,15 @@ Allowed operations for an open box:
 - Download packing detail data for selected created boxes from the created-box list.
 - Seal the box.
 
+The box detail modal that opens after creating or selecting a box must expose the same editable box
+settings before sealing: visible box name, size preset or custom size, weight, outbound shipment or
+label number, and notes. Saving from the modal updates the current box, created-box list, and modal
+summary together so operators do not need to leave the detail view to correct box information.
+
+The outbound packing page should provide a fixed back-to-top action after the operator scrolls down
+the workbench. The button should return to the page top without covering table row actions or modal
+controls.
+
 Allowed operations for a sealed box:
 
 - Reopen the sealed box for rework.

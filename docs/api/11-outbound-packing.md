@@ -69,6 +69,10 @@ Rules:
 - Box name is system-generated at creation. Operators can edit it later while the box is open.
 - Edited box names cannot be empty and must stay unique among non-voided boxes inside the same
   warehouse. A `VOIDED` box releases its visible box name for reuse.
+- `sizePreset` supports `12*12*12`, `16*16*12`, `18*18*12`, `18*18*16`, and `CUSTOM`.
+- `customSize` is required when `sizePreset` is `CUSTOM`.
+- The outbound packing detail modal can submit the same editable settings as the quick editor:
+  box name, size, weight, outbound shipment or label number, and notes.
 - `shippingTrackingNo` stores the outbound shipment or label number shown beside the box evidence controls.
 - Updating box settings writes an `OUTBOUND_BOX_UPDATE` audit log.
 

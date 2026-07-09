@@ -11,6 +11,12 @@ import {
   X,
 } from 'lucide-react';
 import {
+  isAutoAcceptedPackageTracking,
+  isValidImei,
+  isValidUpc,
+  normalizePackageTracking,
+} from '@wms-scan/shared';
+import {
   type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
@@ -97,6 +103,7 @@ export function InboundScanPage() {
   const imeiInputRef = useRef<HTMLInputElement | null>(null);
   const lastAutoAddKeyRef = useRef('');
   const hasFocusedLockedDraftRef = useRef(false);
+  const hasCheckedLatestDraftRef = useRef(false);
 
   const customersQuery = useQuery({
     queryKey: ['customer-options'],
@@ -164,6 +171,46 @@ export function InboundScanPage() {
     };
   }, [draft, lockedContext]);
 
+  useEffect(() => {
+    if (draft || lockedContext?.draftId || hasCheckedLatestDraftRef.current) {
+      return;
+    }
+
+    hasCheckedLatestDraftRef.current = true;
+    let isMounted = true;
+
+    inboundApi
+      .getLatestDraft()
+      .then((data) => {
+        if (!isMounted || !data) {
+          return;
+        }
+        const latestDraft = data as InboundDraft;
+        setDraft(latestDraft);
+        setCustomerId(latestDraft.customer.id);
+        setCustomerAliasId(latestDraft.customerAlias?.id ?? '');
+        setWarehouseId(latestDraft.warehouse.id);
+        persistLockedContext({
+          customerId: latestDraft.customer.id,
+          customerAliasId: latestDraft.customerAlias?.id ?? '',
+          warehouseId: latestDraft.warehouse.id,
+          draftId: latestDraft.id,
+        });
+        setRestoreBatchNo(latestDraft.batchNo);
+        setMessage(`已自动恢复最近未完成入库单 ${latestDraft.batchNo}`);
+        clearScanInputs();
+        setLastInboundItem(null);
+        setTrackingWarning(null);
+      })
+      .catch(() => {
+        // Latest draft recovery is a convenience path. Manual customer locking still works.
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [draft, lockedContext?.draftId]);
+
   const isCurrentSelectionLocked =
     !!lockedContext &&
     lockedContext.customerId === customerId &&
@@ -186,6 +233,13 @@ export function InboundScanPage() {
     !!activeTrackingWarning &&
     !activeTrackingWarning.confirmed &&
     !isReusableTrackingWarningConfirmed;
+  const scanValidationMessage = getCurrentScanValidationMessage({
+    scanMode,
+    upsTrackingNo,
+    upc,
+    imei,
+    trackingWarningConfirmed: isTrackingWarningConfirmed,
+  });
   const draftIdentityDuplicates = useMemo(
     () => findDraftIdentityDuplicates(draft?.items ?? []),
     [draft?.items],
@@ -198,6 +252,7 @@ export function InboundScanPage() {
     !isTrackingWarningBlocking &&
     !activeDraftIdentityDuplicate &&
     !isCheckingTracking &&
+    !scanValidationMessage &&
     !!upsTrackingNo.trim() &&
     !!upc.trim() &&
     (scanMode === 'TRACKING_UPC' || !!imei.trim());
@@ -413,6 +468,16 @@ export function InboundScanPage() {
   });
   const addItemMutation = useMutation({
     mutationFn: async () => {
+      const validationMessage = getCurrentScanValidationMessage({
+        scanMode,
+        upsTrackingNo,
+        upc,
+        imei,
+        trackingWarningConfirmed: isTrackingWarningConfirmed,
+      });
+      if (validationMessage) {
+        throw new Error(validationMessage);
+      }
       if (blockingExceptionItem) {
         throw new Error('上一条入库明细仍为异常，请先在当前入库单中修正该异常后再继续入库。');
       }
@@ -964,6 +1029,62 @@ export function InboundScanPage() {
         </button>
       </form>
 
+      <DraftPanel
+        draft={draft}
+        restoreBatchNo={restoreBatchNo}
+        isRestoringDraft={restoreDraftMutation.isPending}
+        onRestoreBatchNoChange={setRestoreBatchNo}
+        onRestoreDraft={() => restoreDraftMutation.mutate()}
+        blockingExceptionItemId={blockingExceptionItem?.id}
+        removingItemId={removeItemMutation.isPending ? removeItemMutation.variables : undefined}
+        updatingItemId={
+          updateItemMutation.isPending ? updateItemMutation.variables?.itemId : undefined
+        }
+        onUpdateItem={(itemId, values) => updateItemMutation.mutateAsync({ itemId, values })}
+        onRemoveItem={(itemId) => removeItemMutation.mutate(itemId)}
+      />
+
+      {blockingExceptionItem ? (
+        <div className="inline-error">
+          上一条入库明细是异常，已暂停继续入库。请先在当前入库单中修正该异常并保存。
+        </div>
+      ) : null}
+
+      {message ? <div className="inline-success">{message}</div> : null}
+      {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
+      {importFailedRows.length > 0 ? (
+        <div className="inline-error">
+          {importFailedRows.slice(0, 5).map((row) => (
+            <div key={`${row.lineNo}-${row.upc ?? ''}`}>
+              第 {row.lineNo} 行：{row.message}
+            </div>
+          ))}
+          {importFailedRows.length > 5 ? (
+            <div>另有 {importFailedRows.length - 5} 行失败</div>
+          ) : null}
+        </div>
+      ) : null}
+      {activeDraftIdentityDuplicate ? (
+        <div className="tracking-warning-bar">
+          <div>
+            <strong>IMEI 重复</strong>
+            <span>
+              当前入库单内已存在 {activeDraftIdentityDuplicate}，请修正或删除重复明细后再继续入库。
+            </span>
+          </div>
+        </div>
+      ) : null}
+      {draftIdentityDuplicates.length > 0 ? (
+        <div className="tracking-warning-bar">
+          <div>
+            <strong>入库单内有重复 IMEI/Serial</strong>
+            <span>
+              重复值：{draftIdentityDuplicates.join(', ')}。请删除或编辑重复明细后再确认入库。
+            </span>
+          </div>
+        </div>
+      ) : null}
+
       <section className="panel inbound-entry-panel">
         <div className="workflow-form">
           <div className="inbound-mode-switch" role="group" aria-label="入库模式">
@@ -1124,67 +1245,9 @@ export function InboundScanPage() {
             )}
           </div>
         ) : null}
-        <LastInboundNotice
-          item={lastInboundItem ?? latestDraftItem ?? null}
-          isUpdating={updateItemMutation.isPending}
-          onUpdateItem={(itemId, values) => updateItemMutation.mutateAsync({ itemId, values })}
-        />
       </section>
 
-      {blockingExceptionItem ? (
-        <div className="inline-error">
-          上一条入库明细是异常，已暂停继续入库。请先在下方最后一条异常行点击“修正”并保存。
-        </div>
-      ) : null}
-
-      {message ? <div className="inline-success">{message}</div> : null}
-      {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
-      {importFailedRows.length > 0 ? (
-        <div className="inline-error">
-          {importFailedRows.slice(0, 5).map((row) => (
-            <div key={`${row.lineNo}-${row.upc ?? ''}`}>
-              第 {row.lineNo} 行：{row.message}
-            </div>
-          ))}
-          {importFailedRows.length > 5 ? (
-            <div>另有 {importFailedRows.length - 5} 行失败</div>
-          ) : null}
-        </div>
-      ) : null}
-      {activeDraftIdentityDuplicate ? (
-        <div className="tracking-warning-bar">
-          <div>
-            <strong>IMEI 重复</strong>
-            <span>
-              当前入库单内已存在 {activeDraftIdentityDuplicate}，请修正或删除重复明细后再继续入库。
-            </span>
-          </div>
-        </div>
-      ) : null}
-      {draftIdentityDuplicates.length > 0 ? (
-        <div className="tracking-warning-bar">
-          <div>
-            <strong>入库单内有重复 IMEI/Serial</strong>
-            <span>
-              重复值：{draftIdentityDuplicates.join(', ')}。请删除或编辑重复明细后再确认入库。
-            </span>
-          </div>
-        </div>
-      ) : null}
-      <DraftPanel
-        draft={draft}
-        restoreBatchNo={restoreBatchNo}
-        isRestoringDraft={restoreDraftMutation.isPending}
-        onRestoreBatchNoChange={setRestoreBatchNo}
-        onRestoreDraft={() => restoreDraftMutation.mutate()}
-        blockingExceptionItemId={blockingExceptionItem?.id}
-        removingItemId={removeItemMutation.isPending ? removeItemMutation.variables : undefined}
-        updatingItemId={
-          updateItemMutation.isPending ? updateItemMutation.variables?.itemId : undefined
-        }
-        onUpdateItem={(itemId, values) => updateItemMutation.mutateAsync({ itemId, values })}
-        onRemoveItem={(itemId) => removeItemMutation.mutate(itemId)}
-      />
+      {scanValidationMessage ? <div className="inline-error">{scanValidationMessage}</div> : null}
     </section>
   );
 }
@@ -1455,147 +1518,167 @@ function DraftPanel({
           setPage(1);
         }}
       />
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>物流单号</th>
-            <th>UPC</th>
-            <th>IMEI</th>
-            <th>商品</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {paginatedItems.map((item) => {
-            const isRemoving = removingItemId === item.id;
-            const isUpdating = updatingItemId === item.id;
-            const isEditing = editingItemId === item.id;
-            const isBlockingException = blockingExceptionItemId === item.id;
-            const canRemoveItem = canRemoveItems && item.status !== 'CONFIRMED';
-            const canSaveEdit =
-              !!editValues.upsTrackingNo.trim() && !!editValues.upc.trim() && !isUpdating;
-
-            return (
-              <tr
-                key={item.id}
-                ref={(element) => {
-                  rowRefs.current[item.id] = element;
-                }}
-                className={
-                  [
-                    activeExceptionItemId === item.id ? 'active-exception-row' : '',
-                    isBlockingException ? 'blocking-exception-row' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ') || undefined
-                }
-              >
-                <td className="mono">
-                  {isEditing ? (
-                    <input
-                      className="table-inline-input"
-                      value={editValues.upsTrackingNo}
-                      placeholder="UPS / USPS / FedEx / BB0000"
-                      onChange={(event) => updateEditValue('upsTrackingNo', event.target.value)}
-                    />
-                  ) : (
-                    (item.upsTrackingNo ?? '-')
-                  )}
-                </td>
-                <td>
-                  {isEditing ? (
-                    <input
-                      className="table-inline-input"
-                      value={editValues.upc}
-                      onChange={(event) => updateEditValue('upc', event.target.value)}
-                    />
-                  ) : (
-                    item.upc
-                  )}
-                </td>
-                <td>
-                  {isEditing ? (
-                    <input
-                      className="table-inline-input"
-                      value={editValues.imei}
-                      placeholder="可留空"
-                      onChange={(event) => updateEditValue('imei', event.target.value)}
-                    />
-                  ) : (
-                    (item.imei ?? item.serial ?? '-')
-                  )}
-                </td>
-                <td>
-                  <strong>{item.product?.name ?? '-'}</strong>
-                  {item.product?.modelCode ? <span>型号代码 {item.product.modelCode}</span> : null}
-                </td>
-                <td>
-                  <span>{formatInboundItemStatus(item.status)}</span>
-                  {item.status === 'EXCEPTION' ? (
-                    <small>{formatInboundExceptionSummary(item)}</small>
-                  ) : null}
-                </td>
-                <td>
-                  {isEditing ? (
-                    <>
-                      <button
-                        type="button"
-                        className="table-action"
-                        title="覆盖保存当前明细"
-                        disabled={!canSaveEdit}
-                        onClick={() => void saveEditingItem(item.id)}
-                      >
-                        <Check size={14} />
-                        {isUpdating ? '保存中' : '保存'}
-                      </button>
-                      <button
-                        type="button"
-                        className="table-action secondary"
-                        title="取消修正"
-                        disabled={isUpdating}
-                        onClick={() => setEditingItemId('')}
-                      >
-                        <X size={14} />
-                        取消
-                      </button>
-                    </>
-                  ) : item.status === 'EXCEPTION' ? (
-                    <button
-                      type="button"
-                      className="table-action"
-                      title="在当前行修正并覆盖原明细"
-                      onClick={() => startEditingItem(item)}
-                    >
-                      <Pencil size={14} />
-                      修正
-                    </button>
-                  ) : null}
-                  {!isEditing && canRemoveItem ? (
-                    <button
-                      type="button"
-                      className="table-action danger"
-                      title="删除明细"
-                      disabled={!!removingItemId || isEditing}
-                      onClick={() => onRemoveItem(item.id)}
-                    >
-                      <Trash2 size={14} />
-                      {isRemoving ? '删除中' : '删除'}
-                    </button>
-                  ) : item.status === 'EXCEPTION' ? null : (
-                    '-'
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-          {items.length === 0 ? (
+      <div className="inbound-draft-table-wrap">
+        <table className="data-table inbound-draft-table">
+          <colgroup>
+            <col className="inbound-tracking-column" />
+            <col className="inbound-upc-column" />
+            <col className="inbound-imei-column" />
+            <col className="inbound-product-column" />
+            <col className="inbound-status-column" />
+            <col className="inbound-action-column" />
+          </colgroup>
+          <thead>
             <tr>
-              <td colSpan={6}>暂无明细</td>
+              <th>物流单号</th>
+              <th>UPC</th>
+              <th>IMEI</th>
+              <th>商品</th>
+              <th>状态</th>
+              <th>操作</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {paginatedItems.map((item) => {
+              const isRemoving = removingItemId === item.id;
+              const isUpdating = updatingItemId === item.id;
+              const isEditing = editingItemId === item.id;
+              const isBlockingException = blockingExceptionItemId === item.id;
+              const canRemoveItem = canRemoveItems && item.status !== 'CONFIRMED';
+              const canEditItem =
+                draft?.status === 'DRAFT' &&
+                (item.status === 'PENDING' || item.status === 'EXCEPTION');
+              const canSaveEdit =
+                !!editValues.upsTrackingNo.trim() && !!editValues.upc.trim() && !isUpdating;
+
+              return (
+                <tr
+                  key={item.id}
+                  ref={(element) => {
+                    rowRefs.current[item.id] = element;
+                  }}
+                  className={
+                    [
+                      activeExceptionItemId === item.id ? 'active-exception-row' : '',
+                      isBlockingException ? 'blocking-exception-row' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ') || undefined
+                  }
+                >
+                  <td className="mono">
+                    {isEditing ? (
+                      <input
+                        className="table-inline-input"
+                        value={editValues.upsTrackingNo}
+                        placeholder="UPS / USPS / FedEx / BB0000"
+                        onChange={(event) => updateEditValue('upsTrackingNo', event.target.value)}
+                      />
+                    ) : (
+                      (item.upsTrackingNo ?? '-')
+                    )}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <input
+                        className="table-inline-input"
+                        value={editValues.upc}
+                        onChange={(event) => updateEditValue('upc', event.target.value)}
+                      />
+                    ) : (
+                      item.upc
+                    )}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <input
+                        className="table-inline-input"
+                        value={editValues.imei}
+                        placeholder="可留空"
+                        onChange={(event) => updateEditValue('imei', event.target.value)}
+                      />
+                    ) : (
+                      (item.imei ?? item.serial ?? '-')
+                    )}
+                  </td>
+                  <td>
+                    <strong>{item.product?.name ?? '-'}</strong>
+                    {item.product?.modelCode ? (
+                      <span>型号代码 {item.product.modelCode}</span>
+                    ) : null}
+                  </td>
+                  <td>
+                    <span>{formatInboundItemStatus(item.status)}</span>
+                    {item.status === 'EXCEPTION' ? (
+                      <small>{formatInboundExceptionSummary(item)}</small>
+                    ) : null}
+                  </td>
+                  <td className="inbound-draft-actions-cell">
+                    {isEditing ? (
+                      <div className="inbound-draft-row-actions">
+                        <button
+                          type="button"
+                          className="table-action"
+                          title="覆盖保存当前明细"
+                          disabled={!canSaveEdit}
+                          onClick={() => void saveEditingItem(item.id)}
+                        >
+                          <Check size={14} />
+                          {isUpdating ? '保存中' : '保存'}
+                        </button>
+                        <button
+                          type="button"
+                          className="table-action secondary"
+                          title="取消修正"
+                          disabled={isUpdating}
+                          onClick={() => setEditingItemId('')}
+                        >
+                          <X size={14} />
+                          取消
+                        </button>
+                      </div>
+                    ) : canEditItem ? (
+                      <div className="inbound-draft-row-actions">
+                        <button
+                          type="button"
+                          className="table-action secondary"
+                          title="编辑当前待入库明细"
+                          disabled={!!updatingItemId || !!removingItemId}
+                          onClick={() => startEditingItem(item)}
+                        >
+                          <Pencil size={14} />
+                          {item.status === 'EXCEPTION' ? '修正' : '编辑'}
+                        </button>
+                      </div>
+                    ) : null}
+                    {!isEditing && canRemoveItem ? (
+                      <div className="inbound-draft-row-actions">
+                        <button
+                          type="button"
+                          className="table-action danger"
+                          title="删除明细"
+                          disabled={!!removingItemId || !!updatingItemId || isEditing}
+                          onClick={() => onRemoveItem(item.id)}
+                        >
+                          <Trash2 size={14} />
+                          {isRemoving ? '删除中' : '删除'}
+                        </button>
+                      </div>
+                    ) : item.status === 'EXCEPTION' ? null : (
+                      '-'
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={6}>暂无明细</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -1839,6 +1922,42 @@ function upcLikeValue(value: string) {
   return /^[0-9]{8,14}$/.test(value);
 }
 
+function getCurrentScanValidationMessage(input: {
+  scanMode: InboundScanMode;
+  upsTrackingNo: string;
+  upc: string;
+  imei: string;
+  trackingWarningConfirmed: boolean;
+}) {
+  const trackingValue = normalizePackageTracking(input.upsTrackingNo);
+  const upcValue = input.upc.trim();
+  const imeiValue = input.imei.trim();
+
+  if (!trackingValue && (upcValue || imeiValue)) {
+    return '请先扫描物流单号。';
+  }
+  if (!upcValue && (trackingValue || imeiValue)) {
+    return '请扫描 UPC。';
+  }
+  if (input.scanMode === 'STANDARD' && !imeiValue && trackingValue && upcValue) {
+    return '一版模式必须扫描 IMEI。';
+  }
+  if (!trackingValue || !upcValue || (input.scanMode === 'STANDARD' && !imeiValue)) {
+    return '';
+  }
+  if (!isAutoAcceptedPackageTracking(trackingValue) && !input.trackingWarningConfirmed) {
+    return '物流单号不在自动放行规则内，请先确认物流单号提示后再加入明细。';
+  }
+  if (!isValidUpc(upcValue)) {
+    return 'UPC 格式不正确：请输入 8-14 位数字。';
+  }
+  if (input.scanMode === 'STANDARD' && !isValidImei(imeiValue)) {
+    return 'IMEI 格式不正确：请输入 15 位数字 IMEI，或 10-18 位大写字母数字的 Apple 设备标识。';
+  }
+
+  return '';
+}
+
 function formatInboundItemStatus(status: string) {
   const labels: Record<string, string> = {
     PENDING: '待确认',
@@ -1935,6 +2054,14 @@ function isCurrentDraftDuplicateTrackingOnly(reasons: string[]) {
 }
 
 function toUserErrorMessage(error: unknown, fallback: string) {
+  const details =
+    error && typeof error === 'object' ? (error as { details?: unknown }).details : null;
+  if (details && typeof details === 'object') {
+    const fields = (details as { fields?: unknown }).fields;
+    if (Array.isArray(fields) && fields.length > 0) {
+      return fields.map(String).join('；');
+    }
+  }
   if (error instanceof Error && error.message) {
     return error.message;
   }
