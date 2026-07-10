@@ -16,6 +16,25 @@ The customer must be locked before scan data becomes operational inventory. Pack
 - Operators cannot change the customer on an existing draft.
 - If a customer assignment was wrong after confirmation, later phases must use the batch customer change workflow and keep change logs.
 
+## Draft Ownership And Multi-Operator Receiving
+
+- Every new inbound draft is bound to both the authenticated account and the current login
+  `sessionId`. The creating login session is the draft owner.
+- All draft lookup, recovery, package review, add, import, edit, delete, clear, and confirmation
+  operations are available only to the creating login session. Another account cannot operate the
+  draft, and a second login session for the same account cannot take it over.
+- A legacy open draft whose `creatorSessionId` is empty may be claimed only by its original creating
+  account. The first valid session from that account claims it atomically; after that claim, the same
+  session-only ownership rule applies.
+- Different operators, or different login sessions for a shared account, may each create a separate
+  draft for the same customer. Each person reviews and confirms only their own draft; confirmed
+  inventory still aggregates under the common customer owner.
+- Final inbound confirmation must be clicked by the draft's creating login session. A different
+  session cannot perform the final confirmation on the creator's behalf.
+- Add, update, delete, clear, and confirm operations lock the owning batch row with `FOR UPDATE` and
+  run serially. This prevents a row from being appended or changed while the same draft is being
+  confirmed and prevents a confirmed batch from retaining new `PENDING` rows.
+
 ## UPC Matching
 
 - UPC values are normalized and validated with the shared UPC validator.
@@ -42,24 +61,30 @@ The customer must be locked before scan data becomes operational inventory. Pack
 - The current API and database field remains `upsTrackingNo` for compatibility, but the business meaning is package tracking number.
 - Multiple items may share one package tracking number within the same package.
 - A package tracking value already confirmed in prior inbound records is treated as a duplicate package signal and can create `UPS_DUPLICATED` exceptions.
-- The scan page auto-accepts UPS tracking numbers, warehouse compensation package numbers that
-  start with `BB0000`, and FedEx tracking numbers that start with `9622` and contain 22 to 34 digits
-  in total. These values can proceed without an extra operator warning.
+- Package tracking validation distinguishes a supported format from an auto-accepted format. Complete
+  UPS tracking numbers and FedEx tracking numbers that start with `9622` and contain 22 to 34 digits
+  in total are both supported and auto-accepted. Only those complete values are eligible for automatic
+  focus movement from package tracking to UPC; partial, overlong, or otherwise malformed values must
+  remain in the package tracking field.
 - `BB0000` package numbers are manually entered by warehouse operators when the warehouse
   compensates a customer with a replacement package. The system normalizes them to uppercase,
   stores them as package tracking numbers, accepts the exact value `BB0000` as valid, and still
-  applies normal duplicate tracking checks.
-- USPS values, non-9622 FedEx values, and all other package tracking formats are abnormal for the
-  current receiving workflow. They must pause the scan page and require explicit operator
-  confirmation before the item can be added to the draft.
+  applies normal duplicate tracking checks. Because `BB0000` can also carry an alphanumeric suffix,
+  neither the exact prefix nor a suffixed value may move focus on an idle-input timer. The operator
+  must press Enter, or the scanner must send its completion key, before the page reviews the value and
+  moves to UPC.
+- USPS and non-9622 FedEx values are supported formats but are not auto-accepted for the current
+  receiving workflow. They must pause the scan page and require explicit operator confirmation before
+  focus moves to UPC or the item can be added to the draft.
 - Explicit operator confirmation only allows supported package tracking formats such as USPS and
   non-9622 FedEx. Completely unsupported values, random text, and non-tracking numbers must still
-  be rejected before a row is saved.
+  be rejected before a row is saved. An unsupported value must keep focus in the package tracking
+  field and the page must not offer a `继续入库` action for that value.
 - When a package tracking number is entered, the scan page should warn the operator if the number
-  does not match the UPS, `BB0000` warehouse compensation, or 9622 FedEx auto-accept rules, if it
-  already appears in confirmed inbound records, or if it already appears in the current draft. The
-  operator can either modify the number or explicitly continue inbound. After explicit confirmation,
-  the current scan can still be saved with that package tracking value.
+  is a supported manual-review format, if it already appears in confirmed inbound records, or if it
+  already appears in the current draft. Only a format-valid warning can offer the choice to modify the
+  number or explicitly continue inbound. After explicit confirmation, the current scan can still be
+  saved with that package tracking value.
 
 ## Confirmation
 
@@ -80,6 +105,9 @@ IMEI/Serial, or duplicated package tracking number, rather than only showing the
 
 The system must:
 
+- Verify that the confirming account and login session own the draft.
+- Lock the draft batch row with `FOR UPDATE`, serializing confirmation against add, update, delete,
+  and clear operations on the same draft.
 - Recheck duplicates inside the transaction.
 - Convert database-level IMEI/Serial uniqueness conflicts into operator-readable duplicate
   messages instead of exposing a generic server error.
@@ -153,15 +181,21 @@ operation buttons must remain visible and usable at normal desktop widths; narro
 scroll the row content, but edit/save/delete controls should not disappear off the far right.
 
 When the inbound scan page is opened without a valid local draft lock, it should automatically load
-the current operator's latest unfinished `DRAFT` inbound batch. The restored draft must restore its
+the current login session's latest unfinished `DRAFT` inbound batch. The restored draft must restore its
 customer, optional alias, warehouse, summary, pending rows, and blocking exception state. It must not
-restore another operator's draft or a confirmed batch.
+restore another account's draft, another login session's draft, or a confirmed batch. An eligible
+legacy draft may be restored only after the original account's current session atomically claims it.
 
 After a row is automatically or manually added, the scan entry form should restore keyboard focus to
 the next receiving input so operators can continue with a scanner without clicking the mouse again.
-After the package tracking input receives a complete tracking value, focus should move to UPC
-automatically even when the scanner does not send an Enter key. Abnormal package tracking values may
-still require the operator to confirm continuing before the row can be saved.
+Automatic focus movement and Enter-key movement must use the same package-tracking decision and API
+review path. A complete UPS value or a complete 9622-prefixed FedEx value can move to UPC automatically
+after review succeeds. USPS and non-9622 FedEx values stay in the package tracking field until the
+operator confirms the format-valid warning. Unsupported values stay in the package tracking field and
+cannot be manually continued. `BB0000` values, with or without a suffix, require Enter or the scanner's
+completion key so the exact prefix cannot move focus while the operator is still typing a suffix.
+If the operator changes the input while an asynchronous review is running, the response for the older
+value must not move focus or replace the warning state for the newer value.
 In standard mode, after the package tracking number is present and the UPC input receives a complete
 UPC value, focus should move to IMEI automatically even when the scanner does not send an Enter key.
 The default loop starts the next row at the package tracking field. When the operator enables the

@@ -1,9 +1,25 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { outboundBoxSizePresets } from './create-outbound-box.dto';
 
 export class UpdateOutboundBoxDto {
+  @ApiProperty({
+    example: '2026-07-10T12:00:00.000Z',
+    description: 'The updatedAt value returned by the latest box read.',
+  })
+  @IsDateString()
+  expectedUpdatedAt!: string;
+
   @ApiPropertyOptional({ example: 'Apple Reseller20260618箱1-A' })
   @IsOptional()
   @IsString()

@@ -126,14 +126,20 @@ function toApiClientError<T>(
   options: { notifyAuthExpired?: boolean } = {},
 ) {
   if (!failure.success && isAuthFailure(failure)) {
+    const notifyExpired = options.notifyAuthExpired ?? true;
     authTokenStore.clear();
-    if (options.notifyAuthExpired ?? true) {
+    if (notifyExpired) {
       notifyAuthExpired();
     }
-    return new ApiClientError(failure.error.message, failure.error.code, failure.requestId, {
-      ...failure.error.details,
-      originalMessage: failure.error.message,
-    });
+    return new ApiClientError(
+      notifyExpired ? '登录已过期，请重新登录。' : failure.error.message,
+      failure.error.code,
+      failure.requestId,
+      {
+        ...failure.error.details,
+        originalMessage: failure.error.message,
+      },
+    );
   }
 
   if (!failure.success) {

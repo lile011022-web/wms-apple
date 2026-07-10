@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -31,7 +33,12 @@ import { ForceConfirmInboundItemDto } from './dto/force-confirm-inbound-item.dto
 import { ImportInboundItemsDto } from './dto/import-inbound-items.dto';
 import { ListInboundRecordsQueryDto } from './dto/list-inbound-records-query.dto';
 import { ScanInboundUpsDto } from './dto/scan-inbound-ups.dto';
-import { InboundDraftRecord, InboundItemRecord, InboundRepository } from './inbound.repository';
+import {
+  InboundDraftAccess,
+  InboundDraftRecord,
+  InboundItemRecord,
+  InboundRepository,
+} from './inbound.repository';
 
 @Injectable()
 export class InboundService {
@@ -42,6 +49,7 @@ export class InboundService {
   ) {}
 
   async createDraft(dto: CreateInboundDraftDto, operator: AuthenticatedUser) {
+    const sessionId = this.requireSessionId(operator);
     const settings = await this.settingsService.getSettings();
     const customerId = dto.customerId?.trim();
 
@@ -90,6 +98,7 @@ export class InboundService {
       customerAlias: customerAlias ? { connect: { id: customerAlias.id } } : undefined,
       warehouse: { connect: { id: warehouse.id } },
       operator: { connect: { id: operator.id } },
+      creatorSessionId: sessionId,
       status: InboundBatchStatus.DRAFT,
       notes: this.trimOptional(dto.notes),
     });
@@ -97,46 +106,55 @@ export class InboundService {
     return this.toDraftResponse(draft);
   }
 
-  async getDraft(id: string) {
-    const draft = await this.findOpenDraft(id);
+  async getDraft(id: string, operator: AuthenticatedUser) {
+    const draft = await this.findOpenDraft(id, operator);
     return this.toDraftResponse(draft);
   }
 
-  async getDraftByBatchNo(batchNo: string) {
+  async getDraftByBatchNo(batchNo: string, operator: AuthenticatedUser) {
     const normalizedBatchNo = batchNo.trim().toUpperCase();
     if (!normalizedBatchNo) {
       throw new BadRequestException('Inbound batch number is required.');
     }
 
-    const draft = await this.inboundRepository.findDraftByBatchNo(normalizedBatchNo);
+    const existing = await this.inboundRepository.findDraftByBatchNo(normalizedBatchNo);
+    const draft = existing ? await this.assertOwnedOpenDraft(existing, operator) : null;
     if (!draft) {
       throw new NotFoundException('没有找到这个入库单号。');
-    }
-    if (draft.status !== InboundBatchStatus.DRAFT) {
-      throw new ConflictException('这个入库单已经不是草稿状态，不能在入库扫码页面恢复。');
     }
 
     return this.toDraftResponse(draft);
   }
 
   async getLatestDraftForOperator(operator: AuthenticatedUser) {
-    const draft = await this.inboundRepository.findLatestDraftByOperator(operator.id);
+    const sessionId = this.requireSessionId(operator);
+    let draft = await this.inboundRepository.findLatestDraftByOperatorSession(
+      operator.id,
+      sessionId,
+    );
+    if (!draft) {
+      draft = await this.inboundRepository.claimLatestLegacyDraft(operator.id, sessionId);
+    }
     return draft ? this.toDraftResponse(draft) : null;
   }
 
-  async scanUps(draftId: string, dto: ScanInboundUpsDto) {
-    const draft = await this.findOpenDraft(draftId);
+  async scanUps(draftId: string, dto: ScanInboundUpsDto, operator: AuthenticatedUser) {
+    const draft = await this.findOpenDraft(draftId, operator);
     const upsTrackingNo = normalizePackageTracking(dto.upsTrackingNo);
     const settings = await this.settingsService.getSettings();
-    const valid = isAutoAcceptedPackageTracking(upsTrackingNo);
+    const formatValid = isValidPackageTracking(upsTrackingNo);
+    const autoAccepted = isAutoAcceptedPackageTracking(upsTrackingNo);
     const currentDraftDuplicateCount = await this.inboundRepository.countDraftItemsByUps(
       draft.id,
       upsTrackingNo,
     );
-    if (!valid) {
+    if (!formatValid) {
       return {
         draftId: draft.id,
         upsTrackingNo,
+        formatValid,
+        autoAccepted,
+        // Compatibility alias: historically `valid` meant auto-accepted.
         valid: false,
         duplicate: false,
         duplicateCount: 0,
@@ -151,7 +169,10 @@ export class InboundService {
     return {
       draftId: draft.id,
       upsTrackingNo,
-      valid,
+      formatValid,
+      autoAccepted,
+      // Compatibility alias: historically `valid` meant auto-accepted.
+      valid: autoAccepted,
       duplicate: settings.scanRules.detectDuplicateUps && duplicateCount > 0,
       duplicateCount,
       currentDraftDuplicate:
@@ -160,21 +181,27 @@ export class InboundService {
     };
   }
 
-  async addItem(draftId: string, dto: AddInboundItemDto) {
-    const draft = await this.findOpenDraft(draftId);
+  async addItem(draftId: string, dto: AddInboundItemDto, operator: AuthenticatedUser) {
+    const draft = await this.findOpenDraft(draftId, operator);
     this.assertLatestDraftItemIsNotException(draft);
     const settings = await this.settingsService.getSettings();
     const prepared = await this.prepareInboundItemInput(draft, dto, settings);
     const item = await this.inboundRepository.createItem(
       this.toInboundItemCreateInput(draft, prepared),
       prepared.exception,
+      this.toDraftAccess(draft.id, operator),
     );
 
     return this.toItemResponse(item);
   }
 
-  async updateItem(draftId: string, itemId: string, dto: AddInboundItemDto) {
-    const draft = await this.findOpenDraft(draftId);
+  async updateItem(
+    draftId: string,
+    itemId: string,
+    dto: AddInboundItemDto,
+    operator: AuthenticatedUser,
+  ) {
+    const draft = await this.findOpenDraft(draftId, operator);
     const item = await this.inboundRepository.findItemById(itemId);
     if (!item || item.inboundBatchId !== draft.id) {
       throw new NotFoundException('Inbound draft item not found.');
@@ -189,13 +216,14 @@ export class InboundService {
       item.id,
       this.toInboundItemUpdateInput(prepared),
       prepared.exception,
+      this.toDraftAccess(draft.id, operator),
     );
 
     return this.toItemResponse(updated);
   }
 
-  async importItems(draftId: string, dto: ImportInboundItemsDto) {
-    const activeDraft = await this.findOpenDraft(draftId);
+  async importItems(draftId: string, dto: ImportInboundItemsDto, operator: AuthenticatedUser) {
+    const activeDraft = await this.findOpenDraft(draftId, operator);
     this.assertLatestDraftItemIsNotException(activeDraft);
     let importedCount = 0;
     const failedRows: Array<{
@@ -210,7 +238,7 @@ export class InboundService {
     for (const [index, row] of dto.items.entries()) {
       const lineNo = index + 1;
       try {
-        await this.addItem(draftId, row);
+        await this.addItem(draftId, row, operator);
         importedCount += 1;
       } catch (error) {
         failedRows.push({
@@ -224,7 +252,7 @@ export class InboundService {
       }
     }
 
-    const draft = await this.findOpenDraft(draftId);
+    const draft = await this.findOpenDraft(draftId, operator);
     return {
       importedCount,
       failedCount: failedRows.length,
@@ -233,8 +261,8 @@ export class InboundService {
     };
   }
 
-  async removeItem(draftId: string, itemId: string) {
-    await this.findOpenDraft(draftId);
+  async removeItem(draftId: string, itemId: string, operator: AuthenticatedUser) {
+    await this.findOpenDraft(draftId, operator);
     const item = await this.inboundRepository.findItemById(itemId);
     if (!item || item.inboundBatchId !== draftId) {
       throw new NotFoundException('Inbound draft item not found.');
@@ -243,14 +271,19 @@ export class InboundService {
       throw new ConflictException('Confirmed inbound item cannot be removed.');
     }
 
-    const deleted = await this.inboundRepository.deleteItem(item.id);
+    const deleted = await this.inboundRepository.deleteItem(
+      item.id,
+      this.toDraftAccess(draftId, operator),
+    );
     return this.toItemResponse(deleted);
   }
 
-  async clearDraftItems(draftId: string) {
-    await this.findOpenDraft(draftId);
-    const result = await this.inboundRepository.clearDraftItems(draftId);
-    const draft = await this.findOpenDraft(draftId);
+  async clearDraftItems(draftId: string, operator: AuthenticatedUser) {
+    await this.findOpenDraft(draftId, operator);
+    const result = await this.inboundRepository.clearDraftItems(
+      this.toDraftAccess(draftId, operator),
+    );
+    const draft = await this.findOpenDraft(draftId, operator);
     return {
       clearedCount: result.count,
       draft: this.toDraftResponse(draft),
@@ -258,7 +291,7 @@ export class InboundService {
   }
 
   async confirmDraft(draftId: string, operator: AuthenticatedUser) {
-    const draft = await this.findOpenDraft(draftId);
+    const draft = await this.findOpenDraft(draftId, operator);
     this.assertLatestDraftItemIsNotException(draft);
     const confirmableItems = draft.inboundItems.filter(
       (item) => item.status === InboundItemStatus.PENDING && item.productId,
@@ -273,6 +306,7 @@ export class InboundService {
     const confirmed = await this.inboundRepository.confirmDraft({
       draftId: draft.id,
       operatorId: operator.id,
+      sessionId: this.requireSessionId(operator),
       duplicateImeiExceptionEnabled: settings.exceptionHandling.createDuplicateImeiException,
       duplicateUpsExceptionEnabled: settings.exceptionHandling.createDuplicateUpsException,
       packagePrealertsEnabled: this.arePackagePrealertsEnabled(),
@@ -569,15 +603,59 @@ export class InboundService {
     };
   }
 
-  private async findOpenDraft(id: string) {
-    const draft = await this.inboundRepository.findDraftById(id);
-    if (!draft) {
+  private async findOpenDraft(id: string, operator: AuthenticatedUser) {
+    const existing = await this.inboundRepository.findDraftById(id);
+    if (!existing) {
       throw new NotFoundException('Inbound draft not found.');
     }
-    if (draft.status !== InboundBatchStatus.DRAFT) {
+    return this.assertOwnedOpenDraft(existing, operator);
+  }
+
+  private async assertOwnedOpenDraft(existing: InboundDraftRecord, operator: AuthenticatedUser) {
+    const sessionId = this.requireSessionId(operator);
+    if (existing.operatorId !== operator.id) {
+      throw new ForbiddenException('Inbound draft belongs to another operator.');
+    }
+    if (existing.creatorSessionId && existing.creatorSessionId !== sessionId) {
+      throw new ForbiddenException('Inbound draft belongs to another login session.');
+    }
+    if (existing.status !== InboundBatchStatus.DRAFT) {
       throw new ConflictException('Inbound draft is already closed.');
     }
+
+    let draft = existing;
+    if (!draft.creatorSessionId) {
+      await this.inboundRepository.claimDraftSession(draft.id, operator.id, sessionId);
+      const claimed = await this.inboundRepository.findDraftById(draft.id);
+      if (!claimed) {
+        throw new NotFoundException('Inbound draft not found.');
+      }
+      if (claimed.status !== InboundBatchStatus.DRAFT) {
+        throw new ConflictException('Inbound draft is already closed.');
+      }
+      if (claimed.creatorSessionId !== sessionId) {
+        throw new ForbiddenException('Inbound draft was claimed by another login session.');
+      }
+      draft = claimed;
+    }
+
     return draft;
+  }
+
+  private toDraftAccess(draftId: string, operator: AuthenticatedUser): InboundDraftAccess {
+    return {
+      draftId,
+      operatorId: operator.id,
+      sessionId: this.requireSessionId(operator),
+    };
+  }
+
+  private requireSessionId(operator: AuthenticatedUser) {
+    const sessionId = operator.sessionId?.trim();
+    if (!sessionId) {
+      throw new UnauthorizedException('Login session is required. Please sign in again.');
+    }
+    return sessionId;
   }
 
   private assertLatestDraftItemIsNotException(draft: InboundDraftRecord) {

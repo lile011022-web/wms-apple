@@ -33,8 +33,13 @@ export class JwtAuthGuard implements CanActivate {
         throw new UnauthorizedException('Access token is required.');
       }
 
+      if (typeof payload.sessionId !== 'string' || payload.sessionId.trim().length === 0) {
+        throw new UnauthorizedException('Access token session is required.');
+      }
+
       request.user = {
         id: payload.sub,
+        sessionId: payload.sessionId,
         email: payload.email,
         name: payload.name,
         roles: payload.roles,

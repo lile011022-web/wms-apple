@@ -344,17 +344,18 @@ model ProductUpc {
 }
 
 model InboundBatch {
-  id              String             @id @default(cuid())
-  batchNo         String             @unique
-  customerId      String
-  customerAliasId String?
-  warehouseId     String
-  operatorId      String
-  status          InboundBatchStatus @default(CONFIRMED)
-  confirmedAt     DateTime?
-  notes           String?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  id               String             @id @default(cuid())
+  batchNo          String             @unique
+  customerId       String
+  customerAliasId  String?
+  warehouseId      String
+  operatorId       String
+  creatorSessionId String?            @db.VarChar(128)
+  status           InboundBatchStatus @default(CONFIRMED)
+  confirmedAt      DateTime?
+  notes            String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   customer             Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
   customerAlias        CustomerAlias?        @relation(fields: [customerAliasId], references: [id], onDelete: SetNull)
@@ -367,6 +368,7 @@ model InboundBatch {
   @@index([customerId, createdAt])
   @@index([customerAliasId, createdAt])
   @@index([warehouseId, createdAt])
+  @@index([operatorId, creatorSessionId, status, updatedAt])
   @@map("inbound_batches")
 }
 

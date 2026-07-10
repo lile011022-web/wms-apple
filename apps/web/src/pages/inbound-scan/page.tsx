@@ -13,6 +13,7 @@ import {
 import {
   isAutoAcceptedPackageTracking,
   isValidImei,
+  isValidPackageTracking,
   isValidUpc,
   normalizePackageTracking,
 } from '@wms-scan/shared';
@@ -31,6 +32,14 @@ import { customersApi, inboundApi, packagePrealertsApi } from '../../api/workflo
 import { PaginationControls } from '../../components/pagination-controls';
 import { packagePrealertsEnabled } from '../../config/feature-flags';
 import { selectDefaultWarehouseId } from '../../utils/default-warehouse';
+import {
+  buildTrackingWarningReasons,
+  getTrackingAdvanceDecision,
+  isTrackingScanFormatValid,
+  trackingFormatErrorMessage,
+  type TrackingAdvanceTrigger,
+  type TrackingScanResult,
+} from './tracking-input';
 
 const inboundLockStorageKey = 'wms_scan_inbound_lock';
 const inboundImportTemplateHeaders = ['单号', 'upc', 'imei'];
@@ -70,6 +79,15 @@ let inboundScanInputCache = {
   imei: '',
 };
 
+export function clearInboundScanClientState() {
+  inboundScanInputCache = {
+    upsTrackingNo: '',
+    upc: '',
+    imei: '',
+  };
+  removeInboundLock();
+}
+
 export function InboundScanPage() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -101,6 +119,8 @@ export function InboundScanPage() {
   const trackingInputRef = useRef<HTMLInputElement | null>(null);
   const upcInputRef = useRef<HTMLInputElement | null>(null);
   const imeiInputRef = useRef<HTMLInputElement | null>(null);
+  const trackingReviewInFlightRef = useRef(false);
+  const scanFocusRequestRef = useRef(0);
   const lastAutoAddKeyRef = useRef('');
   const hasFocusedLockedDraftRef = useRef(false);
   const hasCheckedLatestDraftRef = useRef(false);
@@ -276,29 +296,27 @@ export function InboundScanPage() {
     };
   };
 
-  const focusScanInput = useCallback((field: InboundScanField, options?: { retry?: boolean }) => {
-    const focus = () => {
+  const focusScanInput = useCallback((field: InboundScanField) => {
+    const requestId = ++scanFocusRequestRef.current;
+    window.setTimeout(() => {
+      if (scanFocusRequestRef.current !== requestId) {
+        return;
+      }
       const input =
         field === 'tracking'
           ? trackingInputRef.current
           : field === 'upc'
             ? upcInputRef.current
             : imeiInputRef.current;
-      input?.focus();
+      input?.focus({ preventScroll: true });
       input?.select();
-    };
-
-    window.setTimeout(focus, 0);
-    if (options?.retry) {
-      window.setTimeout(focus, 60);
-      window.setTimeout(focus, 180);
-    }
+    }, 0);
   }, []);
 
   const focusNextScanStart = useCallback(() => {
     const nextField = reuseTrackingNo ? 'upc' : 'tracking';
     setPendingScanFocus(nextField);
-    focusScanInput(nextField, { retry: true });
+    focusScanInput(nextField);
   }, [focusScanInput, reuseTrackingNo]);
 
   const clearScanInputs = (options?: { keepTrackingNo?: boolean }) => {
@@ -355,6 +373,19 @@ export function InboundScanPage() {
     if (!normalized) {
       throw new Error('请先扫描物流单号');
     }
+    if (getTrackingAdvanceDecision(normalized, 'EXPLICIT') === 'INVALID') {
+      setTrackingWarning({
+        trackingNo: normalized,
+        reasons: [trackingFormatErrorMessage],
+        confirmed: false,
+        formatValid: false,
+        canContinue: false,
+      });
+      setMessage('');
+      setErrorMessage(`${trackingFormatErrorMessage}。`);
+      focusScanInput('tracking');
+      return false;
+    }
     if (
       activeTrackingWarning?.trackingNo === normalized &&
       (activeTrackingWarning.confirmed || isReusableTrackingWarningConfirmed)
@@ -364,13 +395,20 @@ export function InboundScanPage() {
     if (blockingExceptionItem) {
       throw new Error('上一条入库明细仍为异常，请先在当前入库单中修正该异常后再继续入库。');
     }
+    if (trackingReviewInFlightRef.current) {
+      return false;
+    }
 
+    trackingReviewInFlightRef.current = true;
     setIsCheckingTracking(true);
     try {
       const activeDraft = await ensureDraft();
       const scanResult = (await inboundApi.scanUps(activeDraft.id, {
         upsTrackingNo: upsTrackingNo.trim(),
       })) as TrackingScanResult;
+      if (normalizeTrackingInput(trackingInputRef.current?.value ?? '') !== normalized) {
+        return false;
+      }
       const reasons = buildTrackingWarningReasons(scanResult);
       if (reasons.length === 0) {
         setTrackingWarning(null);
@@ -381,15 +419,22 @@ export function InboundScanPage() {
         trackingNo: scanResult.upsTrackingNo,
         reasons,
         confirmed: reuseTrackingNo && isCurrentDraftDuplicateTrackingOnly(reasons),
+        formatValid: isTrackingScanFormatValid(scanResult),
+        canContinue: isTrackingScanFormatValid(scanResult),
       });
       if (reuseTrackingNo && isCurrentDraftDuplicateTrackingOnly(reasons)) {
         return true;
       }
       setMessage('');
-      setErrorMessage('该物流单号需要手动确认后才能继续入库。');
+      setErrorMessage(
+        isTrackingScanFormatValid(scanResult)
+          ? '该物流单号需要手动确认后才能继续入库。'
+          : `${trackingFormatErrorMessage}。`,
+      );
       focusScanInput('tracking');
       return false;
     } finally {
+      trackingReviewInFlightRef.current = false;
       setIsCheckingTracking(false);
     }
   }, [
@@ -405,6 +450,38 @@ export function InboundScanPage() {
     upsTrackingNo,
     warehouseId,
   ]);
+
+  const advanceTrackingInput = useCallback(
+    async (trigger: TrackingAdvanceTrigger) => {
+      const normalized = normalizeTrackingInput(upsTrackingNo);
+      const decision = getTrackingAdvanceDecision(normalized, trigger);
+      if (isCheckingTracking) {
+        return;
+      }
+      if (trigger === 'AUTO' && decision !== 'REVIEW_AND_ADVANCE') {
+        return;
+      }
+
+      try {
+        const reviewed = await reviewTrackingInput();
+        if (
+          reviewed &&
+          normalizeTrackingInput(trackingInputRef.current?.value ?? '') === normalized
+        ) {
+          setErrorMessage('');
+          focusScanInput('upc');
+        }
+      } catch (error) {
+        if (normalizeTrackingInput(trackingInputRef.current?.value ?? '') !== normalized) {
+          return;
+        }
+        setMessage('');
+        setErrorMessage(toUserErrorMessage(error, '物流单号检查失败'));
+        focusScanInput('tracking');
+      }
+    },
+    [focusScanInput, isCheckingTracking, reviewTrackingInput, upsTrackingNo],
+  );
 
   const createDraftMutation = useMutation({
     mutationFn: () =>
@@ -653,7 +730,7 @@ export function InboundScanPage() {
     }
 
     const timer = window.setTimeout(() => {
-      focusScanInput(pendingScanFocus, { retry: true });
+      focusScanInput(pendingScanFocus);
       setPendingScanFocus(null);
     }, 30);
 
@@ -662,50 +739,10 @@ export function InboundScanPage() {
 
   useEffect(() => {
     const normalized = normalizeTrackingInput(upsTrackingNo);
-    if (
-      !normalized ||
-      normalized.length < 8 ||
-      !isCurrentSelectionLocked ||
-      blockingExceptionItem
-    ) {
-      if (trackingWarning && trackingWarning.trackingNo !== normalized) {
-        setTrackingWarning(null);
-      }
-      return;
+    if (trackingWarning && trackingWarning.trackingNo !== normalized) {
+      setTrackingWarning(null);
     }
-    if (trackingWarning?.trackingNo === normalized) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      ensureDraft()
-        .then((activeDraft) =>
-          inboundApi.scanUps(activeDraft.id, { upsTrackingNo: upsTrackingNo.trim() }),
-        )
-        .then((result) => {
-          const scanResult = result as TrackingScanResult;
-          const reasons = buildTrackingWarningReasons(scanResult);
-          if (reasons.length === 0) {
-            setTrackingWarning(null);
-            return;
-          }
-          setTrackingWarning({
-            trackingNo: scanResult.upsTrackingNo,
-            reasons,
-            confirmed: reuseTrackingNo && isCurrentDraftDuplicateTrackingOnly(reasons),
-          });
-        })
-        .catch((error) => {
-          setTrackingWarning({
-            trackingNo: normalized,
-            reasons: [toUserErrorMessage(error, '物流单号检查失败')],
-            confirmed: false,
-          });
-        });
-    }, 450);
-
-    return () => window.clearTimeout(timer);
-  }, [blockingExceptionItem, isCurrentSelectionLocked, trackingWarning, upsTrackingNo]);
+  }, [trackingWarning, upsTrackingNo]);
 
   useEffect(() => {
     const normalized = normalizeTrackingInput(upsTrackingNo);
@@ -780,7 +817,7 @@ export function InboundScanPage() {
 
     event.preventDefault();
     if (field === 'tracking') {
-      focusScanInput('upc');
+      void advanceTrackingInput('EXPLICIT');
       return;
     }
     if (field === 'upc' && scanMode === 'STANDARD') {
@@ -844,7 +881,8 @@ export function InboundScanPage() {
       !isCurrentSelectionLocked ||
       blockingExceptionItem ||
       addItemMutation.isPending ||
-      !isLikelyCompleteTrackingInput(upsTrackingNo) ||
+      isCheckingTracking ||
+      getTrackingAdvanceDecision(upsTrackingNo, 'AUTO') !== 'REVIEW_AND_ADVANCE' ||
       upc.trim()
     ) {
       return;
@@ -852,15 +890,16 @@ export function InboundScanPage() {
 
     const timer = window.setTimeout(() => {
       if (document.activeElement === trackingInputRef.current) {
-        focusScanInput('upc', { retry: true });
+        void advanceTrackingInput('AUTO');
       }
     }, 120);
 
     return () => window.clearTimeout(timer);
   }, [
     addItemMutation.isPending,
+    advanceTrackingInput,
     blockingExceptionItem,
-    focusScanInput,
+    isCheckingTracking,
     isCurrentSelectionLocked,
     upc,
     upsTrackingNo,
@@ -882,7 +921,7 @@ export function InboundScanPage() {
 
     const timer = window.setTimeout(() => {
       if (document.activeElement === upcInputRef.current) {
-        focusScanInput('imei', { retry: true });
+        focusScanInput('imei');
       }
     }, 120);
 
@@ -1115,11 +1154,12 @@ export function InboundScanPage() {
             <input
               ref={trackingInputRef}
               value={upsTrackingNo}
-              placeholder="UPS / USPS / FedEx / BB0000"
+              placeholder="UPS / USPS / FedEx / BB0000（手输完成后按 Enter）"
               disabled={!!blockingExceptionItem}
               onKeyDown={(event) => handleScanKeyDown(event, 'tracking')}
               onChange={(event) => {
                 setUpsTrackingNo(event.target.value);
+                setErrorMessage('');
                 updateScanInputCache({ upsTrackingNo: event.target.value });
               }}
             />
@@ -1203,7 +1243,9 @@ export function InboundScanPage() {
             className={`tracking-warning-bar ${activeTrackingWarning.confirmed ? 'confirmed' : ''}`}
           >
             <div>
-              <strong>物流单号异常</strong>
+              <strong>
+                {activeTrackingWarning.formatValid ? '物流单号需要确认' : '物流单号格式错误'}
+              </strong>
               <span>{activeTrackingWarning.reasons.join('，')}</span>
             </div>
             {activeTrackingWarning.confirmed ? (
@@ -1222,25 +1264,28 @@ export function InboundScanPage() {
                 >
                   修改单号
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextField = upc.trim()
-                      ? scanMode === 'STANDARD'
-                        ? 'imei'
-                        : 'upc'
-                      : 'upc';
-                    setTrackingWarning((current) =>
-                      current?.trackingNo === activeTrackingWarning.trackingNo
-                        ? { ...current, confirmed: true }
-                        : current,
-                    );
-                    setPendingScanFocus(nextField);
-                    focusScanInput(nextField, { retry: true });
-                  }}
-                >
-                  继续入库
-                </button>
+                {activeTrackingWarning.canContinue ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextField = upc.trim()
+                        ? scanMode === 'STANDARD'
+                          ? 'imei'
+                          : 'upc'
+                        : 'upc';
+                      setTrackingWarning((current) =>
+                        current?.trackingNo === activeTrackingWarning.trackingNo
+                          ? { ...current, confirmed: true }
+                          : current,
+                      );
+                      setErrorMessage('');
+                      setPendingScanFocus(nextField);
+                      focusScanInput(nextField);
+                    }}
+                  >
+                    继续入库
+                  </button>
+                ) : null}
               </div>
             )}
           </div>
@@ -1353,14 +1398,8 @@ type TrackingWarning = {
   trackingNo: string;
   reasons: string[];
   confirmed: boolean;
-};
-type TrackingScanResult = {
-  upsTrackingNo: string;
-  valid: boolean;
-  duplicate: boolean;
-  duplicateCount: number;
-  currentDraftDuplicate?: boolean;
-  currentDraftDuplicateCount?: number;
+  formatValid: boolean;
+  canContinue: boolean;
 };
 
 function DraftPanel({
@@ -1894,34 +1933,6 @@ function getInboundItemSortTime(item: InboundDraftItem) {
   return Number.isFinite(time) ? time : 0;
 }
 
-function isLikelyCompleteTrackingInput(value: string) {
-  const normalized = normalizeTrackingInput(value);
-  if (!normalized) {
-    return false;
-  }
-  if (/^1Z[0-9A-Z]{16}$/i.test(normalized)) {
-    return true;
-  }
-  if (/^9622[0-9]{18,30}$/.test(normalized)) {
-    return true;
-  }
-  if (/^BB0000[0-9A-Z]*$/.test(normalized)) {
-    return true;
-  }
-  if (/^[0-9]{12}$/.test(normalized) || /^[0-9]{15}$/.test(normalized)) {
-    return true;
-  }
-  if (/^[0-9]{20,34}$/.test(normalized)) {
-    return true;
-  }
-
-  return normalized.length >= 8 && !upcLikeValue(normalized);
-}
-
-function upcLikeValue(value: string) {
-  return /^[0-9]{8,14}$/.test(value);
-}
-
 function getCurrentScanValidationMessage(input: {
   scanMode: InboundScanMode;
   upsTrackingNo: string;
@@ -1945,8 +1956,11 @@ function getCurrentScanValidationMessage(input: {
   if (!trackingValue || !upcValue || (input.scanMode === 'STANDARD' && !imeiValue)) {
     return '';
   }
+  if (!isValidPackageTracking(trackingValue)) {
+    return `${trackingFormatErrorMessage}。`;
+  }
   if (!isAutoAcceptedPackageTracking(trackingValue) && !input.trackingWarningConfirmed) {
-    return '物流单号不在自动放行规则内，请先确认物流单号提示后再加入明细。';
+    return '该物流单号需要人工确认，请回到物流单号框按 Enter 完成检查。';
   }
   if (!isValidUpc(upcValue)) {
     return 'UPC 格式不正确：请输入 8-14 位数字。';
@@ -2031,20 +2045,6 @@ function findDraftIdentityDuplicates(items: InboundDraftItem[]) {
   }
 
   return [...counts.entries()].filter(([, count]) => count > 1).map(([identity]) => identity);
-}
-
-function buildTrackingWarningReasons(result: TrackingScanResult) {
-  const reasons: string[] = [];
-  if (!result.valid) {
-    reasons.push('不是 UPS、BB0000 仓库补偿单号或 9622 开头的 22-34 位 FedEx 自动放行规则');
-  }
-  if (result.duplicate) {
-    reasons.push(`该物流单号已有 ${result.duplicateCount} 条确认入库记录`);
-  }
-  if (result.currentDraftDuplicate) {
-    reasons.push(`当前入库单已扫过该物流单号 ${result.currentDraftDuplicateCount ?? 1} 次`);
-  }
-  return reasons;
 }
 
 function isCurrentDraftDuplicateTrackingOnly(reasons: string[]) {

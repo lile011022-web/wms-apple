@@ -16,6 +16,12 @@ The API returns stateless JWTs:
 
 - Access token: `15m`, used as `Authorization: Bearer <token>`.
 - Refresh token: `7d`, sent to `POST /auth/refresh`.
+- Every successful login or registration creates a new UUID `sessionId`. The access token and refresh
+  token issued in that response carry the same `sessionId`.
+- Refreshing a token pair preserves the `sessionId` from the accepted refresh token. Refresh does not
+  start a second login session.
+- Access and refresh tokens without a non-empty `sessionId` are legacy tokens and are rejected. After
+  this rule is deployed, users holding an older token must sign in again.
 
 Logout writes an audit log but does not revoke already issued stateless tokens. Token revocation requires a future refresh-token persistence table.
 
@@ -61,6 +67,9 @@ Business rules:
 - Email lookup is case-insensitive by normalizing input to lowercase.
 - Passwords are compared against `passwordHash`; plaintext passwords are never returned.
 - Disabled users receive `AUTHENTICATION_FAILED`.
+- Every successful call creates a new login session, even when the same account is already signed in
+  on another browser or device. Concurrent logins therefore receive different `sessionId` values and
+  different JWTs.
 - Successful login updates `lastLoginAt` and writes an `AuditLog` with action `LOGIN`.
 
 ## POST /auth/register
@@ -88,6 +97,8 @@ Business rules:
 - `OPERATOR` receives operational permissions for dashboard, audit-log lookup, customers, UPC products, inbound, inventory, outbound, exceptions, and reports.
 - `OPERATOR` does not receive `settings.manage`, `users.manage`, or `roles.manage`.
 - Registration writes an `AuditLog` with action `USER_CHANGE` and metadata source `public-registration`.
+- Successful registration starts a new UUID-backed login session. Both returned JWTs carry that
+  session's `sessionId`.
 
 ## POST /auth/refresh
 
@@ -106,7 +117,10 @@ Response `data` matches the login response shape.
 Business rules:
 
 - Only tokens signed as `type: refresh` are accepted.
+- The refresh token must contain a non-empty `sessionId`, and both replacement tokens keep exactly
+  that value.
 - Disabled or missing users cannot refresh tokens.
+- A legacy refresh token without `sessionId` is rejected; the user must sign in again.
 
 ## POST /auth/logout
 
@@ -130,6 +144,10 @@ Business rules:
 Requires Bearer access token.
 
 Returns the current active user with roles and permission codes.
+
+The authenticated request context also carries the `sessionId` recovered from the access token.
+Business modules use this server-side value for login-session ownership checks; it is not added to
+the public user object returned by this endpoint.
 
 Frontend usage:
 

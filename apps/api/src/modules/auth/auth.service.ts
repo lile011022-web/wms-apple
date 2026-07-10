@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuditAction, UserStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import { randomUUID } from 'node:crypto';
 import { BusinessError } from '../../common/errors/business-error';
 import { ErrorCode } from '../../common/errors/error-codes';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
@@ -53,7 +54,7 @@ export class AuthService {
     }
 
     await this.authRepository.updateLastLoginAt(user.id);
-    const authUser = this.toAuthenticatedUser(user);
+    const authUser = this.toAuthenticatedUser(user, randomUUID());
     await this.auditLogsService.record({
       ...context,
       operatorId: user.id,
@@ -79,12 +80,16 @@ export class AuthService {
         throw new UnauthorizedException('Refresh token is required.');
       }
 
+      if (typeof payload.sessionId !== 'string' || payload.sessionId.trim().length === 0) {
+        throw new UnauthorizedException('Refresh token session is required.');
+      }
+
       const user = await this.authRepository.findById(payload.sub);
       if (!user || user.status !== UserStatus.ACTIVE) {
         throw new UnauthorizedException('User account is unavailable.');
       }
 
-      const authUser = this.toAuthenticatedUser(user);
+      const authUser = this.toAuthenticatedUser(user, payload.sessionId);
       return {
         user: this.toPublicUser(user),
         tokens: await this.issueTokens(authUser),
@@ -98,6 +103,7 @@ export class AuthService {
     const user = await this.usersService.registerOperator(dto, context);
     const authUser: AuthenticatedUser = {
       id: user.id,
+      sessionId: randomUUID(),
       email: user.email,
       name: user.name,
       roles: user.roles.map((role) => role.code),
@@ -106,7 +112,11 @@ export class AuthService {
 
     return {
       user: {
-        ...authUser,
+        id: authUser.id,
+        email: authUser.email,
+        name: authUser.name,
+        roles: authUser.roles,
+        permissions: authUser.permissions,
         status: user.status,
         lastLoginAt: user.lastLoginAt,
         createdAt: user.createdAt,
@@ -193,6 +203,7 @@ export class AuthService {
     const basePayload = {
       sub: user.id,
       id: user.id,
+      sessionId: user.sessionId,
       email: user.email,
       name: user.name,
       roles: user.roles,
@@ -224,9 +235,10 @@ export class AuthService {
     };
   }
 
-  private toAuthenticatedUser(user: UserRecord): AuthenticatedUser {
+  private toAuthenticatedUser(user: UserRecord, sessionId: string): AuthenticatedUser {
     return {
       id: user.id,
+      sessionId,
       email: user.email,
       name: user.name,
       roles: user.roles.map((assignment) => assignment.role.code),
@@ -241,9 +253,18 @@ export class AuthService {
   }
 
   private toPublicUser(user: UserRecord) {
-    const authUser = this.toAuthenticatedUser(user);
     return {
-      ...authUser,
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      roles: user.roles.map((assignment) => assignment.role.code),
+      permissions: [
+        ...new Set(
+          user.roles.flatMap((assignment) =>
+            assignment.role.permissions.map((rolePermission) => rolePermission.permission.code),
+          ),
+        ),
+      ],
       status: user.status,
       lastLoginAt: user.lastLoginAt,
       createdAt: user.createdAt,

@@ -13,6 +13,7 @@ import { ExceptionsService } from '../exceptions.service';
 const now = new Date('2026-06-17T00:00:00Z');
 const user = {
   id: 'user-1',
+  sessionId: 'session-test',
   email: 'operator@wms-scan.local',
   name: 'Exception Handler',
   roles: ['ADMIN'],

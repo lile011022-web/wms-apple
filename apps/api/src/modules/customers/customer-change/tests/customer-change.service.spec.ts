@@ -40,6 +40,7 @@ const warehouse = {
 };
 const operator = {
   id: 'user-1',
+  sessionId: 'session-test',
   email: 'operator@wms-scan.local',
   name: 'Batch Operator',
   roles: ['ADMIN'],

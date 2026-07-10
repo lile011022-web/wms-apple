@@ -21,6 +21,7 @@ import { OutboundService } from '../../outbound/outbound.service';
 const now = new Date('2026-06-18T00:00:00Z');
 const operator = {
   id: 'user-1',
+  sessionId: 'session-test',
   email: 'operator@wms-scan.local',
   name: 'Warehouse Operator',
   roles: ['ADMIN'],
@@ -83,6 +84,7 @@ const draft = {
   customerId: currentCustomer.id,
   warehouseId: warehouse.id,
   operatorId: operator.id,
+  creatorSessionId: operator.sessionId,
   status: InboundBatchStatus.DRAFT,
   confirmedAt: null,
   notes: null,
@@ -220,11 +222,15 @@ describe('Core inbound, outbound, and customer-change workflow', () => {
       { customerId: currentCustomer.id, warehouseId: warehouse.id },
       operator,
     );
-    const scannedItem = await inboundService.addItem(createdDraft.id, {
-      upc: inventoryItem.upc,
-      imei: inventoryItem.imei,
-      upsTrackingNo: inventoryItem.upsTrackingNo,
-    });
+    const scannedItem = await inboundService.addItem(
+      createdDraft.id,
+      {
+        upc: inventoryItem.upc,
+        imei: inventoryItem.imei,
+        upsTrackingNo: inventoryItem.upsTrackingNo,
+      },
+      operator,
+    );
     const confirmedDraft = await inboundService.confirmDraft(createdDraft.id, operator);
 
     expect(scannedItem).toMatchObject({

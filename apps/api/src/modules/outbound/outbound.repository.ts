@@ -1,6 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { AuditAction, InventoryStatus, OutboundBoxStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { normalizeOutboundBoxName, toOutboundBoxNameKey } from './outbound-box-name';
+
+export type OutboundBoxUpdateConflictReason =
+  | 'NOT_FOUND'
+  | 'NOT_OPEN'
+  | 'VERSION_CONFLICT'
+  | 'DUPLICATE_NAME'
+  | 'INVALID_NAME';
+
+export class OutboundBoxUpdateConflictError extends Error {
+  constructor(readonly reason: OutboundBoxUpdateConflictReason) {
+    super(reason);
+    this.name = 'OutboundBoxUpdateConflictError';
+  }
+}
 
 const outboundBoxInclude = {
   customer: true,
@@ -132,10 +147,48 @@ export class OutboundRepository {
     });
   }
 
-  async createBoxWithAudit(data: Prisma.OutboundBoxCreateInput, operatorId: string) {
+  async createBoxWithAudit(
+    data: Omit<Prisma.OutboundBoxCreateInput, 'boxNo' | 'boxName'>,
+    operatorId: string,
+    identity: {
+      warehouseId: string;
+      boxNoPrefix: string;
+      generatedBoxNamePrefix: string;
+      requestedBoxName?: string;
+    },
+  ) {
     return this.prisma.$transaction(async (tx) => {
+      await this.acquireBoxNameLock(tx, identity.warehouseId);
+
+      const existingBoxNos = await tx.outboundBox.findMany({
+        where: {
+          warehouseId: identity.warehouseId,
+          boxNo: { startsWith: identity.boxNoPrefix },
+        },
+        select: { boxNo: true },
+      });
+      const latestSequence = existingBoxNos.reduce((latest, box) => {
+        const sequence = Number(box.boxNo.slice(identity.boxNoPrefix.length));
+        return Number.isFinite(sequence) ? Math.max(latest, sequence) : latest;
+      }, 0);
+      const nextSequence = latestSequence + 1;
+      const boxNo = `${identity.boxNoPrefix}${nextSequence.toString().padStart(3, '0')}`;
+      const normalizedBoxName = normalizeOutboundBoxName(
+        identity.requestedBoxName ?? `${identity.generatedBoxNamePrefix}${nextSequence}`,
+      );
+      if ('error' in normalizedBoxName) {
+        throw new OutboundBoxUpdateConflictError('INVALID_NAME');
+      }
+      if (await this.hasBoxNameCollision(tx, identity.warehouseId, normalizedBoxName.key)) {
+        throw new OutboundBoxUpdateConflictError('DUPLICATE_NAME');
+      }
+
       const box = await tx.outboundBox.create({
-        data,
+        data: {
+          ...data,
+          boxNo,
+          boxName: normalizedBoxName.value,
+        },
         include: outboundBoxInclude,
       });
 
@@ -229,15 +282,47 @@ export class OutboundRepository {
     boxId: string;
     operatorId: string;
     data: Prisma.OutboundBoxUpdateInput;
+    expectedUpdatedAt: Date;
+    warehouseId: string;
+    boxNameKey?: string;
   }) {
     return this.prisma.$transaction(async (tx) => {
-      const before = await tx.outboundBox.findUniqueOrThrow({
+      await this.acquireBoxNameLock(tx, input.warehouseId);
+
+      const before = await tx.outboundBox.findUnique({
         where: { id: input.boxId },
         include: outboundBoxInclude,
       });
-      const updated = await tx.outboundBox.update({
+      if (!before) {
+        throw new OutboundBoxUpdateConflictError('NOT_FOUND');
+      }
+      if (before.status !== OutboundBoxStatus.OPEN) {
+        throw new OutboundBoxUpdateConflictError('NOT_OPEN');
+      }
+      if (before.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) {
+        throw new OutboundBoxUpdateConflictError('VERSION_CONFLICT');
+      }
+
+      if (input.boxNameKey) {
+        if (await this.hasBoxNameCollision(tx, before.warehouseId, input.boxNameKey, before.id)) {
+          throw new OutboundBoxUpdateConflictError('DUPLICATE_NAME');
+        }
+      }
+
+      const updateResult = await tx.outboundBox.updateMany({
+        where: {
+          id: input.boxId,
+          status: OutboundBoxStatus.OPEN,
+          updatedAt: input.expectedUpdatedAt,
+        },
+        data: input.data as Prisma.OutboundBoxUpdateManyMutationInput,
+      });
+      if (updateResult.count !== 1) {
+        throw new OutboundBoxUpdateConflictError('VERSION_CONFLICT');
+      }
+
+      const updated = await tx.outboundBox.findUniqueOrThrow({
         where: { id: input.boxId },
-        data: input.data,
         include: outboundBoxInclude,
       });
 
@@ -577,16 +662,27 @@ export class OutboundRepository {
 
   async reopenBox(input: { boxId: string; operatorId: string }) {
     return this.prisma.$transaction(async (tx) => {
-      const box = await tx.outboundBox.findUniqueOrThrow({
+      const box = await tx.outboundBox.findUnique({
         where: { id: input.boxId },
         include: outboundBoxInclude,
       });
-      const reopened = await tx.outboundBox.update({
-        where: { id: box.id },
+      if (!box || box.status !== OutboundBoxStatus.SEALED) {
+        return null;
+      }
+
+      const updateResult = await tx.outboundBox.updateMany({
+        where: { id: box.id, status: OutboundBoxStatus.SEALED },
         data: {
           status: OutboundBoxStatus.OPEN,
           sealedAt: null,
         },
+      });
+      if (updateResult.count !== 1) {
+        return null;
+      }
+
+      const reopened = await tx.outboundBox.findUniqueOrThrow({
+        where: { id: box.id },
         include: outboundBoxInclude,
       });
 
@@ -662,6 +758,30 @@ export class OutboundRepository {
 
       return voided;
     });
+  }
+
+  private async acquireBoxNameLock(tx: Prisma.TransactionClient, warehouseId: string) {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`outbound-box-name:${warehouseId}`}, 0))::text AS lock_result`;
+  }
+
+  private async hasBoxNameCollision(
+    tx: Prisma.TransactionClient,
+    warehouseId: string,
+    boxNameKey: string,
+    excludeBoxId?: string,
+  ) {
+    const existingNames = await tx.outboundBox.findMany({
+      where: {
+        warehouseId,
+        status: { not: OutboundBoxStatus.VOIDED },
+        id: excludeBoxId ? { not: excludeBoxId } : undefined,
+        boxName: { not: null },
+      },
+      select: { boxName: true },
+    });
+    return existingNames.some(
+      (candidate) => candidate.boxName && toOutboundBoxNameKey(candidate.boxName) === boxNameKey,
+    );
   }
 
   private toBoxAuditSnapshot(box: OutboundBoxRecord) {

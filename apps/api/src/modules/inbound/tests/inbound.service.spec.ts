@@ -19,6 +19,7 @@ const operator = {
   name: 'Admin',
   roles: ['ADMIN'],
   permissions: ['inbound.manage'],
+  sessionId: 'session-1',
 };
 
 const settings = {
@@ -99,6 +100,7 @@ const draft = {
   customerId: 'customer-1',
   warehouseId: 'warehouse-1',
   operatorId: 'user-1',
+  creatorSessionId: 'session-1',
   status: InboundBatchStatus.DRAFT,
   confirmedAt: null,
   notes: null,
@@ -174,7 +176,9 @@ function createService(repositoryOverrides: Partial<Record<keyof InboundReposito
     createDraft: jest.fn().mockResolvedValue(draft),
     findDraftById: jest.fn().mockResolvedValue(draft),
     findDraftByBatchNo: jest.fn().mockResolvedValue(draft),
-    findLatestDraftByOperator: jest.fn().mockResolvedValue(draft),
+    findLatestDraftByOperatorSession: jest.fn().mockResolvedValue(draft),
+    claimDraftSession: jest.fn().mockResolvedValue({ count: 1 }),
+    claimLatestLegacyDraft: jest.fn().mockResolvedValue(null),
     findProductByUpc: jest.fn().mockResolvedValue({
       id: 'upc-1',
       upc: '194253149189',
@@ -232,32 +236,48 @@ describe('InboundService', () => {
     const { repository, service } = createService({});
 
     await expect(
-      service.scanUps('draft-1', { upsTrackingNo: ' 1z999aa10123456784 ' }),
+      service.scanUps('draft-1', { upsTrackingNo: ' 1z999aa10123456784 ' }, operator),
     ).resolves.toMatchObject({
       upsTrackingNo: '1Z999AA10123456784',
+      formatValid: true,
+      autoAccepted: true,
       valid: true,
       duplicate: false,
     });
     await expect(
-      service.scanUps('draft-1', { upsTrackingNo: '9622 1234 5678 9012 3456 78' }),
+      service.scanUps('draft-1', { upsTrackingNo: '9622 1234 5678 9012 3456 78' }, operator),
     ).resolves.toMatchObject({
       upsTrackingNo: '9622123456789012345678',
+      formatValid: true,
+      autoAccepted: true,
       valid: true,
     });
     await expect(
-      service.scanUps('draft-1', { upsTrackingNo: '9622 0804 3000 9579 2651 0053 0689 178' }),
+      service.scanUps(
+        'draft-1',
+        { upsTrackingNo: '9622 0804 3000 9579 2651 0053 0689 178' },
+        operator,
+      ),
     ).resolves.toMatchObject({
       upsTrackingNo: '9622080430009579265100530689178',
+      formatValid: true,
+      autoAccepted: true,
       valid: true,
     });
     await expect(
-      service.scanUps('draft-1', { upsTrackingNo: ' bb0000 jh05 ' }),
+      service.scanUps('draft-1', { upsTrackingNo: ' bb0000 jh05 ' }, operator),
     ).resolves.toMatchObject({
       upsTrackingNo: 'BB0000JH05',
+      formatValid: true,
+      autoAccepted: true,
       valid: true,
     });
-    await expect(service.scanUps('draft-1', { upsTrackingNo: ' bb0000 ' })).resolves.toMatchObject({
+    await expect(
+      service.scanUps('draft-1', { upsTrackingNo: ' bb0000 ' }, operator),
+    ).resolves.toMatchObject({
       upsTrackingNo: 'BB0000',
+      formatValid: true,
+      autoAccepted: true,
       valid: true,
     });
 
@@ -286,7 +306,9 @@ describe('InboundService', () => {
       findDraftByBatchNo: jest.fn().mockResolvedValue(draft),
     });
 
-    await expect(service.getDraftByBatchNo(' inb-20260617000000-abc123 ')).resolves.toMatchObject({
+    await expect(
+      service.getDraftByBatchNo(' inb-20260617000000-abc123 ', operator),
+    ).resolves.toMatchObject({
       id: 'draft-1',
       batchNo: 'INB-20260617000000-ABC123',
       status: InboundBatchStatus.DRAFT,
@@ -296,7 +318,7 @@ describe('InboundService', () => {
 
   it('restores the current operator latest open draft automatically', async () => {
     const { repository, service } = createService({
-      findLatestDraftByOperator: jest.fn().mockResolvedValue(draft),
+      findLatestDraftByOperatorSession: jest.fn().mockResolvedValue(draft),
     });
 
     await expect(service.getLatestDraftForOperator(operator)).resolves.toMatchObject({
@@ -304,12 +326,16 @@ describe('InboundService', () => {
       batchNo: 'INB-20260617000000-ABC123',
       status: InboundBatchStatus.DRAFT,
     });
-    expect(repository.findLatestDraftByOperator).toHaveBeenCalledWith(operator.id);
+    expect(repository.findLatestDraftByOperatorSession).toHaveBeenCalledWith(
+      operator.id,
+      operator.sessionId,
+    );
   });
 
   it('returns null when the current operator has no open draft to restore', async () => {
     const { service } = createService({
-      findLatestDraftByOperator: jest.fn().mockResolvedValue(null),
+      findLatestDraftByOperatorSession: jest.fn().mockResolvedValue(null),
+      claimLatestLegacyDraft: jest.fn().mockResolvedValue(null),
     });
 
     await expect(service.getLatestDraftForOperator(operator)).resolves.toBeNull();
@@ -323,8 +349,8 @@ describe('InboundService', () => {
       }),
     });
 
-    await expect(service.getDraftByBatchNo('INB-20260617000000-ABC123')).rejects.toThrow(
-      '这个入库单已经不是草稿状态，不能在入库扫码页面恢复。',
+    await expect(service.getDraftByBatchNo('INB-20260617000000-ABC123', operator)).rejects.toThrow(
+      'Inbound draft is already closed.',
     );
   });
 
@@ -334,7 +360,7 @@ describe('InboundService', () => {
     });
 
     await expect(
-      service.scanUps('draft-1', { upsTrackingNo: '1Z999AA10123456784' }),
+      service.scanUps('draft-1', { upsTrackingNo: '1Z999AA10123456784' }, operator),
     ).resolves.toMatchObject({
       upsTrackingNo: '1Z999AA10123456784',
       valid: true,
@@ -347,51 +373,67 @@ describe('InboundService', () => {
     const { repository, service } = createService({});
 
     await expect(
-      service.scanUps('draft-1', { upsTrackingNo: '9400 1118 9922 3857 0000 00' }),
+      service.scanUps('draft-1', { upsTrackingNo: '9400 1118 9922 3857 0000 00' }, operator),
     ).resolves.toMatchObject({
       upsTrackingNo: '9400111899223857000000',
+      formatValid: true,
+      autoAccepted: false,
       valid: false,
       duplicate: false,
       duplicateCount: 0,
     });
     await expect(
-      service.scanUps('draft-1', { upsTrackingNo: '9611020987654312345672' }),
+      service.scanUps('draft-1', { upsTrackingNo: '9611020987654312345672' }, operator),
     ).resolves.toMatchObject({
       upsTrackingNo: '9611020987654312345672',
+      formatValid: true,
+      autoAccepted: false,
       valid: false,
       duplicate: false,
       duplicateCount: 0,
     });
     await expect(
-      service.scanUps('draft-1', { upsTrackingNo: '96320804008675235705004823280' }),
+      service.scanUps('draft-1', { upsTrackingNo: '96320804008675235705004823280' }, operator),
     ).resolves.toMatchObject({
       upsTrackingNo: '96320804008675235705004823280',
+      formatValid: true,
+      autoAccepted: false,
       valid: false,
       duplicate: false,
       duplicateCount: 0,
     });
 
-    expect(repository.countConfirmedItemsByUps).not.toHaveBeenCalled();
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('9400111899223857000000');
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('9611020987654312345672');
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith(
+      '96320804008675235705004823280',
+    );
   });
 
   it('rejects unsupported package tracking numbers before saving inbound items', async () => {
     const { service } = createService({});
 
     await expect(
-      service.scanUps('draft-1', { upsTrackingNo: 'not-a-tracking-number' }),
+      service.scanUps('draft-1', { upsTrackingNo: 'not-a-tracking-number' }, operator),
     ).resolves.toMatchObject({
       upsTrackingNo: 'NOT-A-TRACKING-NUMBER',
+      formatValid: false,
+      autoAccepted: false,
       valid: false,
       duplicate: false,
       duplicateCount: 0,
     });
 
     await expect(
-      service.addItem('draft-1', {
-        upsTrackingNo: 'not-a-tracking-number',
-        upc: '194253149189',
-        imei: '356789012345678',
-      }),
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: 'not-a-tracking-number',
+          upc: '194253149189',
+          imei: '356789012345678',
+        },
+        operator,
+      ),
     ).rejects.toThrow('Invalid package tracking number format.');
   });
 
@@ -399,12 +441,16 @@ describe('InboundService', () => {
     const { repository, service } = createService({});
 
     await expect(
-      service.addItem('draft-1', {
-        upsTrackingNo: 'not-a-tracking-number',
-        upc: '194253149189',
-        imei: '356789012345678',
-        trackingExceptionConfirmed: true,
-      }),
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: 'not-a-tracking-number',
+          upc: '194253149189',
+          imei: '356789012345678',
+          trackingExceptionConfirmed: true,
+        },
+        operator,
+      ),
     ).rejects.toThrow('Invalid package tracking number format.');
     expect(repository.createItem).not.toHaveBeenCalled();
   });
@@ -413,20 +459,28 @@ describe('InboundService', () => {
     const { repository, service } = createService({});
 
     await expect(
-      service.addItem('draft-1', {
-        upsTrackingNo: '9400111899223857000000',
-        upc: '194253149189',
-        imei: '356789012345678',
-        trackingExceptionConfirmed: true,
-      }),
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: '9400111899223857000000',
+          upc: '194253149189',
+          imei: '356789012345678',
+          trackingExceptionConfirmed: true,
+        },
+        operator,
+      ),
     ).resolves.toMatchObject({ status: InboundItemStatus.PENDING });
     await expect(
-      service.addItem('draft-1', {
-        upsTrackingNo: '9611020987654312345672',
-        upc: '194253149189',
-        imei: '356789012345679',
-        trackingExceptionConfirmed: true,
-      }),
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: '9611020987654312345672',
+          upc: '194253149189',
+          imei: '356789012345679',
+          trackingExceptionConfirmed: true,
+        },
+        operator,
+      ),
     ).resolves.toMatchObject({ status: InboundItemStatus.PENDING });
 
     expect(repository.createItem).toHaveBeenCalledTimes(2);
@@ -436,11 +490,15 @@ describe('InboundService', () => {
     const { repository, service } = createService({});
 
     await expect(
-      service.addItem('draft-1', {
-        upsTrackingNo: 'bb0000',
-        upc: '194253149189',
-        imei: '356789012345678',
-      }),
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: 'bb0000',
+          upc: '194253149189',
+          imei: '356789012345678',
+        },
+        operator,
+      ),
     ).resolves.toMatchObject({ status: InboundItemStatus.PENDING });
     expect(repository.createItem).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -448,6 +506,11 @@ describe('InboundService', () => {
         status: InboundItemStatus.PENDING,
       }),
       undefined,
+      {
+        draftId: 'draft-1',
+        operatorId: operator.id,
+        sessionId: operator.sessionId,
+      },
     );
   });
 
@@ -455,10 +518,14 @@ describe('InboundService', () => {
     const { repository, service } = createService({});
 
     await expect(
-      service.addItem('draft-1', {
-        upc: '194253149189',
-        imei: '356789012345678',
-      }),
+      service.addItem(
+        'draft-1',
+        {
+          upc: '194253149189',
+          imei: '356789012345678',
+        },
+        operator,
+      ),
     ).rejects.toThrow('Package tracking number is required for inbound scanning.');
     expect(repository.createItem).not.toHaveBeenCalled();
   });
@@ -754,11 +821,15 @@ describe('InboundService', () => {
     });
 
     await expect(
-      service.addItem('draft-1', {
-        upsTrackingNo: '1Z999AA10123456784',
-        upc: '884909876543',
-        imei: '356789012345678',
-      }),
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: '1Z999AA10123456784',
+          upc: '884909876543',
+          imei: '356789012345678',
+        },
+        operator,
+      ),
     ).rejects.toThrow('UPC 未匹配商品库，请先在商品管理中维护这个 UPC 后再扫码入库。');
     expect(repository.createItem).not.toHaveBeenCalled();
   });
@@ -786,20 +857,24 @@ describe('InboundService', () => {
     });
 
     await expect(
-      service.importItems('draft-1', {
-        items: [
-          {
-            upsTrackingNo: '1Z999AA10123456784',
-            upc: '194253149189',
-            imei: '356789012345678',
-          },
-          {
-            upsTrackingNo: 'not-a-tracking-number',
-            upc: '194253149189',
-            imei: '356789012345679',
-          },
-        ],
-      }),
+      service.importItems(
+        'draft-1',
+        {
+          items: [
+            {
+              upsTrackingNo: '1Z999AA10123456784',
+              upc: '194253149189',
+              imei: '356789012345678',
+            },
+            {
+              upsTrackingNo: 'not-a-tracking-number',
+              upc: '194253149189',
+              imei: '356789012345679',
+            },
+          ],
+        },
+        operator,
+      ),
     ).resolves.toMatchObject({
       importedCount: 1,
       failedCount: 1,
@@ -817,11 +892,15 @@ describe('InboundService', () => {
     });
 
     await expect(
-      service.addItem('draft-1', {
-        upsTrackingNo: '1Z999AA10123456784',
-        upc: '194253149189',
-        imei: '356789012345678',
-      }),
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: '1Z999AA10123456784',
+          upc: '194253149189',
+          imei: '356789012345678',
+        },
+        operator,
+      ),
     ).rejects.toThrow('IMEI 已存在库存记录，不能重复入库: 356789012345678。请修正后再加入明细。');
     expect(repository.createItem).not.toHaveBeenCalled();
   });
@@ -832,11 +911,15 @@ describe('InboundService', () => {
     });
 
     await expect(
-      service.addItem('draft-1', {
-        upsTrackingNo: '1Z999AA10123456784',
-        upc: '194253149189',
-        imei: '356789012345678',
-      }),
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: '1Z999AA10123456784',
+          upc: '194253149189',
+          imei: '356789012345678',
+        },
+        operator,
+      ),
     ).rejects.toThrow(
       '当前入库单内 IMEI 已重复: 356789012345678。请修正或删除重复明细后再继续入库。',
     );
@@ -858,11 +941,16 @@ describe('InboundService', () => {
     });
 
     await expect(
-      service.updateItem('draft-1', 'item-2', {
-        upsTrackingNo: '1Z999AA10123456784',
-        upc: '194253149189',
-        imei: '356789012345678',
-      }),
+      service.updateItem(
+        'draft-1',
+        'item-2',
+        {
+          upsTrackingNo: '1Z999AA10123456784',
+          upc: '194253149189',
+          imei: '356789012345678',
+        },
+        operator,
+      ),
     ).rejects.toThrow(
       '当前入库单内 IMEI 已重复: 356789012345678。请修正或删除重复明细后再继续入库。',
     );
@@ -879,11 +967,15 @@ describe('InboundService', () => {
     });
 
     await expect(
-      service.addItem('draft-1', {
-        upsTrackingNo: '1Z999AA10123456784',
-        upc: '194253149189',
-        imei: ' sh9lrl91yfc ',
-      }),
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: '1Z999AA10123456784',
+          upc: '194253149189',
+          imei: ' sh9lrl91yfc ',
+        },
+        operator,
+      ),
     ).resolves.toMatchObject({
       imei: 'SH9LRL91YFC',
     });
@@ -896,6 +988,11 @@ describe('InboundService', () => {
         status: InboundItemStatus.PENDING,
       }),
       undefined,
+      {
+        draftId: 'draft-1',
+        operatorId: operator.id,
+        sessionId: operator.sessionId,
+      },
     );
   });
 
@@ -910,11 +1007,15 @@ describe('InboundService', () => {
     });
 
     await expect(
-      service.addItem('draft-1', {
-        upsTrackingNo: '1Z999AA10123456784',
-        upc: '194253149189',
-        scanMode: 'TRACKING_UPC',
-      }),
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: '1Z999AA10123456784',
+          upc: '194253149189',
+          scanMode: 'TRACKING_UPC',
+        },
+        operator,
+      ),
     ).resolves.toMatchObject({
       status: InboundItemStatus.PENDING,
       imei: null,
@@ -930,6 +1031,11 @@ describe('InboundService', () => {
         status: InboundItemStatus.PENDING,
       }),
       undefined,
+      {
+        draftId: 'draft-1',
+        operatorId: operator.id,
+        sessionId: operator.sessionId,
+      },
     );
   });
 
@@ -966,11 +1072,16 @@ describe('InboundService', () => {
     });
 
     await expect(
-      service.updateItem('draft-1', 'item-exception', {
-        upsTrackingNo: '1Z999AA10123456784',
-        upc: '194253149189',
-        scanMode: 'TRACKING_UPC',
-      }),
+      service.updateItem(
+        'draft-1',
+        'item-exception',
+        {
+          upsTrackingNo: '1Z999AA10123456784',
+          upc: '194253149189',
+          scanMode: 'TRACKING_UPC',
+        },
+        operator,
+      ),
     ).resolves.toMatchObject({
       id: 'item-exception',
       upc: '194253149189',
@@ -988,6 +1099,11 @@ describe('InboundService', () => {
         status: InboundItemStatus.PENDING,
       }),
       undefined,
+      {
+        draftId: 'draft-1',
+        operatorId: operator.id,
+        sessionId: operator.sessionId,
+      },
     );
   });
 
@@ -1005,11 +1121,15 @@ describe('InboundService', () => {
     });
 
     await expect(
-      service.addItem('draft-1', {
-        upsTrackingNo: '9400111899223857000000',
-        upc: '194253149189',
-        scanMode: 'TRACKING_UPC',
-      }),
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: '9400111899223857000000',
+          upc: '194253149189',
+          scanMode: 'TRACKING_UPC',
+        },
+        operator,
+      ),
     ).rejects.toThrow('上一条入库明细仍为异常，请先在当前入库单中修正该异常后再继续入库。');
     await expect(service.confirmDraft('draft-1', operator)).rejects.toThrow(
       '上一条入库明细仍为异常，请先在当前入库单中修正该异常后再继续入库。',

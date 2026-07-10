@@ -65,10 +65,26 @@ Editing open-box settings is transactional.
 
 The transaction:
 
-1. Reads the outbound box before snapshot.
-2. Updates size preset, custom size, weight in pounds, outbound shipment number, or notes.
-3. Writes an `OUTBOUND_BOX_UPDATE` audit log.
-4. Returns the refreshed outbound box.
+1. Acquires a PostgreSQL transaction-scoped advisory lock for the outbound box warehouse.
+2. Rereads the outbound box before snapshot after the lock is held.
+3. Verifies the box is still `OPEN` and its `updatedAt` still equals the required
+   `expectedUpdatedAt` supplied by the client.
+4. When a visible name is submitted, uses the service-validated NFKC/whitespace-normalized value and
+   compares its case-insensitive key with every non-`VOIDED` box in the warehouse. The service has
+   already rejected control or invisible characters and normalized names over 120 characters.
+5. Conditionally updates the row by ID, `OPEN` status, and expected update timestamp.
+6. Writes an `OUTBOUND_BOX_UPDATE` audit log.
+7. Returns the refreshed outbound box.
+
+Box-number sequence lookup and allocation happen only after the create transaction has acquired the
+warehouse advisory lock. Create-box name checking uses that same lock and repeats the normalized-name
+scan before inserting the box and its `OUTBOUND_BOX_CREATE` audit log. Concurrent creates therefore
+cannot receive the same generated box number, and a concurrent create-versus-create or
+create-versus-rename attempt cannot commit two non-voided boxes with the same normalized name even
+though the schema does not add a separate unique box-name column.
+
+If the expected version is stale or the normalized name is already owned, the transaction writes no
+box update and no audit log. The service translates the result to a readable `409 Conflict`.
 
 ## Seal Box Transaction
 
@@ -95,11 +111,12 @@ Reopening is the rework transaction for sealed boxes.
 The transaction:
 
 1. Reads the sealed outbound box and current item IDs.
-2. Updates the outbound box status to `OPEN`.
-3. Clears `outbound_boxes.sealedAt`.
-4. Keeps existing outbound box item links and inventory status unchanged.
-5. Writes an `OUTBOUND_BOX_REOPEN` audit log.
-6. Returns the refreshed open box.
+2. Conditionally updates the row only when its current status is still `SEALED`.
+3. Changes the outbound box status to `OPEN` and clears `outbound_boxes.sealedAt`.
+4. If another transaction already reopened the box, returns a conflict without writing an audit log.
+5. Keeps existing outbound box item links and inventory status unchanged.
+6. Writes one `OUTBOUND_BOX_REOPEN` audit log for the successful transition.
+7. Returns the refreshed open box.
 
 After reopening, operators can add items, remove items, clear the box, edit settings, and seal again. Each follow-up operation writes its own audit log with the current operator.
 

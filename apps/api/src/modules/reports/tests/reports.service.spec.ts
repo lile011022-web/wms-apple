@@ -9,6 +9,7 @@ import { ReportType } from '../dto/report-type';
 const now = new Date('2026-06-17T00:00:00Z');
 const operator = {
   id: 'user-1',
+  sessionId: 'session-test',
   email: 'operator@wms-scan.local',
   name: 'Report Operator',
   roles: ['ADMIN'],

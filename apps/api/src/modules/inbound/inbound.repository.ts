@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   AuditAction,
   ExceptionStatus,
@@ -69,6 +75,19 @@ export type InboundDraftRecord = NonNullable<
   Awaited<ReturnType<InboundRepository['findDraftById']>>
 >;
 export type InboundItemRecord = NonNullable<Awaited<ReturnType<InboundRepository['findItemById']>>>;
+
+export type InboundDraftAccess = {
+  draftId: string;
+  operatorId: string;
+  sessionId: string;
+};
+
+type LockedInboundDraft = {
+  id: string;
+  operatorId: string;
+  creatorSessionId: string | null;
+  status: InboundBatchStatus;
+};
 
 @Injectable()
 export class InboundRepository {
@@ -151,10 +170,11 @@ export class InboundRepository {
     });
   }
 
-  findLatestDraftByOperator(operatorId: string) {
+  findLatestDraftByOperatorSession(operatorId: string, sessionId: string) {
     return this.prisma.inboundBatch.findFirst({
       where: {
         operatorId,
+        creatorSessionId: sessionId,
         status: InboundBatchStatus.DRAFT,
       },
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
@@ -162,74 +182,154 @@ export class InboundRepository {
     });
   }
 
-  createItem(data: Prisma.InboundItemCreateInput, exception?: Prisma.ExceptionRecordCreateInput) {
-    return this.prisma.$transaction(async (tx) => {
-      const item = await tx.inboundItem.create({
-        data,
-      });
-      await tx.inboundBatch.update({
-        where: { id: item.inboundBatchId },
-        data: { updatedAt: new Date() },
-      });
+  claimDraftSession(draftId: string, operatorId: string, sessionId: string) {
+    return this.prisma.inboundBatch.updateMany({
+      where: {
+        id: draftId,
+        operatorId,
+        creatorSessionId: null,
+        status: InboundBatchStatus.DRAFT,
+      },
+      data: { creatorSessionId: sessionId },
+    });
+  }
 
-      if (exception) {
-        await tx.exceptionRecord.create({
-          data: {
-            ...exception,
-            inboundItem: { connect: { id: item.id } },
-          },
-        });
+  async claimLatestLegacyDraft(operatorId: string, sessionId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const legacyDraft = await tx.inboundBatch.findFirst({
+        where: {
+          operatorId,
+          creatorSessionId: null,
+          status: InboundBatchStatus.DRAFT,
+        },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        select: { id: true },
+      });
+      if (!legacyDraft) {
+        return null;
       }
 
-      return tx.inboundItem.findUniqueOrThrow({
-        where: { id: item.id },
-        include: inboundItemInclude,
+      const claimed = await tx.inboundBatch.updateMany({
+        where: {
+          id: legacyDraft.id,
+          operatorId,
+          creatorSessionId: null,
+          status: InboundBatchStatus.DRAFT,
+        },
+        data: { creatorSessionId: sessionId },
+      });
+      if (claimed.count !== 1) {
+        return null;
+      }
+
+      return tx.inboundBatch.findUniqueOrThrow({
+        where: { id: legacyDraft.id },
+        include: inboundBatchInclude,
       });
     });
+  }
+
+  createItem(
+    data: Prisma.InboundItemCreateInput,
+    exception: Prisma.ExceptionRecordCreateInput | undefined,
+    access: InboundDraftAccess,
+  ) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.lockOwnedOpenDraft(tx, access);
+        await this.assertNoConcurrentDraftIdentity(
+          tx,
+          access.draftId,
+          typeof data.imei === 'string' ? data.imei : undefined,
+          typeof data.serial === 'string' ? data.serial : undefined,
+        );
+
+        const item = await tx.inboundItem.create({ data });
+        await tx.inboundBatch.update({
+          where: { id: item.inboundBatchId },
+          data: { updatedAt: new Date() },
+        });
+
+        if (exception) {
+          await tx.exceptionRecord.create({
+            data: {
+              ...exception,
+              inboundItem: { connect: { id: item.id } },
+            },
+          });
+        }
+
+        return tx.inboundItem.findUniqueOrThrow({
+          where: { id: item.id },
+          include: inboundItemInclude,
+        });
+      },
+      { maxWait: 10_000, timeout: 30_000 },
+    );
   }
 
   updateItem(
     id: string,
     data: Prisma.InboundItemUpdateInput,
-    exception?: Prisma.ExceptionRecordCreateInput,
+    exception: Prisma.ExceptionRecordCreateInput | undefined,
+    access: InboundDraftAccess,
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      const resolvedAt = new Date();
-      await tx.exceptionRecord.updateMany({
-        where: {
-          inboundItemId: id,
-          status: ExceptionStatus.OPEN,
-        },
-        data: {
-          status: ExceptionStatus.INVALID,
-          resolutionNote: 'Inbound draft row corrected.',
-          resolvedAt,
-        },
-      });
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.lockOwnedOpenDraft(tx, access);
+        const existing = await tx.inboundItem.findUnique({ where: { id } });
+        if (!existing || existing.inboundBatchId !== access.draftId) {
+          throw new NotFoundException('Inbound draft item not found.');
+        }
+        if (
+          existing.status !== InboundItemStatus.PENDING &&
+          existing.status !== InboundItemStatus.EXCEPTION
+        ) {
+          throw new ConflictException('Only pending or exception draft items can be corrected.');
+        }
+        await this.assertNoConcurrentDraftIdentity(
+          tx,
+          access.draftId,
+          typeof data.imei === 'string' ? data.imei : undefined,
+          typeof data.serial === 'string' ? data.serial : undefined,
+          id,
+        );
 
-      const item = await tx.inboundItem.update({
-        where: { id },
-        data,
-      });
-      await tx.inboundBatch.update({
-        where: { id: item.inboundBatchId },
-        data: { updatedAt: new Date() },
-      });
-
-      if (exception) {
-        await tx.exceptionRecord.create({
+        const resolvedAt = new Date();
+        await tx.exceptionRecord.updateMany({
+          where: {
+            inboundItemId: id,
+            status: ExceptionStatus.OPEN,
+          },
           data: {
-            ...exception,
-            inboundItem: { connect: { id: item.id } },
+            status: ExceptionStatus.INVALID,
+            resolutionNote: 'Inbound draft row corrected.',
+            resolvedAt,
           },
         });
-      }
 
-      return tx.inboundItem.findUniqueOrThrow({
-        where: { id: item.id },
-        include: inboundItemInclude,
-      });
-    });
+        const item = await tx.inboundItem.update({ where: { id }, data });
+        await tx.inboundBatch.update({
+          where: { id: item.inboundBatchId },
+          data: { updatedAt: new Date() },
+        });
+
+        if (exception) {
+          await tx.exceptionRecord.create({
+            data: {
+              ...exception,
+              inboundItem: { connect: { id: item.id } },
+            },
+          });
+        }
+
+        return tx.inboundItem.findUniqueOrThrow({
+          where: { id: item.id },
+          include: inboundItemInclude,
+        });
+      },
+      { maxWait: 10_000, timeout: 30_000 },
+    );
   }
 
   findItemById(id: string) {
@@ -239,49 +339,71 @@ export class InboundRepository {
     });
   }
 
-  deleteItem(id: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const item = await tx.inboundItem.update({
-        where: { id },
-        data: { status: InboundItemStatus.VOIDED },
-      });
-      await tx.inboundBatch.update({
-        where: { id: item.inboundBatchId },
-        data: { updatedAt: new Date() },
-      });
-      return tx.inboundItem.findUniqueOrThrow({
-        where: { id },
-        include: inboundItemInclude,
-      });
-    });
+  deleteItem(id: string, access: InboundDraftAccess) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.lockOwnedOpenDraft(tx, access);
+        const existing = await tx.inboundItem.findUnique({ where: { id } });
+        if (!existing || existing.inboundBatchId !== access.draftId) {
+          throw new NotFoundException('Inbound draft item not found.');
+        }
+        if (existing.status === InboundItemStatus.CONFIRMED) {
+          throw new ConflictException('Confirmed inbound item cannot be removed.');
+        }
+
+        const item = await tx.inboundItem.update({
+          where: { id },
+          data: { status: InboundItemStatus.VOIDED },
+        });
+        await tx.inboundBatch.update({
+          where: { id: item.inboundBatchId },
+          data: { updatedAt: new Date() },
+        });
+        return tx.inboundItem.findUniqueOrThrow({
+          where: { id },
+          include: inboundItemInclude,
+        });
+      },
+      { maxWait: 10_000, timeout: 30_000 },
+    );
   }
 
-  clearDraftItems(draftId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const result = await tx.inboundItem.updateMany({
-        where: {
-          inboundBatchId: draftId,
-          status: { in: [InboundItemStatus.PENDING, InboundItemStatus.EXCEPTION] },
-        },
-        data: { status: InboundItemStatus.VOIDED },
-      });
-      await tx.inboundBatch.update({
-        where: { id: draftId },
-        data: { updatedAt: new Date() },
-      });
-      return result;
-    });
+  clearDraftItems(access: InboundDraftAccess) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.lockOwnedOpenDraft(tx, access);
+        const result = await tx.inboundItem.updateMany({
+          where: {
+            inboundBatchId: access.draftId,
+            status: { in: [InboundItemStatus.PENDING, InboundItemStatus.EXCEPTION] },
+          },
+          data: { status: InboundItemStatus.VOIDED },
+        });
+        await tx.inboundBatch.update({
+          where: { id: access.draftId },
+          data: { updatedAt: new Date() },
+        });
+        return result;
+      },
+      { maxWait: 10_000, timeout: 30_000 },
+    );
   }
 
   async confirmDraft(input: {
     draftId: string;
     operatorId: string;
+    sessionId: string;
     duplicateImeiExceptionEnabled: boolean;
     duplicateUpsExceptionEnabled: boolean;
     packagePrealertsEnabled?: boolean;
   }) {
     return this.prisma.$transaction(
       async (tx) => {
+        await this.lockOwnedOpenDraft(tx, {
+          draftId: input.draftId,
+          operatorId: input.operatorId,
+          sessionId: input.sessionId,
+        });
         const draft = await tx.inboundBatch.findUniqueOrThrow({
           where: { id: input.draftId },
           include: inboundBatchInclude,
@@ -289,6 +411,9 @@ export class InboundRepository {
         const confirmableItems = draft.inboundItems.filter(
           (item) => item.status === InboundItemStatus.PENDING && item.productId,
         );
+        if (confirmableItems.length === 0) {
+          throw new BadRequestException('Inbound draft has no confirmable items.');
+        }
 
         const duplicateItemIds = new Set<string>();
         const duplicateImeis = new Set<string>();
@@ -467,6 +592,77 @@ export class InboundRepository {
         maxWait: 10_000,
         timeout: 120_000,
       },
+    );
+  }
+
+  private async lockOwnedOpenDraft(tx: Prisma.TransactionClient, access: InboundDraftAccess) {
+    const rows = await tx.$queryRaw<LockedInboundDraft[]>(Prisma.sql`
+      SELECT "id", "operatorId", "creatorSessionId", "status"
+      FROM "inbound_batches"
+      WHERE "id" = ${access.draftId}
+      FOR UPDATE
+    `);
+    const draft = rows[0];
+    if (!draft) {
+      throw new NotFoundException('Inbound draft not found.');
+    }
+    if (draft.operatorId !== access.operatorId) {
+      throw new ForbiddenException('Inbound draft belongs to another operator.');
+    }
+    if (draft.status !== InboundBatchStatus.DRAFT) {
+      throw new ConflictException('Inbound draft is already closed.');
+    }
+
+    if (!draft.creatorSessionId) {
+      await tx.inboundBatch.update({
+        where: { id: draft.id },
+        data: { creatorSessionId: access.sessionId },
+      });
+      return;
+    }
+    if (draft.creatorSessionId !== access.sessionId) {
+      throw new ForbiddenException('Inbound draft belongs to another login session.');
+    }
+  }
+
+  private async assertNoConcurrentDraftIdentity(
+    tx: Prisma.TransactionClient,
+    draftId: string,
+    imei?: string,
+    serial?: string,
+    excludeItemId?: string,
+  ) {
+    if (!imei && !serial) {
+      return;
+    }
+
+    const identityFilters: Prisma.InboundItemWhereInput[] = [];
+    if (imei) {
+      identityFilters.push({ imei });
+    }
+    if (serial) {
+      identityFilters.push({ serial });
+    }
+
+    const duplicate = await tx.inboundItem.findFirst({
+      where: {
+        inboundBatchId: draftId,
+        id: excludeItemId ? { not: excludeItemId } : undefined,
+        status: { not: InboundItemStatus.VOIDED },
+        OR: identityFilters,
+      },
+      select: { id: true },
+    });
+    if (!duplicate) {
+      return;
+    }
+    if (imei) {
+      throw new BadRequestException(
+        `当前入库单内 IMEI 已重复: ${imei}。请修正或删除重复明细后再继续入库。`,
+      );
+    }
+    throw new BadRequestException(
+      `当前入库单内 Serial 已重复: ${serial}。请修正或删除重复明细后再继续入库。`,
     );
   }
 

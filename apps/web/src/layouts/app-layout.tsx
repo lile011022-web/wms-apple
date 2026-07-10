@@ -22,6 +22,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { getCurrentUser, login, logout, register } from '../api/auth';
 import { authTokenStore } from '../api/token-store';
 import { packagePrealertsEnabled } from '../config/feature-flags';
+import { clearInboundScanClientState } from '../pages/inbound-scan/page';
 
 const navigationItems = [
   {
@@ -78,6 +79,7 @@ export function AppLayout() {
 
   useEffect(() => {
     const handleAuthExpired = () => {
+      clearInboundScanClientState();
       queryClient.clear();
       setHasAuthToken(false);
       setAuthError('登录已过期，请重新登录。');
@@ -92,6 +94,7 @@ export function AppLayout() {
     setAuthError('');
     setAuthNotice('');
     setIsLoggingIn(true);
+    clearInboundScanClientState();
     authTokenStore.clear();
     setHasAuthToken(false);
     await queryClient.cancelQueries({ queryKey: ['current-user'] });
@@ -126,6 +129,7 @@ export function AppLayout() {
   };
 
   const handleLogout = async () => {
+    clearInboundScanClientState();
     void logout();
     queryClient.clear();
     setHasAuthToken(false);

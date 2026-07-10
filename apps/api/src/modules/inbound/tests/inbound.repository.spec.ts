@@ -1,4 +1,5 @@
 /* global jest */
+import { InboundBatchStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { InboundRepository } from '../inbound.repository';
 
@@ -29,5 +30,44 @@ describe('InboundRepository', () => {
         ]),
       }),
     });
+  });
+
+  it('rejects confirmation after the locked draft has been cleared by a concurrent request', async () => {
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([
+        {
+          id: 'draft-1',
+          operatorId: 'user-1',
+          creatorSessionId: 'session-1',
+          status: InboundBatchStatus.DRAFT,
+        },
+      ]),
+      inboundBatch: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'draft-1',
+          inboundItems: [],
+        }),
+        update: jest.fn(),
+      },
+      auditLog: {
+        create: jest.fn(),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const repository = new InboundRepository(prisma as unknown as PrismaService);
+
+    await expect(
+      repository.confirmDraft({
+        draftId: 'draft-1',
+        operatorId: 'user-1',
+        sessionId: 'session-1',
+        duplicateImeiExceptionEnabled: true,
+        duplicateUpsExceptionEnabled: true,
+      }),
+    ).rejects.toThrow('Inbound draft has no confirmable items.');
+    expect(tx.inboundBatch.update).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
   });
 });

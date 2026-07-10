@@ -51,8 +51,9 @@ function createService(user = activeUser) {
   const jwtService = {
     signAsync: jest
       .fn()
-      .mockResolvedValueOnce('access-token')
-      .mockResolvedValueOnce('refresh-token'),
+      .mockImplementation(async (payload: { type: 'access' | 'refresh' }) =>
+        payload.type === 'access' ? 'access-token' : 'refresh-token',
+      ),
     verifyAsync: jest.fn(),
   } as unknown as jest.Mocked<JwtService>;
   const usersService = {
@@ -132,10 +133,52 @@ describe('AuthService', () => {
     });
   });
 
+  it('creates a distinct session id for each login and includes it in both token types', async () => {
+    const passwordHash = await bcrypt.hash('local-password', 4);
+    const { service, jwtService } = createService({ ...activeUser, passwordHash });
+    jwtService.signAsync.mockImplementation(async (payload) => {
+      const tokenPayload = payload as unknown as {
+        sessionId: string;
+        type: 'access' | 'refresh';
+      };
+      return `${tokenPayload.type}-${tokenPayload.sessionId}`;
+    });
+
+    const [firstLogin, secondLogin] = await Promise.all([
+      service.login(
+        { email: 'admin@wms-scan.local', password: 'local-password' },
+        { requestId: 'req-login-a' },
+      ),
+      service.login(
+        { email: 'admin@wms-scan.local', password: 'local-password' },
+        { requestId: 'req-login-b' },
+      ),
+    ]);
+
+    expect(firstLogin.tokens.accessToken).not.toBe(secondLogin.tokens.accessToken);
+    expect(firstLogin.tokens.refreshToken).not.toBe(secondLogin.tokens.refreshToken);
+
+    const payloads = jwtService.signAsync.mock.calls.map(
+      ([payload]) => payload as unknown as { sessionId: string; type: 'access' | 'refresh' },
+    );
+    const sessionIds = [...new Set(payloads.map((payload) => payload.sessionId))];
+
+    expect(sessionIds).toHaveLength(2);
+    for (const sessionId of sessionIds) {
+      expect(sessionId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
+      expect(
+        payloads.filter((payload) => payload.sessionId === sessionId).map(({ type }) => type),
+      ).toEqual(expect.arrayContaining(['access', 'refresh']));
+    }
+  });
+
   it('rejects unavailable users during refresh', async () => {
     const { service, authRepository, jwtService } = createService(null as never);
     jwtService.verifyAsync.mockResolvedValue({
       sub: 'user-1',
+      sessionId: 'session-1',
       type: 'refresh',
     } as never);
     authRepository.findById.mockResolvedValue(null);
@@ -145,8 +188,46 @@ describe('AuthService', () => {
     );
   });
 
+  it('preserves the original session id when refreshing tokens', async () => {
+    const { service, jwtService } = createService();
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: 'user-1',
+      sessionId: 'session-from-refresh-token',
+      type: 'refresh',
+    } as never);
+
+    await expect(
+      service.refresh({ refreshToken: 'refresh-token-value-for-test' }),
+    ).resolves.toMatchObject({
+      user: { id: 'user-1' },
+      tokens: { accessToken: 'access-token', refreshToken: 'refresh-token' },
+    });
+
+    expect(jwtService.signAsync).toHaveBeenCalledTimes(2);
+    for (const [payload] of jwtService.signAsync.mock.calls) {
+      expect(payload).toEqual(
+        expect.objectContaining({
+          sessionId: 'session-from-refresh-token',
+        }),
+      );
+    }
+  });
+
+  it('rejects legacy refresh tokens without a session id', async () => {
+    const { service, authRepository, jwtService } = createService();
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: 'user-1',
+      type: 'refresh',
+    } as never);
+
+    await expect(service.refresh({ refreshToken: 'legacy-refresh-token-value' })).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(authRepository.findById).not.toHaveBeenCalled();
+  });
+
   it('registers operator users and returns a login session', async () => {
-    const { service, usersService } = createService();
+    const { service, jwtService, usersService } = createService();
     usersService.registerOperator.mockResolvedValue({
       id: 'user-2',
       email: 'operator@wms-scan.local',
@@ -159,16 +240,16 @@ describe('AuthService', () => {
       updatedAt: new Date('2026-06-20T00:00:00Z'),
     });
 
-    await expect(
-      service.register(
-        {
-          email: 'operator@wms-scan.local',
-          name: 'Operator',
-          password: 'local-password',
-        },
-        { requestId: 'req-register' },
-      ),
-    ).resolves.toMatchObject({
+    const result = await service.register(
+      {
+        email: 'operator@wms-scan.local',
+        name: 'Operator',
+        password: 'local-password',
+      },
+      { requestId: 'req-register' },
+    );
+
+    expect(result).toMatchObject({
       user: {
         email: 'operator@wms-scan.local',
         roles: ['OPERATOR'],
@@ -179,6 +260,16 @@ describe('AuthService', () => {
         refreshToken: 'refresh-token',
       },
     });
+    expect(result).not.toHaveProperty('user.sessionId');
+
+    const tokenPayloads = jwtService.signAsync.mock.calls.map(
+      ([payload]) => payload as unknown as { sessionId: string },
+    );
+    expect(tokenPayloads).toHaveLength(2);
+    expect(tokenPayloads[0]?.sessionId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(tokenPayloads[1]?.sessionId).toBe(tokenPayloads[0]?.sessionId);
     expect(usersService.registerOperator).toHaveBeenCalledWith(
       expect.objectContaining({ email: 'operator@wms-scan.local' }),
       { requestId: 'req-register' },
@@ -192,6 +283,7 @@ describe('AuthService', () => {
       service.logout(
         {
           id: 'user-1',
+          sessionId: 'session-logout',
           email: 'admin@wms-scan.local',
           name: 'Admin',
           roles: ['ADMIN'],
@@ -231,10 +323,7 @@ describe('AuthService', () => {
       ),
     ).resolves.toEqual({ passwordChanged: true });
 
-    expect(authRepository.updatePasswordHash).toHaveBeenCalledWith(
-      'user-1',
-      expect.any(String),
-    );
+    expect(authRepository.updatePasswordHash).toHaveBeenCalledWith('user-1', expect.any(String));
     expect(auditLogsService.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: AuditAction.USER_CHANGE,

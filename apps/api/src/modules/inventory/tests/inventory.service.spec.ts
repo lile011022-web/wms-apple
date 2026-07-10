@@ -6,6 +6,7 @@ import { InventoryService } from '../inventory.service';
 
 const operator = {
   id: 'user-1',
+  sessionId: 'session-test',
   email: 'operator@wms-scan.local',
   name: 'Inventory Operator',
   roles: ['ADMIN'],

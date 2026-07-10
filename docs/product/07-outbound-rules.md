@@ -50,13 +50,24 @@ Rules:
 - `CUSTOMER_CODE` is uppercased and sanitized to letters, numbers, and hyphens.
 - `YYYYMMDD` is the UTC date when the box is created.
 - `SEQUENCE` is a three-digit daily sequence for that customer code and warehouse.
+- The backend allocates `SEQUENCE` while holding the warehouse-scoped create transaction lock, so
+  concurrent operators cannot create boxes with the same internal box number.
 - The generated box number must not contain random suffixes.
 - Operators should identify the active box by the generated box name before packing or sealing.
-- Operators can rename an open box after it is created. Manual box names must not be empty and must
-  remain unique inside the same warehouse. The internal box number does not change when the visible
-  box name is edited.
+- Operators can rename an open box after it is created. The internal box number does not change when
+  the visible box name is edited.
+- Generated and manual visible names use the same normalization rules: normalize Unicode with NFKC,
+  collapse Unicode space separators to normal spaces, trim outer spaces, and limit the resulting name
+  to 120 characters. Names cannot be empty or contain control, formatting/invisible, line-separator,
+  or paragraph-separator characters.
+- Box-name uniqueness uses the normalized, case-insensitive name. Among all non-`VOIDED` boxes in one
+  warehouse, only one box may own a normalized visible name. Creation and rename recheck this rule
+  while holding the same warehouse-scoped transaction lock so concurrent operators cannot create or
+  rename different boxes to the same name.
 - In bulk box packing, operators can edit each planned box's visible name directly in the batch
-  preview before confirming. Leaving the name empty keeps the backend-generated visible box name.
+  preview before confirming. The quick editor, detail modal, and batch preview all use the same
+  120-character and normalization rules. Leaving a batch name empty keeps the backend-generated
+  visible box name.
 - Voided boxes release their visible box names. A name used by a `VOIDED` box can be reused by a new
   or open box in the same warehouse.
 - The outbound packing page groups created boxes by the task header in the visible box name. The task
@@ -148,8 +159,9 @@ Detailed scan packing:
 - The operator works against the current open box.
 - The scan input accepts either UPC or IMEI / Serial in any order.
 - The scan input should keep focus while an open current box is available, so the operator can keep
-  using the scanner without clicking the field again. Focus restoration must run after page updates
-  and retry briefly so scanner operators do not lose focus during high-volume packing.
+  using the scanner without clicking the field again. Focus restoration must never take focus from
+  an `input`, `textarea`, `select`, content-editable element, or an open modal. It must not use delayed
+  retry focus calls, and focusing the scanner must not scroll the page away from box-name editing.
 - After the first value is scanned, the scan input clears and refocuses, but the visible UPC or
   IMEI / Serial review value remains on screen for checking.
 - The item is added to the current box only after UPC and IMEI / Serial identify the same `IN_STOCK` inventory row for the selected customer and warehouse.
@@ -177,6 +189,8 @@ Bulk box packing:
   inventory received time, product, and IMEI / Serial or tracking number.
 - Each preview card includes an editable visible box name. Custom names are submitted when creating
   the boxes; blank names use the normal generated name.
+- Name validation, duplicate-name conflicts, and other submission errors must remain visible inside
+  the batch modal so the operator can correct them without closing the modal.
 - Bulk packing creates boxes and adds existing inventory rows to those boxes; it must not create or delete inventory rows.
 
 Box detail printing:
@@ -213,6 +227,12 @@ The box detail modal that opens after creating or selecting a box must expose th
 settings before sealing: visible box name, size preset or custom size, weight, outbound shipment or
 label number, and notes. Saving from the modal updates the current box, created-box list, and modal
 summary together so operators do not need to leave the detail view to correct box information.
+Validation and concurrency errors must be shown inside the modal rather than behind its backdrop.
+
+Every open-box settings save must include the `updatedAt` value from the latest box response. If
+another operator or browser session changed the box first, the stale save is rejected with `409`
+instead of silently overwriting newer settings. The operator must refresh the box and retry against
+the latest version.
 
 The outbound packing page should provide a fixed back-to-top action after the operator scrolls down
 the workbench. The button should return to the page top without covering table row actions or modal
@@ -223,6 +243,10 @@ Allowed operations for a sealed box:
 - Reopen the sealed box for rework.
 
 Reopening a sealed box changes it back to `OPEN`, clears `sealedAt`, and keeps current box items in the box until an operator explicitly removes them. Later shipping workflows can decide whether sealed boxes move from `PACKED` inventory to final `OUTBOUND` inventory.
+
+The `SEALED` to `OPEN` transition is atomic and may succeed only once. Concurrent reopen requests for
+the same box return one success; later requests return `409` and must not create duplicate reopen
+audit logs.
 
 ## Inventory Status Changes
 

@@ -129,6 +129,9 @@ const boxSizePresets: BoxSizePreset[] = [
 
 const customSizePreset = 'Custom';
 const defaultBoxWeight = 45;
+const outboundBoxNameMaxLength = 120;
+const forbiddenOutboundBoxNameCharacters = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+const outboundBoxNameSpaces = /\p{Zs}+/gu;
 const allBoxesExportId = '__all_boxes__';
 const selectedBoxesExportId = '__selected_boxes__';
 const outboundBoxDataExportFields = [
@@ -211,6 +214,8 @@ export function OutboundPackingPage() {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [detailBoxSettingsError, setDetailBoxSettingsError] = useState('');
+  const [batchPackingError, setBatchPackingError] = useState('');
 
   const customersQuery = useQuery({
     queryKey: ['customer-options'],
@@ -466,17 +471,25 @@ export function OutboundPackingPage() {
       setIsBatchItemsLoading(false);
     }
   };
-  const focusDetailedScanInput = useCallback((options?: { retry?: boolean }) => {
+  const focusDetailedScanInput = useCallback(() => {
     const focus = () => {
-      scanInputRef.current?.focus();
-      scanInputRef.current?.select();
+      const scanInput = scanInputRef.current;
+      if (!scanInput || document.querySelector('.outbound-modal-backdrop')) {
+        return;
+      }
+      const activeElement = document.activeElement;
+      if (
+        activeElement instanceof HTMLElement &&
+        activeElement !== scanInput &&
+        isEditableElement(activeElement)
+      ) {
+        return;
+      }
+      scanInput.focus({ preventScroll: true });
+      scanInput.select();
     };
 
     window.setTimeout(focus, 0);
-    if (options?.retry) {
-      window.setTimeout(focus, 60);
-      window.setTimeout(focus, 180);
-    }
   }, []);
   const resetDetailedScan = () => {
     if (scanAutoSubmitTimerRef.current) {
@@ -489,7 +502,7 @@ export function OutboundPackingPage() {
     setScanBlockReason('');
     setMessage('已清空扫码');
     setErrorMessage('');
-    focusDetailedScanInput({ retry: true });
+    focusDetailedScanInput();
   };
   const applyScannedValue = (value: string) => {
     if (scanBlockReason || scanPackMutation.isPending) {
@@ -511,7 +524,7 @@ export function OutboundPackingPage() {
       setMessage('已扫描 IMEI / Serial，等待 UPC');
     }
     setErrorMessage('');
-    focusDetailedScanInput({ retry: true });
+    focusDetailedScanInput();
 
     if (nextUpc && nextImeiOrSerial) {
       scanPackMutation.mutate({ upc: nextUpc, imeiOrSerial: nextImeiOrSerial });
@@ -636,12 +649,10 @@ export function OutboundPackingPage() {
   const updateBoxMutation = useMutation({
     mutationFn: () => {
       if (!currentBox) throw new Error('请先选择或新建箱子');
-      const nextBoxName = boxNameDraft.trim();
-      if (!nextBoxName) {
-        throw new Error('请输入箱子名称');
-      }
+      const nextBoxName = normalizeOutboundBoxNameForSubmit(boxNameDraft).value;
       return outboundApi.updateBox(currentBox.id, {
         boxName: nextBoxName,
+        expectedUpdatedAt: currentBox.updatedAt,
         ...toBackendBoxSize(sizeLabel, manualSize, manualSizeOpen),
         weightLb: toWeightNumber(weight),
         notes: note.trim(),
@@ -656,18 +667,37 @@ export function OutboundPackingPage() {
   });
   const detailBoxSettingsMutation = useMutation({
     mutationFn: ({ box, values }: { box: PackingBox; values: BoxSettingsValues }) => {
-      const nextBoxName = values.boxName.trim();
-      if (!nextBoxName) {
-        throw new Error('请输入箱子名称');
-      }
-      return outboundApi.updateBox(box.id, toBoxSettingsPayload(values));
+      const nextBoxName = normalizeOutboundBoxNameForSubmit(values.boxName).value;
+      return outboundApi.updateBox(box.id, {
+        ...toBoxSettingsPayload(values),
+        boxName: nextBoxName,
+        expectedUpdatedAt: box.updatedAt,
+      });
     },
+    onMutate: () => setDetailBoxSettingsError(''),
     onSuccess: (data) => {
-      updateBoxEverywhere(data as OutboundBox);
+      const updatedBox = updateBoxEverywhere(data as OutboundBox);
+      if (currentBox?.id === updatedBox.id) {
+        setBoxNameDraft(getBoxDisplayName(updatedBox));
+        setSizeLabel(updatedBox.sizeLabel);
+        setManualSize({
+          length: updatedBox.length,
+          width: updatedBox.width,
+          height: updatedBox.height,
+        });
+        setManualSizeOpen(updatedBox.sizeLabel === customSizePreset);
+        setWeight(String(updatedBox.weight || defaultBoxWeight));
+        setNote(updatedBox.note ?? '');
+      }
       setMessage('已保存箱子明细设置');
       setErrorMessage('');
+      setDetailBoxSettingsError('');
     },
-    onError: (error) => setErrorMessage(toUserErrorMessage(error, '保存箱子明细失败')),
+    onError: (error) => {
+      const errorText = toUserErrorMessage(error, '保存箱子明细失败');
+      setDetailBoxSettingsError(errorText);
+      setErrorMessage(errorText);
+    },
   });
 
   const addItemMutation = useMutation({
@@ -693,7 +723,6 @@ export function OutboundPackingPage() {
         ...previousBox,
         itemCount: previousBox.itemCount + 1,
         items: [...previousBox.items, optimisticItem],
-        updatedAt: new Date().toISOString(),
       });
       setHighlightedItemId(optimisticItem.id);
       setMessage('正在加入当前箱子');
@@ -756,7 +785,6 @@ export function OutboundPackingPage() {
           ...previousBox,
           itemCount: previousBox.itemCount + newItems.length,
           items: [...previousBox.items, ...newItems],
-          updatedAt: new Date().toISOString(),
         });
       }
       setMessage(`正在批量加入 ${inventoryItemIds.length} 件货物`);
@@ -835,7 +863,7 @@ export function OutboundPackingPage() {
       setScanBlockReason('');
       setMessage(`已扫码装箱：${item.imeiOrSerial ?? item.upc ?? item.trackingNumber}`);
       setErrorMessage('');
-      focusDetailedScanInput({ retry: true });
+      focusDetailedScanInput();
     },
     onError: (error) => {
       const messageText = toUserErrorMessage(error, '扫码装箱失败');
@@ -875,9 +903,14 @@ export function OutboundPackingPage() {
         throw new Error(`每箱数量合计必须等于当前可装箱总数 ${sourceItems.length}。`);
       }
 
-      const boxNameDrafts = batchBoxNameDrafts.slice(0, counts.length).map((name) => name.trim());
-      const customBoxNames = boxNameDrafts.filter(Boolean);
-      if (new Set(customBoxNames).size !== customBoxNames.length) {
+      const normalizedBoxNames = batchBoxNameDrafts
+        .slice(0, counts.length)
+        .map((name) => (name.trim() ? normalizeOutboundBoxNameForSubmit(name) : null));
+      const boxNameDrafts = normalizedBoxNames.map((result) => result?.value ?? '');
+      const customBoxNameKeys = normalizedBoxNames
+        .map((result) => result?.key)
+        .filter((key): key is string => Boolean(key));
+      if (new Set(customBoxNameKeys).size !== customBoxNameKeys.length) {
         throw new Error('批量箱名不能重复，请修改后再确认。');
       }
 
@@ -903,6 +936,7 @@ export function OutboundPackingPage() {
       }
       return { latestBox, packedInventoryIds, boxCount: groups.length };
     },
+    onMutate: () => setBatchPackingError(''),
     onSuccess: ({ latestBox, packedInventoryIds, boxCount }) => {
       if (latestBox) {
         const nextBox = updateBoxEverywhere(latestBox);
@@ -922,8 +956,13 @@ export function OutboundPackingPage() {
       queryClient.invalidateQueries({ queryKey: ['outbound-boxes'] });
       setMessage(`已批量装箱：创建 ${boxCount} 个箱子，共 ${packedInventoryIds.length} 件货物`);
       setErrorMessage('');
+      setBatchPackingError('');
     },
-    onError: (error) => setErrorMessage(toUserErrorMessage(error, '批量装箱失败')),
+    onError: (error) => {
+      const errorText = toUserErrorMessage(error, '批量装箱失败');
+      setBatchPackingError(errorText);
+      setErrorMessage(errorText);
+    },
   });
 
   useEffect(() => {
@@ -972,7 +1011,7 @@ export function OutboundPackingPage() {
     ) {
       return;
     }
-    focusDetailedScanInput({ retry: true });
+    focusDetailedScanInput();
   }, [
     canMutateCurrentBox,
     currentBox?.id,
@@ -997,7 +1036,6 @@ export function OutboundPackingPage() {
           ...previousBox,
           itemCount: Math.max(0, previousBox.itemCount - 1),
           items: previousBox.items.filter((boxItem) => boxItem.id !== item.id),
-          updatedAt: new Date().toISOString(),
         });
       }
       setLocallyPackedInventoryIds((current) => {
@@ -1053,7 +1091,6 @@ export function OutboundPackingPage() {
           ...previousBox,
           itemCount: Math.max(0, previousBox.itemCount - ids.size),
           items: previousBox.items.filter((item) => !ids.has(item.id)),
-          updatedAt: new Date().toISOString(),
         });
       }
       setLocallyPackedInventoryIds((current) => {
@@ -1142,7 +1179,11 @@ export function OutboundPackingPage() {
     }: {
       box: PackingBox;
       shippingTrackingNo: string;
-    }) => outboundApi.updateBox(box.id, { shippingTrackingNo }),
+    }) =>
+      outboundApi.updateBox(box.id, {
+        shippingTrackingNo,
+        expectedUpdatedAt: box.updatedAt,
+      }),
     onSuccess: (data) => {
       updateBoxEverywhere(data as OutboundBox);
       setMessage('箱子单号已保存');
@@ -1309,6 +1350,7 @@ export function OutboundPackingPage() {
   });
 
   const openBoxDetail = (box: PackingBox) => {
+    setDetailBoxSettingsError('');
     setBouncingBoxId(box.id);
     window.setTimeout(() => {
       void loadFullBox(box)
@@ -1453,6 +1495,7 @@ export function OutboundPackingPage() {
           onBatchAdd={(items) => batchAddItemsMutation.mutate(items.map((item) => item.id))}
           onOpenBulkPacking={() => {
             setPackingMode('BULK_BOX');
+            setBatchPackingError('');
             setBatchPackingOpen(true);
           }}
         />
@@ -1563,9 +1606,13 @@ export function OutboundPackingPage() {
         boxNameDrafts={batchBoxNameDrafts}
         selectedCount={selectedAvailableItemIds.size}
         filterLabel={getProductFilterLabel(activeConditionFilter, activeDeviceFilter)}
+        errorMessage={batchPackingError}
         isLoadingItems={isBatchItemsLoading}
         isSubmitting={batchPackingMutation.isPending}
-        onClose={() => setBatchPackingOpen(false)}
+        onClose={() => {
+          setBatchPackingOpen(false);
+          setBatchPackingError('');
+        }}
         onRefreshItems={refreshBatchItems}
         onBoxCountChange={setBatchBoxCount}
         onAllocationCountChange={(index, value) =>
@@ -1590,7 +1637,11 @@ export function OutboundPackingPage() {
         canMutate={detailBox?.id === currentBox?.id && canMutateCurrentBox}
         isRemoving={removeItemMutation.isPending}
         isSavingSettings={detailBoxSettingsMutation.isPending}
-        onClose={() => setDetailBox(null)}
+        settingsError={detailBoxSettingsError}
+        onClose={() => {
+          setDetailBox(null);
+          setDetailBoxSettingsError('');
+        }}
         onSaveSettings={(box, values) => detailBoxSettingsMutation.mutate({ box, values })}
         onRemove={(item) => removeItemMutation.mutate(item)}
         onOpenPrint={(box) => setPrintDetailBox(box)}
@@ -1728,6 +1779,7 @@ function BoxQuickEditor(props: {
           <input
             value={props.boxName}
             onChange={(event) => props.onBoxNameChange(event.target.value)}
+            maxLength={outboundBoxNameMaxLength}
             placeholder="创建后由系统自动生成"
             disabled={!props.currentBox || !canEdit}
           />
@@ -2336,7 +2388,6 @@ function DetailedScanPackingPanel(props: {
             value={props.scanValue}
             disabled={disabled}
             autoComplete="off"
-            autoFocus
             placeholder={props.box ? '直接扫描 UPC 或 IMEI / Serial' : '请先选择或新建箱子'}
             onChange={(event) => props.onScanValueChange(event.target.value)}
             onKeyDown={(event) => {
@@ -2970,6 +3021,7 @@ function BatchPackingModal(props: {
   boxNameDrafts: string[];
   selectedCount: number;
   filterLabel: string;
+  errorMessage: string;
   isLoadingItems: boolean;
   isSubmitting: boolean;
   onClose: () => void;
@@ -3078,7 +3130,7 @@ function BatchPackingModal(props: {
                   <input
                     value={props.boxNameDrafts[index] ?? ''}
                     placeholder={`箱 ${index + 1}`}
-                    maxLength={80}
+                    maxLength={outboundBoxNameMaxLength}
                     onChange={(event) => props.onBoxNameChange(index, event.target.value)}
                   />
                 </label>
@@ -3098,6 +3150,11 @@ function BatchPackingModal(props: {
             </article>
           ))}
         </div>
+        {props.errorMessage ? (
+          <div className="inline-error" role="alert">
+            {props.errorMessage}
+          </div>
+        ) : null}
         <div className="outbound-confirm-actions">
           <button
             type="button"
@@ -3127,6 +3184,7 @@ function BoxDetailModal(props: {
   canMutate: boolean;
   isRemoving: boolean;
   isSavingSettings: boolean;
+  settingsError: string;
   onClose: () => void;
   onSaveSettings: (box: PackingBox, values: BoxSettingsValues) => void;
   onRemove: (item: PackingItem) => void;
@@ -3190,6 +3248,7 @@ function BoxDetailModal(props: {
                 <span>箱子名称</span>
                 <input
                   value={settingsDraft.boxName}
+                  maxLength={outboundBoxNameMaxLength}
                   disabled={!props.canMutate || props.isSavingSettings}
                   onChange={(event) =>
                     setSettingsDraft((current) => ({ ...current, boxName: event.target.value }))
@@ -3310,6 +3369,11 @@ function BoxDetailModal(props: {
                   }
                 />
               </label>
+              {props.settingsError ? (
+                <div className="inline-error" role="alert">
+                  {props.settingsError}
+                </div>
+              ) : null}
               <div className="outbound-detail-settings-actions">
                 <button
                   type="button"
@@ -3634,6 +3698,32 @@ function NumberField(props: { label: string; value: number; onChange: (value: nu
       />
     </label>
   );
+}
+
+function isEditableElement(element: HTMLElement) {
+  return (
+    element.matches('input, textarea, select') ||
+    element.isContentEditable ||
+    Boolean(element.closest('[contenteditable]:not([contenteditable="false"])'))
+  );
+}
+
+function normalizeOutboundBoxNameForSubmit(value: string) {
+  const normalizedUnicode = value.normalize('NFKC');
+  if (forbiddenOutboundBoxNameCharacters.test(normalizedUnicode)) {
+    throw new Error('箱子名称不能包含控制字符或不可见字符。');
+  }
+  const normalized = normalizedUnicode.replace(outboundBoxNameSpaces, ' ').trim();
+  if (!normalized) {
+    throw new Error('请输入箱子名称');
+  }
+  if ([...normalized].length > outboundBoxNameMaxLength) {
+    throw new Error(`箱子名称最多 ${outboundBoxNameMaxLength} 个字符。`);
+  }
+  return {
+    value: normalized,
+    key: normalized.toLocaleLowerCase('en-US'),
+  };
 }
 
 type CustomerOption = { id: string; label: string };

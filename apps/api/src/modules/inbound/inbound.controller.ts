@@ -38,8 +38,8 @@ export class InboundController {
   }
 
   @Get('drafts/by-batch/:batchNo')
-  getDraftByBatchNo(@Param('batchNo') batchNo: string) {
-    return this.inboundService.getDraftByBatchNo(batchNo);
+  getDraftByBatchNo(@Param('batchNo') batchNo: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.inboundService.getDraftByBatchNo(batchNo, user);
   }
 
   @Get('drafts/latest/my')
@@ -48,18 +48,26 @@ export class InboundController {
   }
 
   @Get('drafts/:id')
-  getDraft(@Param('id') id: string) {
-    return this.inboundService.getDraft(id);
+  getDraft(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.inboundService.getDraft(id, user);
   }
 
   @Post('drafts/:id/ups')
-  scanUps(@Param('id') id: string, @Body() dto: ScanInboundUpsDto) {
-    return this.inboundService.scanUps(id, dto);
+  scanUps(
+    @Param('id') id: string,
+    @Body() dto: ScanInboundUpsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inboundService.scanUps(id, dto, user);
   }
 
   @Post('drafts/:id/items')
-  addItem(@Param('id') id: string, @Body() dto: AddInboundItemDto) {
-    return this.inboundService.addItem(id, dto);
+  addItem(
+    @Param('id') id: string,
+    @Body() dto: AddInboundItemDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inboundService.addItem(id, dto, user);
   }
 
   @Patch('drafts/:id/items/:itemId')
@@ -67,23 +75,32 @@ export class InboundController {
     @Param('id') id: string,
     @Param('itemId') itemId: string,
     @Body() dto: AddInboundItemDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.inboundService.updateItem(id, itemId, dto);
+    return this.inboundService.updateItem(id, itemId, dto, user);
   }
 
   @Post('drafts/:id/items/import')
-  importItems(@Param('id') id: string, @Body() dto: ImportInboundItemsDto) {
-    return this.inboundService.importItems(id, dto);
+  importItems(
+    @Param('id') id: string,
+    @Body() dto: ImportInboundItemsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inboundService.importItems(id, dto, user);
   }
 
   @Delete('drafts/:id/items/:itemId')
-  removeItem(@Param('id') id: string, @Param('itemId') itemId: string) {
-    return this.inboundService.removeItem(id, itemId);
+  removeItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inboundService.removeItem(id, itemId, user);
   }
 
   @Delete('drafts/:id/items')
-  clearDraftItems(@Param('id') id: string) {
-    return this.inboundService.clearDraftItems(id);
+  clearDraftItems(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.inboundService.clearDraftItems(id, user);
   }
 
   @Post('drafts/:id/confirm')

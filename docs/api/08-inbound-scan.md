@@ -6,6 +6,26 @@ Phase seven adds customer-locked inbound draft scanning, preview item management
 
 Current controllers require `inbound.manage`.
 
+## Draft Session Ownership
+
+Inbound draft endpoints authorize against both fields recovered from the access token:
+
+- authenticated account ID;
+- login `sessionId`.
+
+A new draft records both values, and only that creating login session can read, restore, review,
+mutate, import into, clear, or confirm it. A second login for the same account is a different session
+and cannot operate the first session's draft. A different operator is also rejected.
+
+For backward compatibility, an open legacy draft with an empty `creatorSessionId` can be claimed only
+by its original creating account. The first valid session from that account performs an atomic
+claim; all later requests must match the claimed session. Legacy drafts are never claimable by a
+different account.
+
+Different operators or login sessions may create separate drafts for the same customer. Each session
+confirms its own draft independently, while the resulting inventory remains grouped by the shared
+`customerId`.
+
 ## Create Draft
 
 `POST /api/v1/inbound/drafts`
@@ -27,6 +47,8 @@ Rules:
   The alias records the receiving name; inventory ownership remains on `customerId`.
 - `warehouseId` is optional; when omitted, `warehouse.defaultId` is used.
 - Inactive warehouses cannot receive inbound scans.
+- The created draft stores the current account ID and login `sessionId`; these values define its
+  owner for the rest of the draft lifecycle.
 
 ## Get Draft
 
@@ -40,12 +62,18 @@ Preview items include `scannedAt`, `createdAt`, `updatedAt`, and linked `excepti
 client can keep scan-time ascending review order and show a readable exception reason beside any
 `EXCEPTION` row.
 
+The requested draft must belong to the current account and login session. A same-account request
+from another login session is rejected. If the draft is an eligible legacy draft, this request may
+atomically claim it for the original account's current session before returning it.
+
 `GET /api/v1/inbound/drafts/by-batch/:batchNo`
 
 Restores an open draft by its operator-facing batch number, for example
 `INB-20260701152205-Q2QEUT`. The endpoint returns the same payload as `GET /drafts/:id` and is used
 by the scan page's recovery control when a browser has cached a newer empty draft. Only `DRAFT`
 batches can be restored here; confirmed batches remain in inbound records.
+
+Batch-number recovery follows the same account-and-session ownership rule as direct ID lookup.
 
 ## Scan Package Tracking Number
 
@@ -57,13 +85,25 @@ batches can be restored here; confirmed batches remain in inbound records.
 }
 ```
 
-Returns normalized package tracking data and duplicate status. This endpoint auto-accepts UPS
-tracking numbers, manually entered warehouse compensation package numbers that start with `BB0000`,
-and FedEx tracking numbers that start with `9622` and contain 22 to 34 digits in total before item
-scans, but it still reports duplicate counts from both confirmed inbound records and the current
-draft. USPS, other FedEx formats, and unsupported package tracking formats return `valid: false`
-instead of failing the request, so the web page can ask the operator whether to continue. The request
-and response keep the legacy `upsTrackingNo` field name for API compatibility.
+Returns normalized package tracking data, explicit format/auto-accept decisions, and duplicate status.
+The request and response keep the legacy `upsTrackingNo` field name for API compatibility.
+
+The draft must be owned by the current account and login session before duplicate or format review
+is returned.
+
+Response decision fields:
+
+- `formatValid` is `true` when the normalized value matches a supported UPS, USPS, FedEx, or
+  `BB0000` warehouse-compensation format.
+- `autoAccepted` is `true` for complete UPS values, 9622-prefixed FedEx values containing 22 to 34
+  digits, and valid `BB0000` values. Duplicate status is reported separately and can still require
+  confirmation.
+- `valid` is the legacy compatibility alias for `autoAccepted`. Clients must not interpret it as the
+  supported-format decision; new clients should read `formatValid` and `autoAccepted` directly.
+- USPS and non-9622 FedEx values return `formatValid: true`, `autoAccepted: false`, and `valid: false`
+  so the web page can require explicit operator confirmation.
+- Unsupported or malformed values return all three decision fields as `false`. The web page must keep
+  focus in the package tracking field and must not display a continue action for such a value.
 
 Example response:
 
@@ -71,6 +111,8 @@ Example response:
 {
   "draftId": "draft-1",
   "upsTrackingNo": "1Z999AA10123456784",
+  "formatValid": true,
+  "autoAccepted": true,
   "valid": true,
   "duplicate": false,
   "duplicateCount": 0,
@@ -79,20 +121,34 @@ Example response:
 }
 ```
 
+Web focus rules using this endpoint:
+
+- Automatic focus and Enter must run the same local decision and `scanUps` review before moving to
+  UPC. A stale asynchronous response for an older input value must not move focus.
+- Only a complete UPS value or a complete 9622-prefixed FedEx value is eligible for idle-timer
+  automatic movement. USPS and non-9622 FedEx stay in the package tracking field until the operator
+  confirms their format-valid warning.
+- `BB0000` is API-auto-accepted, but the web page requires Enter or a scanner completion key before
+  moving focus because the value may contain an additional alphanumeric suffix.
+- A malformed value never moves focus and never exposes `继续入库`.
+
 ## Add Preview Item
 
 ## Restore My Latest Draft
 
 `GET /api/v1/inbound/drafts/latest/my`
 
-Returns the current authenticated operator's latest open `DRAFT` inbound batch, or `null` when that
-operator has no unfinished draft. The inbound scan page uses this endpoint when opening the page
+Returns the current authenticated login session's latest open `DRAFT` inbound batch, or `null` when
+that session has no unfinished draft. The inbound scan page uses this endpoint when opening the page
 without a valid locally locked draft, so operators can leave for another page and come back to their
 own latest unfinished receiving batch.
 
 Rules:
 
-- Only the current operator's own `DRAFT` batch can be returned.
+- Only a `DRAFT` owned by the current account and login session can be returned.
+- A second login session for the same account does not restore another session's draft.
+- An eligible legacy draft from the same account may be atomically claimed by the first session that
+  restores it.
 - Confirmed or closed batches are not returned.
 - The web page should restore the draft's customer, customer alias, warehouse, review summary, and
   pending detail rows before the operator continues scanning.
@@ -137,6 +193,10 @@ Rules:
 - If the latest non-voided preview item in the active draft is still `EXCEPTION`, the API rejects
   adding another item with a conflict error. The operator must correct or remove that latest
   exception row first.
+- The current account and login session must own the draft.
+- The operation locks the parent batch row with `FOR UPDATE` before checking `DRAFT` status and
+  inserting the preview row. Concurrent add, update, delete, clear, and confirm operations on the
+  same batch therefore run serially.
 
 The web client shows the current inbound draft directly below the customer lock area and above the
 scanner inputs. The draft detail table is the pre-confirmation review area: `PENDING` and
@@ -172,6 +232,8 @@ Rules:
   for the same row.
 - Web table actions must stay usable at normal desktop widths; when the table is narrower than its
   content, the action column remains visible while the row can scroll horizontally.
+- The current account and login session must own the draft. The operation takes the same batch-row
+  `FOR UPDATE` lock used by add, delete, clear, and confirm before changing the row.
 
 ## Import Preview Items
 
@@ -203,6 +265,8 @@ Rules:
 - If the latest non-voided preview item in the active draft is still `EXCEPTION`, import is rejected
   before any CSV row is appended. Correct or remove that latest exception row first.
 - Each row is added with the same validation behavior as `POST /drafts/:id/items`.
+- Every row append uses the same session ownership check and serialized batch-row lock as a manual
+  add. Import cannot append a row after confirmation has acquired and closed the draft.
 - Standard CSV imports use three required columns: package tracking number (`单号`), UPC, and IMEI.
 - Valid rows are appended to the current draft immediately.
 - Failed rows are reported with row number and error message; other valid rows can still be imported.
@@ -234,12 +298,19 @@ DELETE /api/v1/inbound/drafts/:id/items
 
 Removal is logical. Preview rows move to `VOIDED` so history remains traceable during the draft lifecycle.
 
+Delete-one and clear-all require the creating account and login session. Both operations lock the
+parent batch row with `FOR UPDATE`, so they cannot race with add, update, or confirmation.
+
 ## Confirm Draft
 
 `POST /api/v1/inbound/drafts/:id/confirm`
 
 Confirmation runs inside one database transaction:
 
+- Requires the current account and login session to match the draft creator. Final confirmation can
+  be performed only by the creating login session.
+- Locks the parent batch row with `FOR UPDATE` before checking ownership and `DRAFT` status. Add,
+  update, delete, clear, and competing confirm requests wait and then recheck the final state.
 - Rejects confirmation if the latest non-voided preview item is still `EXCEPTION`, so the operator
   must correct or remove the latest abnormal row before inventory can be confirmed.
 - Rejects same-draft duplicate IMEI or Serial values before inventory writes.

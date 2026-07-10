@@ -4,7 +4,7 @@ import { CustomerStatus, InventoryStatus, OutboundBoxStatus, ProductStatus } fro
 import { unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { InventoryService } from '../../inventory/inventory.service';
-import { OutboundRepository } from '../outbound.repository';
+import { OutboundBoxUpdateConflictError, OutboundRepository } from '../outbound.repository';
 import { OutboundService } from '../outbound.service';
 
 const now = new Date('2026-06-17T00:00:00Z');
@@ -31,6 +31,7 @@ const warehouse = {
 };
 const user = {
   id: 'user-1',
+  sessionId: 'session-1',
   email: 'operator@wms-scan.local',
   name: 'Outbound Operator',
   roles: ['ADMIN'],
@@ -250,16 +251,17 @@ describe('OutboundService', () => {
         customer: { id: customer.id },
         warehouse: { id: warehouse.id },
       });
-      expect(repository.findBoxByNo).toHaveBeenCalledWith(
-        warehouse.id,
-        'BOX-CUST-001-20260617-001',
-      );
       expect(repository.createBoxWithAudit).toHaveBeenCalledWith(
         expect.objectContaining({
-          boxNo: 'BOX-CUST-001-20260617-001',
-          boxName: 'Apple Reseller20260617箱1',
+          sizePreset: '12*12*12',
         }),
         user.id,
+        {
+          warehouseId: warehouse.id,
+          boxNoPrefix: 'BOX-CUST-001-20260617-',
+          generatedBoxNamePrefix: 'Apple Reseller20260617箱',
+          requestedBoxName: undefined,
+        },
       );
     } finally {
       jest.useRealTimers();
@@ -269,9 +271,9 @@ describe('OutboundService', () => {
   it('blocks duplicate generated box names inside the same warehouse', async () => {
     jest.useFakeTimers().setSystemTime(now);
     const { repository, service } = createService({
-      findBoxByName: jest
+      createBoxWithAudit: jest
         .fn()
-        .mockResolvedValue({ ...emptyBox, boxName: 'Apple Reseller20260617箱1' }),
+        .mockRejectedValue(new OutboundBoxUpdateConflictError('DUPLICATE_NAME')),
     });
 
     try {
@@ -284,11 +286,7 @@ describe('OutboundService', () => {
           user,
         ),
       ).rejects.toThrow(ConflictException);
-      expect(repository.findBoxByName).toHaveBeenCalledWith(
-        warehouse.id,
-        'Apple Reseller20260617箱1',
-        undefined,
-      );
+      expect(repository.createBoxWithAudit).toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
     }
@@ -319,17 +317,17 @@ describe('OutboundService', () => {
         boxNo: 'BOX-CUST-001-20260617-001',
         boxName: 'Apple Reseller Custom Box',
       });
-      expect(repository.findBoxByName).toHaveBeenCalledWith(
-        warehouse.id,
-        'Apple Reseller Custom Box',
-        undefined,
-      );
       expect(repository.createBoxWithAudit).toHaveBeenCalledWith(
         expect.objectContaining({
-          boxNo: 'BOX-CUST-001-20260617-001',
-          boxName: 'Apple Reseller Custom Box',
+          sizePreset: '12*12*12',
         }),
         user.id,
+        {
+          warehouseId: warehouse.id,
+          boxNoPrefix: 'BOX-CUST-001-20260617-',
+          generatedBoxNamePrefix: 'Apple Reseller20260617箱',
+          requestedBoxName: 'Apple Reseller Custom Box',
+        },
       );
     } finally {
       jest.useRealTimers();
@@ -349,12 +347,12 @@ describe('OutboundService', () => {
           },
           user,
         ),
-      ).rejects.toThrow('boxName cannot be empty.');
+      ).rejects.toThrow('箱子名称不能为空。');
 
       const duplicateName = createService({
-        findBoxByName: jest
+        createBoxWithAudit: jest
           .fn()
-          .mockResolvedValue({ ...emptyBox, boxName: 'Apple Reseller Custom Box' }),
+          .mockRejectedValue(new OutboundBoxUpdateConflictError('DUPLICATE_NAME')),
       });
       await expect(
         duplicateName.service.createBox(
@@ -371,7 +369,7 @@ describe('OutboundService', () => {
     }
   });
 
-  it('increments customer-date box numbers and names from the latest created box', async () => {
+  it('passes customer-date prefixes for locked box identity allocation', async () => {
     jest.useFakeTimers().setSystemTime(now);
     try {
       const generatedBox = {
@@ -380,10 +378,6 @@ describe('OutboundService', () => {
         boxName: 'Apple Reseller20260617箱6',
       };
       const { repository, service } = createService({
-        findLatestBoxByPrefix: jest.fn().mockResolvedValue({
-          ...emptyBox,
-          boxNo: 'BOX-CUST-001-20260617-005',
-        }),
         createBoxWithAudit: jest.fn().mockResolvedValue(generatedBox),
       });
 
@@ -399,20 +393,17 @@ describe('OutboundService', () => {
         boxNo: 'BOX-CUST-001-20260617-006',
         boxName: 'Apple Reseller20260617箱6',
       });
-      expect(repository.findLatestBoxByPrefix).toHaveBeenCalledWith(
-        warehouse.id,
-        'BOX-CUST-001-20260617-',
-      );
-      expect(repository.findBoxByNo).toHaveBeenCalledWith(
-        warehouse.id,
-        'BOX-CUST-001-20260617-006',
-      );
       expect(repository.createBoxWithAudit).toHaveBeenCalledWith(
         expect.objectContaining({
-          boxNo: 'BOX-CUST-001-20260617-006',
-          boxName: 'Apple Reseller20260617箱6',
+          sizePreset: '12*12*12',
         }),
         user.id,
+        {
+          warehouseId: warehouse.id,
+          boxNoPrefix: 'BOX-CUST-001-20260617-',
+          generatedBoxNamePrefix: 'Apple Reseller20260617箱',
+          requestedBoxName: undefined,
+        },
       );
     } finally {
       jest.useRealTimers();
@@ -437,6 +428,7 @@ describe('OutboundService', () => {
           boxName: '  Apple Reseller Custom Box  ',
           sizePreset: '16*16*12',
           weightLb: 42,
+          expectedUpdatedAt: now.toISOString(),
         },
         user,
       ),
@@ -445,15 +437,13 @@ describe('OutboundService', () => {
       boxName: 'Apple Reseller Custom Box',
       weightLb: 42,
     });
-    expect(repository.findBoxByName).toHaveBeenCalledWith(
-      warehouse.id,
-      'Apple Reseller Custom Box',
-      emptyBox.id,
-    );
     expect(repository.updateBoxWithAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         boxId: emptyBox.id,
         operatorId: user.id,
+        expectedUpdatedAt: now,
+        warehouseId: warehouse.id,
+        boxNameKey: 'apple reseller custom box',
         data: expect.objectContaining({
           boxName: 'Apple Reseller Custom Box',
           sizePreset: '16*16*12',
@@ -466,17 +456,30 @@ describe('OutboundService', () => {
   it('rejects empty or duplicate manual box names', async () => {
     const emptyName = createService();
     await expect(
-      emptyName.service.updateBox(emptyBox.id, { boxName: '   ' }, user),
+      emptyName.service.updateBox(
+        emptyBox.id,
+        { boxName: '   ', expectedUpdatedAt: now.toISOString() },
+        user,
+      ),
     ).rejects.toThrow(BadRequestException);
     expect(emptyName.repository.updateBoxWithAudit).not.toHaveBeenCalled();
 
     const duplicateName = createService({
-      findBoxByName: jest.fn().mockResolvedValue({ ...emptyBox, id: 'box-2' }),
+      updateBoxWithAudit: jest
+        .fn()
+        .mockRejectedValue(new OutboundBoxUpdateConflictError('DUPLICATE_NAME')),
     });
     await expect(
-      duplicateName.service.updateBox(emptyBox.id, { boxName: 'Apple Reseller Custom Box' }, user),
+      duplicateName.service.updateBox(
+        emptyBox.id,
+        {
+          boxName: 'Apple Reseller Custom Box',
+          expectedUpdatedAt: now.toISOString(),
+        },
+        user,
+      ),
     ).rejects.toThrow('当前仓库已存在同名箱子，请修改箱子名称后再保存。');
-    expect(duplicateName.repository.updateBoxWithAudit).not.toHaveBeenCalled();
+    expect(duplicateName.repository.updateBoxWithAudit).toHaveBeenCalled();
   });
 
   it('allows reusing a box name after the previous box is voided', async () => {
@@ -490,17 +493,119 @@ describe('OutboundService', () => {
     });
 
     await expect(
-      service.updateBox(emptyBox.id, { boxName: 'Apple Reseller Custom Box' }, user),
+      service.updateBox(
+        emptyBox.id,
+        {
+          boxName: 'Apple Reseller Custom Box',
+          expectedUpdatedAt: now.toISOString(),
+        },
+        user,
+      ),
     ).resolves.toMatchObject({
       id: emptyBox.id,
       boxName: 'Apple Reseller Custom Box',
     });
-    expect(repository.findBoxByName).toHaveBeenCalledWith(
-      warehouse.id,
-      'Apple Reseller Custom Box',
-      emptyBox.id,
-    );
     expect(repository.updateBoxWithAudit).toHaveBeenCalled();
+  });
+
+  it('normalizes Unicode box names before saving and comparing', async () => {
+    const normalizedBox = { ...emptyBox, boxName: 'BOX Café' };
+    const { repository, service } = createService({
+      updateBoxWithAudit: jest.fn().mockResolvedValue(normalizedBox),
+    });
+
+    await expect(
+      service.updateBox(
+        emptyBox.id,
+        {
+          boxName: '  ＢＯＸ\u3000Cafe\u0301  ',
+          expectedUpdatedAt: now.toISOString(),
+        },
+        user,
+      ),
+    ).resolves.toMatchObject({ boxName: 'BOX Café' });
+    expect(repository.updateBoxWithAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        boxNameKey: 'box café',
+        data: expect.objectContaining({ boxName: 'BOX Café' }),
+      }),
+    );
+  });
+
+  it('rejects control and invisible characters in box names', async () => {
+    const { repository, service } = createService();
+
+    await expect(
+      service.updateBox(
+        emptyBox.id,
+        { boxName: 'Box\u200bA', expectedUpdatedAt: now.toISOString() },
+        user,
+      ),
+    ).rejects.toThrow('箱子名称不能包含控制字符或不可见字符。');
+    await expect(
+      service.updateBox(
+        emptyBox.id,
+        { boxName: 'Box\nA', expectedUpdatedAt: now.toISOString() },
+        user,
+      ),
+    ).rejects.toThrow('箱子名称不能包含控制字符或不可见字符。');
+    expect(repository.updateBoxWithAudit).not.toHaveBeenCalled();
+  });
+
+  it('returns a readable conflict when the box version is stale', async () => {
+    const { service } = createService({
+      updateBoxWithAudit: jest
+        .fn()
+        .mockRejectedValue(new OutboundBoxUpdateConflictError('VERSION_CONFLICT')),
+    });
+
+    await expect(
+      service.updateBox(
+        emptyBox.id,
+        { boxName: 'Latest Name', expectedUpdatedAt: now.toISOString() },
+        user,
+      ),
+    ).rejects.toThrow('箱子已被其他人修改，请刷新箱子后再重试。');
+  });
+
+  it('returns a readable conflict when atomic create detects a duplicate name', async () => {
+    jest.useFakeTimers().setSystemTime(now);
+    try {
+      const { service } = createService({
+        createBoxWithAudit: jest
+          .fn()
+          .mockRejectedValue(new OutboundBoxUpdateConflictError('DUPLICATE_NAME')),
+      });
+
+      await expect(
+        service.createBox(
+          {
+            customerId: customer.id,
+            warehouseId: warehouse.id,
+            boxName: 'Concurrent Box',
+          },
+          user,
+        ),
+      ).rejects.toThrow('当前仓库已存在同名箱子，请修改箱子名称后再保存。');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('allows only one successful reopen transition', async () => {
+    const sealedBox = { ...emptyBox, status: OutboundBoxStatus.SEALED, sealedAt: now };
+    const { repository, service } = createService({
+      findBoxById: jest.fn().mockResolvedValue(sealedBox),
+      reopenBox: jest.fn().mockResolvedValue(null),
+    });
+
+    await expect(service.reopenBox(emptyBox.id, user)).rejects.toThrow(
+      '该箱子已被其他人返工，请刷新后继续操作。',
+    );
+    expect(repository.reopenBox).toHaveBeenCalledWith({
+      boxId: emptyBox.id,
+      operatorId: user.id,
+    });
   });
 
   it('delegates outbound availability to inventory with a forced customer and in-stock status', async () => {

@@ -16,9 +16,11 @@ import { ListOutboundAvailableItemsQueryDto } from './dto/list-outbound-availabl
 import { ListOutboundBoxItemsQueryDto } from './dto/list-outbound-box-items-query.dto';
 import { ListOutboundBoxesQueryDto } from './dto/list-outbound-boxes-query.dto';
 import { UpdateOutboundBoxDto } from './dto/update-outbound-box.dto';
+import { normalizeOutboundBoxName } from './outbound-box-name';
 import {
   OutboundBoxListRecord,
   OutboundBoxRecord,
+  OutboundBoxUpdateConflictError,
   OutboundInventoryItemRecord,
   OutboundRepository,
 } from './outbound.repository';
@@ -69,38 +71,43 @@ export class OutboundService {
       throw new ConflictException('Inactive warehouse cannot be used for outbound packing.');
     }
 
-    const generatedBoxIdentity = await this.generateBoxIdentity({
+    const generatedBoxIdentity = this.buildBoxIdentityPrefixes({
       customerCode: customer.code,
       customerName: customer.name,
-      warehouseId: warehouse.id,
     });
-    const boxNo = generatedBoxIdentity.boxNo;
-    const existing = await this.outboundRepository.findBoxByNo(warehouseId, boxNo);
-    if (existing) {
-      throw new ConflictException('Outbound box number already exists in this warehouse.');
-    }
-    const requestedBoxName = this.trimOptional(dto.boxName);
-    if (dto.boxName !== undefined && !requestedBoxName) {
-      throw new BadRequestException('boxName cannot be empty.');
-    }
-    const boxName = requestedBoxName ?? generatedBoxIdentity.boxName;
-    await this.assertUniqueBoxName(warehouseId, boxName);
+    const requestedBoxName =
+      dto.boxName === undefined ? undefined : this.requireValidBoxName(dto.boxName);
 
-    const box = await this.outboundRepository.createBoxWithAudit(
-      {
-        boxNo,
-        boxName,
-        sizePreset: this.normalizeSizePreset(dto.sizePreset, '12*12*12'),
-        customSize: this.normalizeCustomSize(dto.sizePreset, dto.customSize),
-        weightLb: dto.weightLb ?? 45,
-        shippingTrackingNo: this.trimOptional(dto.shippingTrackingNo),
-        customer: { connect: { id: customer.id } },
-        warehouse: { connect: { id: warehouse.id } },
-        createdBy: { connect: { id: operator.id } },
-        notes: this.trimOptional(dto.notes),
-      },
-      operator.id,
-    );
+    let box: OutboundBoxRecord;
+    try {
+      box = await this.outboundRepository.createBoxWithAudit(
+        {
+          sizePreset: this.normalizeSizePreset(dto.sizePreset, '12*12*12'),
+          customSize: this.normalizeCustomSize(dto.sizePreset, dto.customSize),
+          weightLb: dto.weightLb ?? 45,
+          shippingTrackingNo: this.trimOptional(dto.shippingTrackingNo),
+          customer: { connect: { id: customer.id } },
+          warehouse: { connect: { id: warehouse.id } },
+          createdBy: { connect: { id: operator.id } },
+          notes: this.trimOptional(dto.notes),
+        },
+        operator.id,
+        {
+          warehouseId,
+          boxNoPrefix: generatedBoxIdentity.boxNoPrefix,
+          generatedBoxNamePrefix: generatedBoxIdentity.generatedBoxNamePrefix,
+          requestedBoxName: requestedBoxName?.value,
+        },
+      );
+    } catch (error) {
+      if (error instanceof OutboundBoxUpdateConflictError && error.reason === 'DUPLICATE_NAME') {
+        throw new ConflictException('当前仓库已存在同名箱子，请修改箱子名称后再保存。');
+      }
+      if (error instanceof OutboundBoxUpdateConflictError && error.reason === 'INVALID_NAME') {
+        throw new BadRequestException('系统生成的箱子名称不符合命名规则，请检查客户名称。');
+      }
+      throw error;
+    }
 
     return this.toBoxResponse(box);
   }
@@ -165,14 +172,12 @@ export class OutboundService {
   async updateBox(id: string, dto: UpdateOutboundBoxDto, operator: AuthenticatedUser) {
     const box = await this.findOpenBox(id);
     const data: Prisma.OutboundBoxUpdateInput = {};
+    let boxNameKey: string | undefined;
 
     if (dto.boxName !== undefined) {
-      const boxName = this.trimOptional(dto.boxName);
-      if (!boxName) {
-        throw new BadRequestException('boxName cannot be empty.');
-      }
-      await this.assertUniqueBoxName(box.warehouseId, boxName, box.id);
-      data.boxName = boxName;
+      const normalizedBoxName = this.requireValidBoxName(dto.boxName);
+      data.boxName = normalizedBoxName.value;
+      boxNameKey = normalizedBoxName.key;
     }
     if (dto.sizePreset !== undefined) {
       data.sizePreset = this.normalizeSizePreset(dto.sizePreset);
@@ -190,11 +195,34 @@ export class OutboundService {
       data.shippingTrackingNo = this.trimOptional(dto.shippingTrackingNo) ?? null;
     }
 
-    const updated = await this.outboundRepository.updateBoxWithAudit({
-      boxId: box.id,
-      operatorId: operator.id,
-      data,
-    });
+    let updated: OutboundBoxRecord;
+    try {
+      updated = await this.outboundRepository.updateBoxWithAudit({
+        boxId: box.id,
+        operatorId: operator.id,
+        data,
+        expectedUpdatedAt: new Date(dto.expectedUpdatedAt),
+        warehouseId: box.warehouseId,
+        boxNameKey,
+      });
+    } catch (error) {
+      if (error instanceof OutboundBoxUpdateConflictError) {
+        if (error.reason === 'NOT_FOUND') {
+          throw new NotFoundException('Outbound box not found.');
+        }
+        if (error.reason === 'NOT_OPEN') {
+          throw new ConflictException('Only open outbound boxes can be changed.');
+        }
+        if (error.reason === 'DUPLICATE_NAME') {
+          throw new ConflictException('当前仓库已存在同名箱子，请修改箱子名称后再保存。');
+        }
+        if (error.reason === 'INVALID_NAME') {
+          throw new BadRequestException('箱子名称不符合命名规则。');
+        }
+        throw new ConflictException('箱子已被其他人修改，请刷新箱子后再重试。');
+      }
+      throw error;
+    }
 
     return this.toBoxResponse(updated);
   }
@@ -334,6 +362,9 @@ export class OutboundService {
       boxId: box.id,
       operatorId: operator.id,
     });
+    if (!reopened) {
+      throw new ConflictException('该箱子已被其他人返工，请刷新后继续操作。');
+    }
     return this.toBoxResponse(reopened);
   }
 
@@ -519,23 +550,18 @@ export class OutboundService {
     };
   }
 
-  private async assertUniqueBoxName(
-    warehouseId: string,
-    boxName?: string | null,
-    excludeBoxId?: string,
-  ) {
-    const normalizedBoxName = this.trimOptional(boxName);
-    if (!normalizedBoxName) {
-      return;
+  private requireValidBoxName(value: string) {
+    const result = normalizeOutboundBoxName(value);
+    if ('error' in result) {
+      if (result.error === 'EMPTY') {
+        throw new BadRequestException('箱子名称不能为空。');
+      }
+      if (result.error === 'FORBIDDEN_CHARACTERS') {
+        throw new BadRequestException('箱子名称不能包含控制字符或不可见字符。');
+      }
+      throw new BadRequestException('箱子名称最多 120 个字符。');
     }
-    const existing = await this.outboundRepository.findBoxByName(
-      warehouseId,
-      normalizedBoxName,
-      excludeBoxId,
-    );
-    if (existing) {
-      throw new ConflictException('当前仓库已存在同名箱子，请修改箱子名称后再保存。');
-    }
+    return result;
   }
 
   private normalizeSizePreset(value?: string | null, fallback?: string) {
@@ -555,28 +581,16 @@ export class OutboundService {
     return normalizedSizePreset === 'CUSTOM' ? normalizedCustomSize : undefined;
   }
 
-  private async generateBoxIdentity(params: {
-    customerCode: string;
-    customerName: string;
-    warehouseId: string;
-  }) {
+  private buildBoxIdentityPrefixes(params: { customerCode: string; customerName: string }) {
     const dateKey = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const safeCustomerCode = params.customerCode
       .trim()
       .toUpperCase()
       .replace(/[^A-Z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
-    const prefix = `BOX-${safeCustomerCode}-${dateKey}-`;
-    const latestBox = await this.outboundRepository.findLatestBoxByPrefix(
-      params.warehouseId,
-      prefix,
-    );
-    const latestSequence = latestBox ? Number(latestBox.boxNo.slice(prefix.length)) : 0;
-    const nextSequence = Number.isFinite(latestSequence) ? latestSequence + 1 : 1;
-
     return {
-      boxNo: `${prefix}${nextSequence.toString().padStart(3, '0')}`,
-      boxName: `${params.customerName.trim() || params.customerCode}${dateKey}箱${nextSequence}`,
+      boxNoPrefix: `BOX-${safeCustomerCode}-${dateKey}-`,
+      generatedBoxNamePrefix: `${params.customerName.trim() || params.customerCode}${dateKey}箱`,
     };
   }
 

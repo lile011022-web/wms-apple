@@ -5,6 +5,7 @@ import { ProductsService } from '../products.service';
 
 const operator = {
   id: 'user-1',
+  sessionId: 'session-test',
   email: 'admin@wms-scan.local',
   name: 'Admin',
   roles: ['ADMIN'],
