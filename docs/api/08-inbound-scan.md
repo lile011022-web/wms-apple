@@ -96,11 +96,11 @@ Response decision fields:
 - `formatValid` is `true` when the normalized value matches a supported UPS, USPS, FedEx, or
   `BB0000` warehouse-compensation format.
 - `autoAccepted` is `true` for complete UPS values, 9622-prefixed FedEx values containing 22 to 34
-  digits, and valid `BB0000` values. Duplicate status is reported separately and can still require
+  digits, exactly 34-digit 9632-prefixed FedEx values, and valid `BB0000` values. Duplicate status is reported separately and can still require
   confirmation.
 - `valid` is the legacy compatibility alias for `autoAccepted`. Clients must not interpret it as the
   supported-format decision; new clients should read `formatValid` and `autoAccepted` directly.
-- USPS and non-9622 FedEx values return `formatValid: true`, `autoAccepted: false`, and `valid: false`
+- USPS and FedEx values outside the configured 9622/9632 rules return `formatValid: true`, `autoAccepted: false`, and `valid: false`
   so the web page can require explicit operator confirmation.
 - Unsupported or malformed values return all three decision fields as `false`. The web page must keep
   focus in the package tracking field and must not display a continue action for such a value.
@@ -125,8 +125,9 @@ Web focus rules using this endpoint:
 
 - Automatic focus and Enter must run the same local decision and `scanUps` review before moving to
   UPC. A stale asynchronous response for an older input value must not move focus.
-- Only a complete UPS value or a complete 9622-prefixed FedEx value is eligible for idle-timer
-  automatic movement. USPS and non-9622 FedEx stay in the package tracking field until the operator
+- Only a complete UPS value, a complete 9622-prefixed FedEx value, or an exactly 34-digit
+  9632-prefixed FedEx value is eligible for idle-timer automatic movement. USPS and other FedEx
+  values stay in the package tracking field until the operator
   confirms their format-valid warning.
 - `BB0000` is API-auto-accepted, but the web page requires Enter or a scanner completion key before
   moving focus because the value may contain an additional alphanumeric suffix.

@@ -205,6 +205,67 @@ export class ProductsService {
     };
   }
 
+  async deleteMany(inputIds: string[], operator: AuthenticatedUser) {
+    const ids = [...new Set(inputIds.map((id) => id.trim()).filter(Boolean))];
+    if (ids.length === 0) {
+      throw new BadRequestException('Please select at least one product to delete.');
+    }
+
+    const products = await this.productsRepository.findManyByIds(ids);
+    const foundIds = new Set(products.map((product) => product.id));
+    const missingIds = ids.filter((id) => !foundIds.has(id));
+    if (missingIds.length > 0) {
+      throw new NotFoundException(`Product not found: ${missingIds.join(', ')}.`);
+    }
+
+    const blockedProducts = products.filter(
+      (product) =>
+        product._count.inboundItems > 0 ||
+        product._count.inventoryItems > 0 ||
+        product._count.exceptions > 0,
+    );
+    if (blockedProducts.length > 0) {
+      const blockedSummary = blockedProducts
+        .map(
+          (product) =>
+            `${product.sku}（入库 ${product._count.inboundItems}、库存 ${product._count.inventoryItems}、异常记录 ${product._count.exceptions}）`,
+        )
+        .join('；');
+      throw new ConflictException(`以下商品已有业务记录，不能删除：${blockedSummary}`);
+    }
+
+    try {
+      const deleted = await this.productsRepository.deleteMany(ids);
+      if (deleted.count !== ids.length) {
+        throw new ConflictException('商品数据已被其他人修改，请刷新后重试。');
+      }
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        throw new ConflictException('商品已被入库、库存或异常记录引用，不能删除。');
+      }
+      throw error;
+    }
+
+    for (const product of products) {
+      await this.auditLogsService.record({
+        operatorId: operator.id,
+        action: AuditAction.UPC_PRODUCT_CHANGE,
+        resourceType: 'product',
+        resourceId: product.id,
+        beforeSnapshot: this.toAuditSnapshot(product),
+        metadata: {
+          changeType: 'DELETE',
+          deletedSku: product.sku,
+        },
+      });
+    }
+
+    return {
+      deletedCount: ids.length,
+      deletedIds: ids,
+    };
+  }
+
   private async toCreateInput(
     dto: CreateProductDto,
     options?: { skipUpcAvailabilityCheck?: boolean },

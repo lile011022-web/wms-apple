@@ -183,8 +183,41 @@ Response `data`:
 }
 ```
 
-## Delete Policy
+## DELETE /products/:id
 
-There is intentionally no physical delete endpoint in phase six.
+Deletes one unused product and its UPC mappings.
 
-Products and UPC mappings are historical references for inbound items, inventory items, outbound boxes, exceptions, reports, and audit records. Use `PATCH /products/:id/status` to deactivate instead.
+Rules:
+
+- The product must exist.
+- Products referenced by inbound items, inventory items, or exception records cannot be deleted.
+- A blocked deletion returns `409 Conflict` with the SKU and reference counts.
+- Successful deletion writes `UPC_PRODUCT_CHANGE` with the deleted snapshot and
+  `metadata.changeType = DELETE`.
+
+## POST /products/bulk-delete
+
+Deletes up to 100 selected unused products.
+
+Request:
+
+```json
+{
+  "ids": ["product-1", "product-2"]
+}
+```
+
+The operation is all-or-nothing. Missing IDs or any selected product with inbound, inventory, or
+exception references reject the complete request before deletion.
+
+Response `data`:
+
+```json
+{
+  "deletedCount": 2,
+  "deletedIds": ["product-1", "product-2"]
+}
+```
+
+Products with business history remain historical references and must be deactivated through
+`PATCH /products/:id/status` instead of deleted.

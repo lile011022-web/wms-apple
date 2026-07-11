@@ -143,4 +143,52 @@ describe('ProductsService', () => {
       }),
     );
   });
+
+  it('deletes an unused product and records the deleted snapshot', async () => {
+    const productsRepository = {
+      findManyByIds: jest.fn().mockResolvedValue([
+        {
+          ...product,
+          _count: { inboundItems: 0, inventoryItems: 0, exceptions: 0 },
+        },
+      ]),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    } as unknown as jest.Mocked<ProductsRepository>;
+    const auditLogsService = { record: jest.fn() };
+    const service = new ProductsService(productsRepository, auditLogsService as never);
+
+    await expect(service.deleteMany([product.id], operator)).resolves.toEqual({
+      deletedCount: 1,
+      deletedIds: [product.id],
+    });
+    expect(productsRepository.deleteMany).toHaveBeenCalledWith([product.id]);
+    expect(auditLogsService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: AuditAction.UPC_PRODUCT_CHANGE,
+        resourceId: product.id,
+        beforeSnapshot: expect.objectContaining({ sku: product.sku }),
+        metadata: expect.objectContaining({ changeType: 'DELETE' }),
+      }),
+    );
+  });
+
+  it('rejects the whole deletion when any selected product has business history', async () => {
+    const productsRepository = {
+      findManyByIds: jest.fn().mockResolvedValue([
+        {
+          ...product,
+          _count: { inboundItems: 1, inventoryItems: 1, exceptions: 0 },
+        },
+      ]),
+      deleteMany: jest.fn(),
+    } as unknown as jest.Mocked<ProductsRepository>;
+    const auditLogsService = { record: jest.fn() };
+    const service = new ProductsService(productsRepository, auditLogsService as never);
+
+    await expect(service.deleteMany([product.id], operator)).rejects.toThrow(
+      '以下商品已有业务记录，不能删除',
+    );
+    expect(productsRepository.deleteMany).not.toHaveBeenCalled();
+    expect(auditLogsService.record).not.toHaveBeenCalled();
+  });
 });

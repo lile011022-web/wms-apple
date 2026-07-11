@@ -8,6 +8,7 @@ const outboundEvidenceMaxBytes = 100 * 1024 * 1024;
 const outboundPhotoCompressTargetBytes = 3 * 1024 * 1024;
 const outboundPhotoMaxSide = 1800;
 const outboundEvidenceUploadTimeoutMs = 180000;
+const reportExportTimeoutMs = 180000;
 
 export function getHealth() {
   return request<{ status: string; timestamp: string }>('get', '/health');
@@ -41,6 +42,9 @@ export const productsApi = {
   update: (id: string, data: Payload) => request<unknown>('patch', `/products/${id}`, { data }),
   updateStatus: (id: string, data: Payload) =>
     request<unknown>('patch', `/products/${id}/status`, { data }),
+  delete: (id: string) => request<unknown>('delete', `/products/${id}`),
+  bulkDelete: (ids: string[]) =>
+    request<unknown>('post', '/products/bulk-delete', { data: { ids } }),
 };
 
 export const inboundApi = {
@@ -120,6 +124,8 @@ export const outboundApi = {
     request<unknown>('patch', `/outbound/boxes/${boxId}`, { data }),
   addItem: (boxId: string, data: Payload) =>
     request<unknown>('post', `/outbound/boxes/${boxId}/items`, { data }),
+  updateItem: (boxId: string, itemId: string, data: Payload) =>
+    request<unknown>('patch', `/outbound/boxes/${boxId}/items/${itemId}`, { data }),
   removeItem: (boxId: string, itemId: string) =>
     request<unknown>('delete', `/outbound/boxes/${boxId}/items/${itemId}`),
   clearItems: (boxId: string) => request<unknown>('delete', `/outbound/boxes/${boxId}/items`),
@@ -256,14 +262,21 @@ export const customerChangesApi = {
 
 export const reportsApi = {
   preview: (data: Payload) => request<unknown>('post', '/reports/preview', { data }),
-  createExport: (data: Payload) => request<unknown>('post', '/reports/exports', { data }),
+  createExport: (data: Payload) =>
+    request<unknown>('post', '/reports/exports', {
+      data,
+      timeout: reportExportTimeoutMs,
+    }),
   inboundBatches: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/reports/inbound-batches', { params }),
   outboundBoxes: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/reports/outbound-boxes', { params }),
   exports: (params?: QueryParams) =>
     request<PaginatedResult<unknown>>('get', '/reports/exports', { params }),
-  download: (id: string) => request<unknown>('get', `/reports/exports/${id}/download`),
+  download: (id: string) =>
+    request<unknown>('get', `/reports/exports/${id}/download`, {
+      timeout: reportExportTimeoutMs,
+    }),
 };
 
 export const dashboardApi = {

@@ -226,6 +226,38 @@ Rules:
 - On success, the inventory item status returns to `IN_STOCK` and `packedAt` is cleared.
 - Removing an item writes an `OUTBOUND_BOX_ITEM_REMOVE` audit log.
 
+This maintenance endpoint remains available to trusted API callers, but the current-box workspace
+and box detail modal do not expose item-deletion controls. Operators correct a packed row through the
+edit endpoint below.
+
+## PATCH /outbound/boxes/:id/items/:itemId
+
+Corrects one row in an open outbound box. `itemId` may be the outbound box item ID or inventory item
+ID.
+
+Request:
+
+```json
+{
+  "upsTrackingNo": "1Z999AA10123456784",
+  "upc": "194253149189",
+  "imeiOrSerial": "356789012345678",
+  "expectedBoxUpdatedAt": "2026-07-10T12:00:00.000Z"
+}
+```
+
+Rules:
+
+- The box must be `OPEN` and the item must belong to it.
+- `expectedBoxUpdatedAt` must equal the latest box version; stale edits return `409 Conflict`.
+- Package tracking and UPC must pass the shared validators.
+- UPC must resolve to an active UPC mapping and active product; product identity is rematched.
+- Products requiring IMEI must receive a valid IMEI or Apple Serial value.
+- IMEI/Serial cannot duplicate another inventory row.
+- The linked `inventory_items` and `inbound_items` identity fields are updated in the same transaction.
+- The transaction advances the box version and writes an `OUTBOUND_BOX_UPDATE` audit record with
+  `resourceType = outbound-box-item`, before/after snapshots, and `changeType = ITEM_EDIT`.
+
 ## DELETE /outbound/boxes/:id/items
 
 Clears all items from an open outbound box.

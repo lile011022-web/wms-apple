@@ -62,8 +62,9 @@ The customer must be locked before scan data becomes operational inventory. Pack
 - Multiple items may share one package tracking number within the same package.
 - A package tracking value already confirmed in prior inbound records is treated as a duplicate package signal and can create `UPS_DUPLICATED` exceptions.
 - Package tracking validation distinguishes a supported format from an auto-accepted format. Complete
-  UPS tracking numbers and FedEx tracking numbers that start with `9622` and contain 22 to 34 digits
-  in total are both supported and auto-accepted. Only those complete values are eligible for automatic
+  UPS tracking numbers, FedEx tracking numbers that start with `9622` and contain 22 to 34 digits in
+  total, and the warehouse-confirmed `9632` format containing exactly 34 digits are supported and
+  auto-accepted. Only those complete values are eligible for automatic
   focus movement from package tracking to UPC; partial, overlong, or otherwise malformed values must
   remain in the package tracking field.
 - `BB0000` package numbers are manually entered by warehouse operators when the warehouse
@@ -73,7 +74,7 @@ The customer must be locked before scan data becomes operational inventory. Pack
   neither the exact prefix nor a suffixed value may move focus on an idle-input timer. The operator
   must press Enter, or the scanner must send its completion key, before the page reviews the value and
   moves to UPC.
-- USPS and non-9622 FedEx values are supported formats but are not auto-accepted for the current
+- USPS and FedEx values outside the configured `9622`/34-digit `9632` rules are supported formats but are not auto-accepted for the current
   receiving workflow. They must pause the scan page and require explicit operator confirmation before
   focus moves to UPC or the item can be added to the draft.
 - Explicit operator confirmation only allows supported package tracking formats such as USPS and
@@ -189,7 +190,8 @@ legacy draft may be restored only after the original account's current session a
 After a row is automatically or manually added, the scan entry form should restore keyboard focus to
 the next receiving input so operators can continue with a scanner without clicking the mouse again.
 Automatic focus movement and Enter-key movement must use the same package-tracking decision and API
-review path. A complete UPS value or a complete 9622-prefixed FedEx value can move to UPC automatically
+review path. A complete UPS value, a complete 9622-prefixed FedEx value, or an exactly 34-digit
+9632-prefixed FedEx value can move to UPC automatically
 after review succeeds. USPS and non-9622 FedEx values stay in the package tracking field until the
 operator confirms the format-valid warning. Unsupported values stay in the package tracking field and
 cannot be manually continued. `BB0000` values, with or without a suffix, require Enter or the scanner's
@@ -201,7 +203,7 @@ UPC value, focus should move to IMEI automatically even when the scanner does no
 The default loop starts the next row at the package tracking field. When the operator enables the
 same-package continuous option, the page must first review the current package tracking number.
 Duplicate tracking numbers and tracking numbers outside the UPS, `BB0000` warehouse compensation,
-or 9622-prefixed FedEx auto-accept rules must be confirmed before the option becomes active. After
+or configured 9622/9632 FedEx auto-accept rules must be confirmed before the option becomes active. After
 confirmation, the current package tracking number is retained after a successful row and focus moves
 back to UPC for the next item.
 While same-package continuous scanning is active, repeated use of that retained tracking number

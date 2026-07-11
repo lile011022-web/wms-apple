@@ -10,6 +10,7 @@ import {
   Eye,
   ImagePlus,
   PackagePlus,
+  Pencil,
   Printer,
   RefreshCw,
   Save,
@@ -112,6 +113,12 @@ type BoxSettingsValues = {
   note: string;
 };
 
+type BoxItemEditValues = {
+  upsTrackingNo: string;
+  upc: string;
+  imeiOrSerial: string;
+};
+
 const defaultSizePreset: BoxSizePreset = {
   label: '12 × 12 × 12 in',
   length: 12,
@@ -156,6 +163,7 @@ export function OutboundPackingPage() {
   const [warehouseId, setWarehouseId] = useState('');
   const [currentBox, setCurrentBox] = useState<PackingBox | null>(null);
   const [detailBox, setDetailBox] = useState<PackingBox | null>(null);
+  const [editingBoxItem, setEditingBoxItem] = useState<PackingItem | null>(null);
   const [printDetailBox, setPrintDetailBox] = useState<PackingBox | null>(null);
   const [packingMode, setPackingMode] = useState<OutboundPackingMode>('DETAILED_SCAN');
   const [inventorySearch, setInventorySearch] = useState('');
@@ -190,7 +198,6 @@ export function OutboundPackingPage() {
   >(() => new Map());
   const [boxItemsPage, setBoxItemsPage] = useState(1);
   const [boxItemsPageSize, setBoxItemsPageSize] = useState(10);
-  const [selectedBoxItemIds, setSelectedBoxItemIds] = useState<Set<string>>(() => new Set());
   const [selectedCreatedBoxIds, setSelectedCreatedBoxIds] = useState<Set<string>>(() => new Set());
   const [deleteBoxesConfirmOpen, setDeleteBoxesConfirmOpen] = useState(false);
   const [batchPackingOpen, setBatchPackingOpen] = useState(false);
@@ -204,13 +211,13 @@ export function OutboundPackingPage() {
   const [createdBoxView, setCreatedBoxView] = useState<CreatedBoxView>('OPEN');
   const [reworkBoxIds, setReworkBoxIds] = useState<Set<string>>(() => new Set());
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
-  const [removedItemIds, setRemovedItemIds] = useState<Set<string>>(() => new Set());
   const [locallyPackedInventoryIds, setLocallyPackedInventoryIds] = useState<Set<string>>(
     () => new Set(),
   );
   const [bouncingBoxId, setBouncingBoxId] = useState<string | null>(null);
   const [uploadingPhotoBoxId, setUploadingPhotoBoxId] = useState<string | null>(null);
   const [exportingBoxId, setExportingBoxId] = useState<string | null>(null);
+  const [createdBoxDownloadMessage, setCreatedBoxDownloadMessage] = useState('');
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -556,7 +563,6 @@ export function OutboundPackingPage() {
 
   useEffect(() => {
     setBoxItemsPage(1);
-    setSelectedBoxItemIds(new Set());
   }, [boxSearch, currentBox?.id, currentBox?.items.length]);
 
   useEffect(() => {
@@ -1021,108 +1027,21 @@ export function OutboundPackingPage() {
     scanPackMutation.isPending,
   ]);
 
-  const removeItemMutation = useMutation({
-    mutationFn: (item: PackingItem) => {
+  const updateItemMutation = useMutation({
+    mutationFn: ({ item, values }: { item: PackingItem; values: BoxItemEditValues }) => {
       if (!currentBox) throw new Error('请先选择或新建箱子');
-      setRemovedItemIds((current) => new Set(current).add(item.id));
-      return outboundApi.removeItem(currentBox.id, item.boxItemId ?? item.id);
-    },
-    onMutate: async (item) => {
-      const previousBox = currentBox;
-      const previousPackedIds = new Set(locallyPackedInventoryIds);
-      setRemovedItemIds((current) => new Set(current).add(item.id));
-      if (previousBox) {
-        setCurrentBox({
-          ...previousBox,
-          itemCount: Math.max(0, previousBox.itemCount - 1),
-          items: previousBox.items.filter((boxItem) => boxItem.id !== item.id),
-        });
-      }
-      setLocallyPackedInventoryIds((current) => {
-        const next = new Set(current);
-        next.delete(item.id);
-        return next;
+      return outboundApi.updateItem(currentBox.id, item.boxItemId ?? item.id, {
+        ...values,
+        expectedBoxUpdatedAt: currentBox.updatedAt,
       });
-      setMessage('正在删除箱内货物');
-      setErrorMessage('');
-      return { previousBox, previousPackedIds };
     },
     onSuccess: (data) => {
-      const result = data as { box: OutboundBox };
-      updateBoxEverywhere(result.box);
-      setMessage('已删除箱内货物');
-      setErrorMessage('');
-      setRemovedItemIds(new Set());
-    },
-    onError: (error, _item, context) => {
-      if (context?.previousBox) {
-        setCurrentBox(context.previousBox);
-      }
-      if (context?.previousPackedIds) {
-        setLocallyPackedInventoryIds(context.previousPackedIds);
-      }
-      setRemovedItemIds(new Set());
-      setErrorMessage(toUserErrorMessage(error, '删除货物失败'));
-    },
-  });
-
-  const bulkRemoveMutation = useMutation({
-    mutationFn: async (items: PackingItem[]) => {
-      if (!currentBox) throw new Error('请先选择或新建箱子');
-      if (items.length === 0) throw new Error('请先选择要删除的货物');
-      setRemovedItemIds(new Set(items.map((item) => item.id)));
-
-      let latestBox: OutboundBox | null = null;
-      for (const item of items) {
-        const result = (await outboundApi.removeItem(currentBox.id, item.boxItemId ?? item.id)) as {
-          box: OutboundBox;
-        };
-        latestBox = result.box;
-      }
-      return latestBox;
-    },
-    onMutate: async (items) => {
-      const previousBox = currentBox;
-      const previousPackedIds = new Set(locallyPackedInventoryIds);
-      const ids = new Set(items.map((item) => item.id));
-      setRemovedItemIds(ids);
-      if (previousBox) {
-        setCurrentBox({
-          ...previousBox,
-          itemCount: Math.max(0, previousBox.itemCount - ids.size),
-          items: previousBox.items.filter((item) => !ids.has(item.id)),
-        });
-      }
-      setLocallyPackedInventoryIds((current) => {
-        const next = new Set(current);
-        for (const id of ids) {
-          next.delete(id);
-        }
-        return next;
-      });
-      setMessage(`正在批量删除 ${items.length} 件货物`);
-      setErrorMessage('');
-      return { previousBox, previousPackedIds };
-    },
-    onSuccess: (data, items) => {
-      if (data) {
-        updateBoxEverywhere(data);
-      }
-      setSelectedBoxItemIds(new Set());
-      setRemovedItemIds(new Set());
-      setMessage(`已批量删除 ${items.length} 件货物`);
+      updateBoxEverywhere(data as OutboundBox);
+      setEditingBoxItem(null);
+      setMessage('箱内货物已更新');
       setErrorMessage('');
     },
-    onError: (error, _items, context) => {
-      if (context?.previousBox) {
-        setCurrentBox(context.previousBox);
-      }
-      if (context?.previousPackedIds) {
-        setLocallyPackedInventoryIds(context.previousPackedIds);
-      }
-      setRemovedItemIds(new Set());
-      setErrorMessage(toUserErrorMessage(error, '批量删除失败'));
-    },
+    onError: (error) => setErrorMessage(toUserErrorMessage(error, '修改箱内货物失败')),
   });
 
   const selectedCreatedBoxes = createdBoxes.filter((box) => selectedCreatedBoxIds.has(box.id));
@@ -1209,6 +1128,16 @@ export function OutboundPackingPage() {
       setExportingBoxId(
         input.box ? input.box.id : selectedBoxes.length ? selectedBoxesExportId : allBoxesExportId,
       );
+      setCreatedBoxDownloadMessage(
+        input.box
+          ? `正在生成 ${getBoxDisplayName(input.box)} 的装箱明细...`
+          : selectedBoxes.length
+            ? `正在生成已选 ${selectedBoxes.length} 个箱子的装箱明细...`
+            : '正在生成当前视图全部装箱明细...',
+      );
+      setMessage('正在生成装箱明细，请稍等。');
+      setErrorMessage('');
+      const outboundStatus = getCreatedBoxViewStatus(createdBoxView);
       const created = (await reportsApi.createExport({
         reportType: 'OUTBOUND_DETAIL',
         format: 'EXCEL',
@@ -1217,12 +1146,18 @@ export function OutboundPackingPage() {
           warehouseId,
           boxNo: input.box?.boxNo,
           boxNos: boxNos.length ? boxNos : undefined,
+          outboundStatus: input.box || boxNos.length ? undefined : outboundStatus,
         },
         fields: outboundBoxDataExportFields,
       })) as ReportExport;
 
       if (created.status !== 'COMPLETED') {
-        throw new Error('装箱明细导出任务已创建但尚未完成，请到明细下载页面查看。');
+        throw new Error(
+          created.errorMessage ||
+            (created.status === 'FAILED'
+              ? '装箱明细导出失败，请稍后重试或到明细下载页面查看失败记录。'
+              : '装箱明细导出任务已创建但尚未完成，请到明细下载页面查看。'),
+        );
       }
 
       return reportsApi.download(created.id) as Promise<ReportDownload>;
@@ -1230,10 +1165,17 @@ export function OutboundPackingPage() {
     onSuccess: (file) => {
       downloadReportFile(file);
       queryClient.invalidateQueries({ queryKey: ['report-exports'], refetchType: 'none' });
+      setCreatedBoxDownloadMessage(
+        `已生成 ${file.fileName}，共 ${file.rowCount} 行。若浏览器没有弹出下载，请打开下载记录查看。`,
+      );
       setMessage(`已下载 ${file.fileName}，共 ${file.rowCount} 行，可发给客服出单。`);
       setErrorMessage('');
     },
-    onError: (error) => setErrorMessage(toUserErrorMessage(error, '下载装箱数据失败')),
+    onError: (error) => {
+      const errorText = toUserErrorMessage(error, '下载装箱数据失败');
+      setCreatedBoxDownloadMessage(errorText);
+      setErrorMessage(errorText);
+    },
     onSettled: () => setExportingBoxId(null),
   });
 
@@ -1508,10 +1450,8 @@ export function OutboundPackingPage() {
           pageSize={boxItemsPageSize}
           search={boxSearch}
           canMutate={canMutateCurrentBox}
-          selectedItemIds={selectedBoxItemIds}
           highlightedItemId={highlightedItemId}
-          removedItemIds={removedItemIds}
-          isRemoving={removeItemMutation.isPending || bulkRemoveMutation.isPending}
+          isEditing={updateItemMutation.isPending}
           scanValue={scanValue}
           scanUpc={scanUpc}
           scanImeiOrSerial={scanImeiOrSerial}
@@ -1522,15 +1462,16 @@ export function OutboundPackingPage() {
           onScanValueChange={setScanValue}
           onScanSubmit={() => applyScannedValue(scanValue)}
           onScanClear={resetDetailedScan}
-          onSelectionChange={setSelectedBoxItemIds}
           onPageChange={setBoxItemsPage}
           onPageSizeChange={(nextPageSize) => {
             setBoxItemsPageSize(nextPageSize);
             setBoxItemsPage(1);
           }}
           onDetail={() => currentBox && openBoxDetail(currentBox)}
-          onRemove={(item) => removeItemMutation.mutate(item)}
-          onBulkRemove={(items) => bulkRemoveMutation.mutate(items)}
+          onEdit={(item) => {
+            setEditingBoxItem(item);
+            setErrorMessage('');
+          }}
           onReorder={() => setMessage('已按加入时间重新排序')}
         />
       </div>
@@ -1551,6 +1492,7 @@ export function OutboundPackingPage() {
         isDeleting={deleteBoxesMutation.isPending}
         uploadingPhotoBoxId={uploadingPhotoBoxId}
         exportingBoxId={exportingBoxId}
+        downloadMessage={createdBoxDownloadMessage}
         selectedBoxIds={selectedCreatedBoxIds}
         onRefresh={() => boxesQuery.refetch()}
         onViewChange={(nextView) => {
@@ -1635,7 +1577,6 @@ export function OutboundPackingPage() {
         box={detailBox}
         availableItems={availableItems}
         canMutate={detailBox?.id === currentBox?.id && canMutateCurrentBox}
-        isRemoving={removeItemMutation.isPending}
         isSavingSettings={detailBoxSettingsMutation.isPending}
         settingsError={detailBoxSettingsError}
         onClose={() => {
@@ -1643,8 +1584,17 @@ export function OutboundPackingPage() {
           setDetailBoxSettingsError('');
         }}
         onSaveSettings={(box, values) => detailBoxSettingsMutation.mutate({ box, values })}
-        onRemove={(item) => removeItemMutation.mutate(item)}
         onOpenPrint={(box) => setPrintDetailBox(box)}
+      />
+
+      <OutboundItemEditModal
+        item={editingBoxItem}
+        isSaving={updateItemMutation.isPending}
+        errorMessage={errorMessage}
+        onClose={() => setEditingBoxItem(null)}
+        onSave={(values) => {
+          if (editingBoxItem) updateItemMutation.mutate({ item: editingBoxItem, values });
+        }}
       />
 
       <PrintDetailModal
@@ -2153,10 +2103,8 @@ function CurrentBoxWorkspace(props: {
   pageSize: number;
   search: string;
   canMutate: boolean;
-  selectedItemIds: Set<string>;
   highlightedItemId: string | null;
-  removedItemIds: Set<string>;
-  isRemoving: boolean;
+  isEditing: boolean;
   scanValue: string;
   scanUpc: string;
   scanImeiOrSerial: string;
@@ -2167,44 +2115,30 @@ function CurrentBoxWorkspace(props: {
   onScanValueChange: (value: string) => void;
   onScanSubmit: () => void;
   onScanClear: () => void;
-  onSelectionChange: (value: Set<string>) => void;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   onDetail: () => void;
-  onRemove: (item: PackingItem) => void;
-  onBulkRemove: (items: PackingItem[]) => void;
+  onEdit: (item: PackingItem) => void;
   onReorder: () => void;
 }) {
   const imeiCount = props.box?.items.filter((item) => item.imeiOrSerial).length ?? 0;
-  const selectedItems = props.items.filter((item) => props.selectedItemIds.has(item.id));
-  const allVisibleSelected =
-    props.items.length > 0 && props.items.every((item) => props.selectedItemIds.has(item.id));
-  const toggleVisibleSelection = (checked: boolean) => {
-    props.onSelectionChange(
-      checked
-        ? new Set([...Array.from(props.selectedItemIds), ...props.items.map((item) => item.id)])
-        : new Set(
-            Array.from(props.selectedItemIds).filter(
-              (id) => !props.items.some((item) => item.id === id),
-            ),
-          ),
-    );
-  };
-  const toggleItemSelection = (itemId: string, checked: boolean) => {
-    const next = new Set(props.selectedItemIds);
-    if (checked) {
-      next.add(itemId);
-    } else {
-      next.delete(itemId);
-    }
-    props.onSelectionChange(next);
-  };
   return (
     <section className="outbound-panel outbound-operation-panel current-box-panel">
-      <div className="outbound-section-heading">
-        <div>
-          <h2>当前箱子工作区</h2>
-          <span>{props.box ? getBoxDisplayName(props.box) : '尚未选择箱子'}</span>
+      <div className="outbound-section-heading current-box-heading">
+        <div className="current-box-heading-copy">
+          <div className="current-box-heading-icon">
+            <Box size={21} />
+          </div>
+          <div>
+            <h2>当前箱子工作区</h2>
+            <span>
+              {props.box
+                ? props.box.name
+                  ? `${getBoxDisplayName(props.box)} · ${props.box.boxNo}`
+                  : props.box.boxNo
+                : '选择箱子后即可扫码装箱和维护明细'}
+            </span>
+          </div>
         </div>
         <label className="outbound-mini-search">
           <Search size={15} />
@@ -2240,18 +2174,16 @@ function CurrentBoxWorkspace(props: {
         />
       ) : null}
       <div className="outbound-table-wrap">
-        <table className="outbound-table">
+        <table className="outbound-table current-box-table">
+          <colgroup>
+            <col className="current-box-tracking-column" />
+            <col className="current-box-product-column" />
+            <col className="current-box-identity-column" />
+            <col className="current-box-time-column" />
+            <col className="current-box-action-column" />
+          </colgroup>
           <thead>
             <tr>
-              <th>
-                <input
-                  type="checkbox"
-                  aria-label="选择当前页箱内货物"
-                  checked={allVisibleSelected}
-                  disabled={!props.canMutate || props.items.length === 0}
-                  onChange={(event) => toggleVisibleSelection(event.target.checked)}
-                />
-              </th>
               <th>物流单号</th>
               <th>货物信息</th>
               <th>IMEI / Serial</th>
@@ -2263,90 +2195,73 @@ function CurrentBoxWorkspace(props: {
             {props.items.map((item) => (
               <tr
                 key={item.id}
-                className={[
-                  props.highlightedItemId === item.id ? 'row-highlight' : '',
-                  props.removedItemIds.has(item.id) ? 'row-removing' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
+                className={props.highlightedItemId === item.id ? 'row-highlight' : ''}
               >
-                <td>
-                  <input
-                    type="checkbox"
-                    aria-label={`选择 ${item.imeiOrSerial ?? item.trackingNumber}`}
-                    checked={props.selectedItemIds.has(item.id)}
-                    disabled={!props.canMutate}
-                    onChange={(event) => toggleItemSelection(item.id, event.target.checked)}
-                  />
-                </td>
-                <td>
+                <td className="current-box-tracking-cell">
                   <strong className="mono">{item.trackingNumber || '-'}</strong>
-                  <span>{item.carrier}</span>
+                  <span className="current-box-carrier-pill">{item.carrier}</span>
                 </td>
-                <td>
+                <td className="current-box-product-cell">
                   <strong>{item.productName ?? '-'}</strong>
-                  <span>UPC {item.upc ?? '-'}</span>
-                  {item.productModelCode ? <span>型号代码 {item.productModelCode}</span> : null}
+                  <div className="current-box-product-meta">
+                    <span className="mono">UPC {item.upc ?? '-'}</span>
+                    {item.productModelCode ? <span>型号 {item.productModelCode}</span> : null}
+                  </div>
                 </td>
-                <td className="mono">{item.imeiOrSerial ?? '-'}</td>
-                <td>{formatShortDateTime(item.addedAt)}</td>
-                <td>
+                <td className="current-box-identity-cell">
+                  <span className="mono">{item.imeiOrSerial ?? '-'}</span>
+                </td>
+                <td className="current-box-time-cell">{formatShortDateTime(item.addedAt)}</td>
+                <td className="current-box-action-cell">
                   <button
                     type="button"
-                    className="outbound-table-btn danger"
-                    disabled={!props.canMutate || props.isRemoving}
-                    onClick={() => props.onRemove(item)}
+                    className="outbound-table-btn"
+                    disabled={!props.canMutate || props.isEditing}
+                    onClick={() => props.onEdit(item)}
                   >
-                    <Trash2 size={15} />
-                    删除
+                    <Pencil size={15} />
+                    编辑
                   </button>
                 </td>
               </tr>
             ))}
             {!props.box || props.items.length === 0 ? (
               <tr>
-                <td colSpan={6}>当前箱子暂无货物</td>
+                <td colSpan={5}>当前箱子暂无货物</td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </div>
-      <div className="outbound-box-footer">
-        <button
-          type="button"
-          className="outbound-btn outbound-btn-outline"
-          onClick={props.onDetail}
-        >
-          <Eye size={16} />
-          查看明细
-        </button>
-        <button
-          type="button"
-          className="outbound-btn outbound-btn-danger"
-          disabled={!props.canMutate || selectedItems.length === 0 || props.isRemoving}
-          onClick={() => props.onBulkRemove(selectedItems)}
-        >
-          <Trash2 size={16} />
-          批量删除 {selectedItems.length} 件
-        </button>
-        <button
-          type="button"
-          className="outbound-btn outbound-btn-outline"
-          onClick={props.onReorder}
-        >
-          <ArrowDownUp size={16} />
-          重新排序
-        </button>
+      <div className="current-box-bottom-bar">
+        <div className="outbound-box-footer">
+          <button
+            type="button"
+            className="outbound-btn outbound-btn-outline"
+            onClick={props.onDetail}
+          >
+            <Eye size={16} />
+            查看明细
+          </button>
+          <button
+            type="button"
+            className="outbound-btn outbound-btn-outline"
+            onClick={props.onReorder}
+          >
+            <ArrowDownUp size={16} />
+            按加入时间排序
+          </button>
+        </div>
+        <WorkbenchPagination
+          total={props.filteredTotal}
+          page={props.page}
+          pageSize={props.pageSize}
+          pageSizeOptions={[10, 20, 50]}
+          onPageChange={props.onPageChange}
+          onPageSizeChange={props.onPageSizeChange}
+          compact
+        />
       </div>
-      <WorkbenchPagination
-        total={props.filteredTotal}
-        page={props.page}
-        pageSize={props.pageSize}
-        pageSizeOptions={[10, 20, 50]}
-        onPageChange={props.onPageChange}
-        onPageSizeChange={props.onPageSizeChange}
-        compact
-      />
     </section>
   );
 }
@@ -2443,6 +2358,7 @@ function CreatedBoxList(props: {
   isDeleting: boolean;
   selectedBoxIds: Set<string>;
   exportingBoxId: string | null;
+  downloadMessage: string;
   onDownloadAllData: () => void;
   onDownloadSelectedData: () => void;
   onRefresh: () => void;
@@ -2540,6 +2456,11 @@ function CreatedBoxList(props: {
           </button>
         </div>
       </div>
+      {props.downloadMessage ? (
+        <div className="created-box-download-status" role="status">
+          {props.downloadMessage}
+        </div>
+      ) : null}
       <div className="created-box-view-tabs" aria-label="箱子状态和仓库日期筛选">
         {viewOptions.map((option) => (
           <button
@@ -3178,16 +3099,115 @@ function BatchPackingModal(props: {
   );
 }
 
+function OutboundItemEditModal(props: {
+  item: PackingItem | null;
+  isSaving: boolean;
+  errorMessage: string;
+  onClose: () => void;
+  onSave: (values: BoxItemEditValues) => void;
+}) {
+  const [values, setValues] = useState<BoxItemEditValues>({
+    upsTrackingNo: '',
+    upc: '',
+    imeiOrSerial: '',
+  });
+
+  useEffect(() => {
+    setValues({
+      upsTrackingNo: props.item?.trackingNumber ?? '',
+      upc: props.item?.upc ?? '',
+      imeiOrSerial: props.item?.imeiOrSerial ?? '',
+    });
+  }, [props.item?.id, props.item?.trackingNumber, props.item?.upc, props.item?.imeiOrSerial]);
+
+  if (!props.item) return null;
+  const canSave = !!values.upsTrackingNo.trim() && !!values.upc.trim() && !props.isSaving;
+
+  return (
+    <div className="outbound-modal-backdrop" role="presentation" onClick={props.onClose}>
+      <section
+        className="outbound-item-edit-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="编辑箱内货物"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="outbound-modal-head">
+          <div>
+            <p>Item Edit</p>
+            <h2>编辑箱内货物</h2>
+          </div>
+          <button type="button" className="outbound-modal-close" onClick={props.onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="outbound-item-edit-body">
+          <p>保存后会同步修正库存与对应入库明细，UPC 会重新匹配商品。</p>
+          <label className="outbound-control">
+            <span>物流单号</span>
+            <input
+              autoFocus
+              value={values.upsTrackingNo}
+              disabled={props.isSaving}
+              onChange={(event) =>
+                setValues((current) => ({ ...current, upsTrackingNo: event.target.value }))
+              }
+            />
+          </label>
+          <label className="outbound-control">
+            <span>UPC</span>
+            <input
+              value={values.upc}
+              disabled={props.isSaving}
+              onChange={(event) =>
+                setValues((current) => ({ ...current, upc: event.target.value }))
+              }
+            />
+          </label>
+          <label className="outbound-control">
+            <span>IMEI / Serial</span>
+            <input
+              value={values.imeiOrSerial}
+              disabled={props.isSaving}
+              onChange={(event) =>
+                setValues((current) => ({ ...current, imeiOrSerial: event.target.value }))
+              }
+            />
+          </label>
+          {props.errorMessage ? <div className="inline-error">{props.errorMessage}</div> : null}
+          <div className="outbound-item-edit-actions">
+            <button
+              type="button"
+              className="outbound-btn outbound-btn-outline"
+              disabled={props.isSaving}
+              onClick={props.onClose}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="outbound-btn outbound-btn-primary"
+              disabled={!canSave}
+              onClick={() => props.onSave(values)}
+            >
+              <Save size={16} />
+              {props.isSaving ? '保存中' : '保存修改'}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function BoxDetailModal(props: {
   box: PackingBox | null;
   availableItems: PackingItem[];
   canMutate: boolean;
-  isRemoving: boolean;
   isSavingSettings: boolean;
   settingsError: string;
   onClose: () => void;
   onSaveSettings: (box: PackingBox, values: BoxSettingsValues) => void;
-  onRemove: (item: PackingItem) => void;
   onOpenPrint: (box: PackingBox) => void;
 }) {
   const [settingsDraft, setSettingsDraft] = useState<BoxSettingsValues>(() =>
@@ -3429,7 +3449,6 @@ function BoxDetailModal(props: {
                     <th>客户</th>
                     <th>加入时间</th>
                     <th>状态</th>
-                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3455,21 +3474,11 @@ function BoxDetailModal(props: {
                       <td>
                         <ItemStatusBadge status={item.status} />
                       </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="outbound-table-btn danger"
-                          disabled={!props.canMutate || props.isRemoving}
-                          onClick={() => props.onRemove(item)}
-                        >
-                          删除
-                        </button>
-                      </td>
                     </tr>
                   ))}
                   {props.box.items.length === 0 ? (
                     <tr>
-                      <td colSpan={9}>箱子里暂无货物</td>
+                      <td colSpan={8}>箱子里暂无货物</td>
                     </tr>
                   ) : null}
                 </tbody>
@@ -3821,6 +3830,7 @@ type ReportExport = {
   status: string;
   fileName?: string | null;
   rowCount?: number;
+  errorMessage?: string | null;
 };
 
 type ReportDownload = {

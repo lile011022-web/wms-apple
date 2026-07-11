@@ -1068,62 +1068,6 @@ export function InboundScanPage() {
         </button>
       </form>
 
-      <DraftPanel
-        draft={draft}
-        restoreBatchNo={restoreBatchNo}
-        isRestoringDraft={restoreDraftMutation.isPending}
-        onRestoreBatchNoChange={setRestoreBatchNo}
-        onRestoreDraft={() => restoreDraftMutation.mutate()}
-        blockingExceptionItemId={blockingExceptionItem?.id}
-        removingItemId={removeItemMutation.isPending ? removeItemMutation.variables : undefined}
-        updatingItemId={
-          updateItemMutation.isPending ? updateItemMutation.variables?.itemId : undefined
-        }
-        onUpdateItem={(itemId, values) => updateItemMutation.mutateAsync({ itemId, values })}
-        onRemoveItem={(itemId) => removeItemMutation.mutate(itemId)}
-      />
-
-      {blockingExceptionItem ? (
-        <div className="inline-error">
-          上一条入库明细是异常，已暂停继续入库。请先在当前入库单中修正该异常并保存。
-        </div>
-      ) : null}
-
-      {message ? <div className="inline-success">{message}</div> : null}
-      {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
-      {importFailedRows.length > 0 ? (
-        <div className="inline-error">
-          {importFailedRows.slice(0, 5).map((row) => (
-            <div key={`${row.lineNo}-${row.upc ?? ''}`}>
-              第 {row.lineNo} 行：{row.message}
-            </div>
-          ))}
-          {importFailedRows.length > 5 ? (
-            <div>另有 {importFailedRows.length - 5} 行失败</div>
-          ) : null}
-        </div>
-      ) : null}
-      {activeDraftIdentityDuplicate ? (
-        <div className="tracking-warning-bar">
-          <div>
-            <strong>IMEI 重复</strong>
-            <span>
-              当前入库单内已存在 {activeDraftIdentityDuplicate}，请修正或删除重复明细后再继续入库。
-            </span>
-          </div>
-        </div>
-      ) : null}
-      {draftIdentityDuplicates.length > 0 ? (
-        <div className="tracking-warning-bar">
-          <div>
-            <strong>入库单内有重复 IMEI/Serial</strong>
-            <span>
-              重复值：{draftIdentityDuplicates.join(', ')}。请删除或编辑重复明细后再确认入库。
-            </span>
-          </div>
-        </div>
-      ) : null}
-
       <section className="panel inbound-entry-panel">
         <div className="workflow-form">
           <div className="inbound-mode-switch" role="group" aria-label="入库模式">
@@ -1290,9 +1234,70 @@ export function InboundScanPage() {
             )}
           </div>
         ) : null}
+        <LastInboundNotice
+          item={lastInboundItem ?? latestDraftItem ?? null}
+          isUpdating={updateItemMutation.isPending}
+          onUpdateItem={(itemId, values) => updateItemMutation.mutateAsync({ itemId, values })}
+        />
       </section>
 
       {scanValidationMessage ? <div className="inline-error">{scanValidationMessage}</div> : null}
+
+      {blockingExceptionItem ? (
+        <div className="inline-error">
+          上一条入库明细是异常，已暂停继续入库。请先在下方当前入库单中修正该异常并保存。
+        </div>
+      ) : null}
+
+      {message ? <div className="inline-success">{message}</div> : null}
+      {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
+      {importFailedRows.length > 0 ? (
+        <div className="inline-error">
+          {importFailedRows.slice(0, 5).map((row) => (
+            <div key={`${row.lineNo}-${row.upc ?? ''}`}>
+              第 {row.lineNo} 行：{row.message}
+            </div>
+          ))}
+          {importFailedRows.length > 5 ? (
+            <div>另有 {importFailedRows.length - 5} 行失败</div>
+          ) : null}
+        </div>
+      ) : null}
+      {activeDraftIdentityDuplicate ? (
+        <div className="tracking-warning-bar">
+          <div>
+            <strong>IMEI 重复</strong>
+            <span>
+              当前入库单内已存在 {activeDraftIdentityDuplicate}，请修正或删除重复明细后再继续入库。
+            </span>
+          </div>
+        </div>
+      ) : null}
+      {draftIdentityDuplicates.length > 0 ? (
+        <div className="tracking-warning-bar">
+          <div>
+            <strong>入库单内有重复 IMEI/Serial</strong>
+            <span>
+              重复值：{draftIdentityDuplicates.join(', ')}。请删除或编辑重复明细后再确认入库。
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      <DraftPanel
+        draft={draft}
+        restoreBatchNo={restoreBatchNo}
+        isRestoringDraft={restoreDraftMutation.isPending}
+        onRestoreBatchNoChange={setRestoreBatchNo}
+        onRestoreDraft={() => restoreDraftMutation.mutate()}
+        blockingExceptionItemId={blockingExceptionItem?.id}
+        removingItemId={removeItemMutation.isPending ? removeItemMutation.variables : undefined}
+        updatingItemId={
+          updateItemMutation.isPending ? updateItemMutation.variables?.itemId : undefined
+        }
+        onUpdateItem={(itemId, values) => updateItemMutation.mutateAsync({ itemId, values })}
+        onRemoveItem={(itemId) => removeItemMutation.mutate(itemId)}
+      />
     </section>
   );
 }

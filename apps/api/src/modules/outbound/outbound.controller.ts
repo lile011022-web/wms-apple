@@ -24,6 +24,7 @@ import { ListOutboundAvailableItemsQueryDto } from './dto/list-outbound-availabl
 import { ListOutboundBoxItemsQueryDto } from './dto/list-outbound-box-items-query.dto';
 import { ListOutboundBoxesQueryDto } from './dto/list-outbound-boxes-query.dto';
 import { UpdateOutboundBoxDto } from './dto/update-outbound-box.dto';
+import { UpdateOutboundBoxItemDto } from './dto/update-outbound-box-item.dto';
 import { OutboundService, UploadedOutboundBoxPhotoFile } from './outbound.service';
 
 @ApiTags('Outbound')
@@ -75,6 +76,16 @@ export class OutboundController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.outboundService.addItem(id, dto, user);
+  }
+
+  @Patch('boxes/:id/items/:itemId')
+  updateItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: UpdateOutboundBoxItemDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.outboundService.updateItem(id, itemId, dto, user);
   }
 
   @Delete('boxes/:id/items/:itemId')

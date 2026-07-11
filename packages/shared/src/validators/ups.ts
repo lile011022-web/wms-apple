@@ -16,7 +16,7 @@ export function isValidFedexTracking(value: string): boolean {
 
 export function isAutoAcceptedFedexTracking(value: string): boolean {
   const normalized = value.trim().replace(/\s+/g, '');
-  return /^9622[0-9]{18,30}$/.test(normalized);
+  return /^(?:9622[0-9]{18,30}|9632[0-9]{30})$/.test(normalized);
 }
 
 export function isWarehouseCompensationTracking(value: string): boolean {

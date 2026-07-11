@@ -4,7 +4,19 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CustomerStatus, InventoryStatus, OutboundBoxStatus, Prisma } from '@prisma/client';
+import {
+  CustomerStatus,
+  InventoryStatus,
+  OutboundBoxStatus,
+  Prisma,
+  ProductStatus,
+} from '@prisma/client';
+import {
+  isValidImei,
+  isValidPackageTracking,
+  isValidUpc,
+  normalizePackageTracking,
+} from '@wms-scan/shared';
 import { randomUUID } from 'node:crypto';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -16,6 +28,7 @@ import { ListOutboundAvailableItemsQueryDto } from './dto/list-outbound-availabl
 import { ListOutboundBoxItemsQueryDto } from './dto/list-outbound-box-items-query.dto';
 import { ListOutboundBoxesQueryDto } from './dto/list-outbound-boxes-query.dto';
 import { UpdateOutboundBoxDto } from './dto/update-outbound-box.dto';
+import { UpdateOutboundBoxItemDto } from './dto/update-outbound-box-item.dto';
 import { normalizeOutboundBoxName } from './outbound-box-name';
 import {
   OutboundBoxListRecord,
@@ -249,6 +262,73 @@ export class OutboundService {
       operator.id,
     );
     return this.toBoxResponse(updated);
+  }
+
+  async updateItem(
+    boxId: string,
+    itemId: string,
+    dto: UpdateOutboundBoxItemDto,
+    operator: AuthenticatedUser,
+  ) {
+    const box = await this.findOpenBox(boxId);
+    const boxItem = box.items.find((item) => item.id === itemId || item.inventoryItemId === itemId);
+    if (!boxItem) throw new NotFoundException('Outbound box item not found.');
+
+    const upsTrackingNo = normalizePackageTracking(dto.upsTrackingNo);
+    if (!isValidPackageTracking(upsTrackingNo)) {
+      throw new BadRequestException('物流单号格式不正确。');
+    }
+    const upc = dto.upc.trim();
+    if (!isValidUpc(upc)) throw new BadRequestException('UPC 格式不正确。');
+
+    const productUpc = await this.outboundRepository.findProductByUpc(upc);
+    if (
+      !productUpc ||
+      productUpc.status !== ProductStatus.ACTIVE ||
+      productUpc.product.status !== ProductStatus.ACTIVE
+    ) {
+      throw new NotFoundException('UPC 未匹配到启用商品。');
+    }
+
+    const identity = this.trimOptional(dto.imeiOrSerial)?.toUpperCase();
+    if (productUpc.product.requiresImei && !identity) {
+      throw new BadRequestException('该商品必须填写 IMEI / Serial。');
+    }
+    if (identity && !isValidImei(identity)) {
+      throw new BadRequestException('IMEI / Serial 格式不正确。');
+    }
+
+    try {
+      const updated = await this.outboundRepository.updateItemInBox({
+        boxId: box.id,
+        inventoryItemId: boxItem.inventoryItemId,
+        operatorId: operator.id,
+        expectedBoxUpdatedAt: new Date(dto.expectedBoxUpdatedAt),
+        data: {
+          productId: productUpc.product.id,
+          upc,
+          upsTrackingNo,
+          imei: identity && /^[0-9]{15}$/.test(identity) ? identity : null,
+          serial: identity && !/^[0-9]{15}$/.test(identity) ? identity : null,
+        },
+      });
+      return this.toBoxResponse(updated);
+    } catch (error) {
+      if (error instanceof OutboundBoxUpdateConflictError) {
+        if (error.reason === 'NOT_FOUND') throw new NotFoundException('Outbound box not found.');
+        if (error.reason === 'ITEM_NOT_FOUND') {
+          throw new NotFoundException('Outbound box item not found.');
+        }
+        if (error.reason === 'NOT_OPEN') {
+          throw new ConflictException('Only open outbound boxes can be changed.');
+        }
+        throw new ConflictException('箱子已被其他人修改，请刷新箱子后再重试。');
+      }
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('IMEI / Serial 已存在于其他库存记录中，不能重复。');
+      }
+      throw error;
+    }
   }
 
   async removeItem(boxId: string, itemId: string, operator: AuthenticatedUser) {

@@ -258,6 +258,30 @@ When an inventory row is added to an open box:
 When an inventory row is removed from an open box:
 
 - `inventory_items.status` changes from `PACKED` back to `IN_STOCK`.
+
+## Current Box Item Correction
+
+The current-box workspace allows an operator to edit an open box item, but it does not expose
+single-row or batch item deletion. The box detail modal also remains read-only for item deletion.
+
+Editable fields are:
+
+- Package tracking number.
+- UPC.
+- IMEI or Serial.
+
+Saving a correction must revalidate the tracking number, resolve the UPC to an active product, and
+validate the product's IMEI/Serial requirement. The same correction is written to the inventory row
+and its linked inbound item so inventory, inbound history, outbound detail, and reports do not show
+different identities. The box `updatedAt` is a required concurrency token; stale edits are rejected
+instead of overwriting another operator. Every successful edit writes an audit record with the old
+and new inventory identity fields.
+
+The current-box table must reserve stable widths for package tracking, product, IMEI/Serial, packed
+time, and actions. Package tracking numbers must remain horizontal and may not collapse into a
+character-per-line column after selection controls are removed. On narrow screens, the table should
+scroll horizontally instead of compressing operational identifiers.
+
 - `inventory_items.packedAt` is cleared.
 
 When a box is sealed:

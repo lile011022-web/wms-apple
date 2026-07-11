@@ -21,7 +21,7 @@ export type TrackingScanResult = {
 };
 
 export const trackingFormatErrorMessage = '物流单号格式不正确，请检查是否少输、多输或输错字符';
-export const trackingManualReviewMessage = '该 USPS 或非 9622 FedEx 单号格式合法，需要人工确认';
+export const trackingManualReviewMessage = '该物流单号格式合法，但不在自动放行规则内，需要人工确认';
 
 export function getTrackingAdvanceDecision(
   value: string,

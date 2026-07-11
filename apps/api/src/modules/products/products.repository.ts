@@ -41,6 +41,22 @@ export class ProductsRepository {
     });
   }
 
+  findManyByIds(ids: string[]) {
+    return this.prisma.product.findMany({
+      where: { id: { in: ids } },
+      include: {
+        ...productInclude,
+        _count: {
+          select: {
+            inboundItems: true,
+            inventoryItems: true,
+            exceptions: true,
+          },
+        },
+      },
+    });
+  }
+
   findBySku(sku: string) {
     return this.prisma.product.findUnique({
       where: { sku },
@@ -86,6 +102,13 @@ export class ProductsRepository {
         }),
       ),
     );
+  }
+
+  deleteMany(ids: string[]) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.productUpc.deleteMany({ where: { productId: { in: ids } } });
+      return tx.product.deleteMany({ where: { id: { in: ids } } });
+    });
   }
 
   private toWhere(

@@ -31,12 +31,36 @@ Inbound scanning depends on this library to identify product SKU, model, color, 
 - Import rows must obey the same SKU and UPC uniqueness rules as manual creation.
 - Duplicate SKU or UPC values within the import request are rejected.
 - Existing SKU or UPC conflicts are rejected before any product row is created.
-- The UPC product library page provides a CSV import template with `sku`, `name`, `brand`, `model`, `category`, `color`, `capacity`, `requiresImei`, and `upcs` columns.
+- The UPC product library page provides an import template with `sku`, `name`, `brand`, `model`,
+  `modelCode`, `category`, `color`, `capacity`, `requiresImei`, and `upcs` columns.
 - Multiple UPC values in one import row are separated with semicolons.
+
+## Export Rules
+
+- The product management page can export the complete product library as `.xlsx`.
+- Export reads every product page in batches of 100 and is not limited to the currently visible page.
+- One spreadsheet row represents one product; multiple UPC mappings are joined with semicolons.
+- The first worksheet is `可重新导入`. It uses the exact import-template headers and `true` / `false`
+  values for `requiresImei`, so the exported workbook can be selected directly for batch import.
+- The second worksheet is `商品明细`. It keeps Chinese column names and includes product status for
+  operational review; status is intentionally excluded from the re-import worksheet because import does not
+  change product status.
+- Export is read-only and does not change product or audit state.
 
 ## Delete Policy
 
-Products and UPC mappings must not be physically deleted through normal product workflows.
+The product management page supports single-row and selected-row deletion, but physical deletion is
+allowed only for products that have never entered a business workflow.
+
+Before deleting any selected product, the backend checks references from:
+
+- Inbound items.
+- Inventory items.
+- Exception records.
+
+Batch deletion is all-or-nothing. If any selected product has one of these references, no selected
+product is deleted and the response identifies the blocked SKU and reference counts. When every
+selected product is unused, its UPC mappings and product row are deleted in one database transaction.
 
 Historical tables keep product references for:
 
@@ -46,11 +70,12 @@ Historical tables keep product references for:
 - Outbound and report displays through inventory records.
 - Audit logs.
 
-If a product should no longer be used, deactivate the product instead of deleting it.
+If a product has business history and should no longer be used, deactivate it instead of deleting it.
 
 ## Audit Rules
 
-Product creation, profile update, status change, and bulk import are critical UPC-library operations.
+Product creation, profile update, status change, bulk import, and safe deletion are critical
+UPC-library operations.
 
 Each change must write an audit log with:
 
