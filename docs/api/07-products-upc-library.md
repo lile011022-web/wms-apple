@@ -148,6 +148,7 @@ Request:
 
 ```json
 {
+  "updateExisting": true,
   "products": [
     {
       "sku": "IPHONE-16-PRO-256-NAT",
@@ -165,14 +166,20 @@ Business rules:
 - Up to 500 product rows can be submitted in one request.
 - Duplicate SKU values inside the request are rejected.
 - Duplicate UPC values inside the request are rejected.
-- Existing SKU and UPC conflicts are rejected before import.
+- `updateExisting` defaults to `false`; normal import rejects existing SKU and UPC conflicts.
+- With `updateExisting = true`, rows with an existing SKU replace that product's editable profile and
+  UPC list. New SKUs are created. Existing product status is preserved.
+- A UPC already owned by the matched SKU is allowed. A UPC owned by another SKU rejects the complete
+  request; the endpoint never transfers UPC ownership.
+- Import is all-or-nothing for both create and update operations.
 - Import writes one audit log with action `UPC_PRODUCT_CHANGE`, resource type `product-import`, and imported product IDs in metadata.
 
 Response `data`:
 
 ```json
 {
-  "importedCount": 1,
+  "importedCount": 0,
+  "updatedCount": 1,
   "items": [
     {
       "id": "product_id",
@@ -183,8 +190,41 @@ Response `data`:
 }
 ```
 
-## Delete Policy
+## DELETE /products/:id
 
-There is intentionally no physical delete endpoint in phase six.
+Deletes one unused product and its UPC mappings.
 
-Products and UPC mappings are historical references for inbound items, inventory items, outbound boxes, exceptions, reports, and audit records. Use `PATCH /products/:id/status` to deactivate instead.
+Rules:
+
+- The product must exist.
+- Products referenced by inbound items, inventory items, or exception records cannot be deleted.
+- A blocked deletion returns `409 Conflict` with the SKU and reference counts.
+- Successful deletion writes `UPC_PRODUCT_CHANGE` with the deleted snapshot and
+  `metadata.changeType = DELETE`.
+
+## POST /products/bulk-delete
+
+Deletes up to 100 selected unused products.
+
+Request:
+
+```json
+{
+  "ids": ["product-1", "product-2"]
+}
+```
+
+The operation is all-or-nothing. Missing IDs or any selected product with inbound, inventory, or
+exception references reject the complete request before deletion.
+
+Response `data`:
+
+```json
+{
+  "deletedCount": 2,
+  "deletedIds": ["product-1", "product-2"]
+}
+```
+
+Products with business history remain historical references and must be deactivated through
+`PATCH /products/:id/status` instead of deleted.

@@ -37,6 +37,7 @@ describe('shared scan validators', () => {
     expect(isValidUspsTracking('9400111899223857000000')).toBe(true);
     expect(isValidFedexTracking('9611020987654312345672')).toBe(true);
     expect(isValidFedexTracking('96320804008675235705004823280')).toBe(true);
+    expect(isValidFedexTracking('9632080400867523570500482328409684')).toBe(true);
     expect(isWarehouseCompensationTracking('bb0000')).toBe(true);
     expect(isValidPackageTracking('bb0000jh05')).toBe(true);
     expect(normalizePackageTracking(' 9400 1118 9922 3857 0000 00 ')).toBe(
@@ -46,15 +47,17 @@ describe('shared scan validators', () => {
     expect(normalizePackageTracking(' bb0000 jh05 ')).toBe('BB0000JH05');
   });
 
-  it('auto-accepts UPS, 9622 FedEx, and warehouse compensation tracking before manual review', () => {
+  it('auto-accepts UPS, configured 9622/9632 FedEx, and warehouse compensation tracking before manual review', () => {
     expect(isAutoAcceptedPackageTracking('1Z999AA10123456784')).toBe(true);
     expect(isAutoAcceptedPackageTracking('9622123456789012345678')).toBe(true);
     expect(isAutoAcceptedPackageTracking('9622080430009579265100530689178')).toBe(true);
+    expect(isAutoAcceptedPackageTracking('9632080400867523570500482328409684')).toBe(true);
     expect(isAutoAcceptedPackageTracking('bb0000')).toBe(true);
     expect(isAutoAcceptedPackageTracking('bb0000jh05')).toBe(true);
     expect(isAutoAcceptedPackageTracking('9400111899223857000000')).toBe(false);
     expect(isAutoAcceptedPackageTracking('9611020987654312345672')).toBe(false);
     expect(isAutoAcceptedPackageTracking('96320804008675235705004823280')).toBe(false);
+    expect(isAutoAcceptedPackageTracking('963208040086752357050048232840968')).toBe(false);
   });
 
   it('parses known barcode formats in a stable order', () => {

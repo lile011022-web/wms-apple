@@ -161,7 +161,12 @@ export class ProductsService {
   async importProducts(dto: ImportProductsDto, operator: AuthenticatedUser) {
     const seenSkus = new Set<string>();
     const seenUpcs = new Set<string>();
-    const products = [];
+    const normalizedRows: Array<{
+      row: CreateProductDto;
+      sku: string;
+      upcs: string[];
+      createData: Prisma.ProductCreateInput;
+    }> = [];
 
     for (const row of dto.products) {
       const sku = this.normalizeSku(row.sku);
@@ -178,39 +183,150 @@ export class ProductsService {
         seenUpcs.add(upc);
       }
 
-      products.push(await this.toCreateInput(row, { skipUpcAvailabilityCheck: true }));
+      normalizedRows.push({
+        row,
+        sku,
+        upcs,
+        createData: await this.toCreateInput(row, {
+          skipSkuAvailabilityCheck: true,
+          skipUpcAvailabilityCheck: true,
+        }),
+      });
     }
 
-    for (const sku of seenSkus) {
-      await this.assertSkuAvailable(sku);
-    }
-    await this.assertUpcsAvailable([...seenUpcs]);
+    const existingProducts = await this.productsRepository.findManyBySkus([...seenSkus]);
+    const existingBySku = new Map(existingProducts.map((product) => [product.sku, product]));
 
-    const importedProducts = await this.productsRepository.importProducts(products);
+    if (!dto.updateExisting && existingProducts.length > 0) {
+      throw new ConflictException(`Product SKU already exists: ${existingProducts[0]!.sku}.`);
+    }
+
+    const existingUpcs = await this.productsRepository.findExistingUpcs([...seenUpcs]);
+    for (const existingUpc of existingUpcs) {
+      const requestedRow = normalizedRows.find((row) => row.upcs.includes(existingUpc.upc));
+      const requestedProduct = requestedRow ? existingBySku.get(requestedRow.sku) : undefined;
+      if (!requestedProduct || requestedProduct.id !== existingUpc.productId) {
+        throw new ConflictException(`UPC already belongs to another SKU: ${existingUpc.upc}.`);
+      }
+    }
+
+    const products = normalizedRows.map(({ row, sku, upcs, createData }) => {
+      const existing = existingBySku.get(sku);
+      if (!existing) {
+        return { createData };
+      }
+
+      const updateData: Prisma.ProductUpdateInput = {
+        brand: this.trimOptional(row.brand) ?? 'Apple',
+        name: this.trimRequired(row.name, 'Product name'),
+        model: this.trimOptional(row.model) ?? null,
+        modelCode: this.trimOptional(row.modelCode) ?? null,
+        category: this.trimOptional(row.category) ?? null,
+        color: this.trimOptional(row.color) ?? null,
+        capacity: this.trimOptional(row.capacity) ?? null,
+        requiresImei: row.requiresImei ?? true,
+        upcs: {
+          deleteMany: {},
+          create: upcs.map((upc) => ({ upc, status: existing.status })),
+        },
+      };
+      return { existingProductId: existing.id, createData, updateData };
+    });
+
+    const savedProducts = await this.productsRepository.importProducts(products);
+    const updatedCount = existingProducts.length;
+    const importedCount = savedProducts.length - updatedCount;
 
     await this.auditLogsService.record({
       operatorId: operator.id,
       action: AuditAction.UPC_PRODUCT_CHANGE,
       resourceType: 'product-import',
       metadata: {
-        importedCount: importedProducts.length,
-        productIds: importedProducts.map((product) => product.id),
+        importedCount,
+        updatedCount,
+        updateExisting: dto.updateExisting ?? false,
+        productIds: savedProducts.map((product) => product.id),
       },
-      afterSnapshot: importedProducts.map((product) => this.toAuditSnapshot(product)),
+      beforeSnapshot: existingProducts.map((product) => this.toAuditSnapshot(product)),
+      afterSnapshot: savedProducts.map((product) => this.toAuditSnapshot(product)),
     });
 
     return {
-      importedCount: importedProducts.length,
-      items: importedProducts.map((product) => this.toProductResponse(product)),
+      importedCount,
+      updatedCount,
+      items: savedProducts.map((product) => this.toProductResponse(product)),
+    };
+  }
+
+  async deleteMany(inputIds: string[], operator: AuthenticatedUser) {
+    const ids = [...new Set(inputIds.map((id) => id.trim()).filter(Boolean))];
+    if (ids.length === 0) {
+      throw new BadRequestException('Please select at least one product to delete.');
+    }
+
+    const products = await this.productsRepository.findManyByIds(ids);
+    const foundIds = new Set(products.map((product) => product.id));
+    const missingIds = ids.filter((id) => !foundIds.has(id));
+    if (missingIds.length > 0) {
+      throw new NotFoundException(`Product not found: ${missingIds.join(', ')}.`);
+    }
+
+    const blockedProducts = products.filter(
+      (product) =>
+        product._count.inboundItems > 0 ||
+        product._count.inventoryItems > 0 ||
+        product._count.exceptions > 0,
+    );
+    if (blockedProducts.length > 0) {
+      const blockedSummary = blockedProducts
+        .map(
+          (product) =>
+            `${product.sku}（入库 ${product._count.inboundItems}、库存 ${product._count.inventoryItems}、异常记录 ${product._count.exceptions}）`,
+        )
+        .join('；');
+      throw new ConflictException(`以下商品已有业务记录，不能删除：${blockedSummary}`);
+    }
+
+    try {
+      const deleted = await this.productsRepository.deleteMany(ids);
+      if (deleted.count !== ids.length) {
+        throw new ConflictException('商品数据已被其他人修改，请刷新后重试。');
+      }
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        throw new ConflictException('商品已被入库、库存或异常记录引用，不能删除。');
+      }
+      throw error;
+    }
+
+    for (const product of products) {
+      await this.auditLogsService.record({
+        operatorId: operator.id,
+        action: AuditAction.UPC_PRODUCT_CHANGE,
+        resourceType: 'product',
+        resourceId: product.id,
+        beforeSnapshot: this.toAuditSnapshot(product),
+        metadata: {
+          changeType: 'DELETE',
+          deletedSku: product.sku,
+        },
+      });
+    }
+
+    return {
+      deletedCount: ids.length,
+      deletedIds: ids,
     };
   }
 
   private async toCreateInput(
     dto: CreateProductDto,
-    options?: { skipUpcAvailabilityCheck?: boolean },
+    options?: { skipSkuAvailabilityCheck?: boolean; skipUpcAvailabilityCheck?: boolean },
   ) {
     const sku = this.normalizeSku(dto.sku);
-    await this.assertSkuAvailable(sku);
+    if (!options?.skipSkuAvailabilityCheck) {
+      await this.assertSkuAvailable(sku);
+    }
     const upcs = this.normalizeUpcs(dto.upcs);
     if (!options?.skipUpcAvailabilityCheck) {
       await this.assertUpcsAvailable(upcs);

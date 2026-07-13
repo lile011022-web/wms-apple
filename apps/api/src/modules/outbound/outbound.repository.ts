@@ -5,6 +5,7 @@ import { normalizeOutboundBoxName, toOutboundBoxNameKey } from './outbound-box-n
 
 export type OutboundBoxUpdateConflictReason =
   | 'NOT_FOUND'
+  | 'ITEM_NOT_FOUND'
   | 'NOT_OPEN'
   | 'VERSION_CONFLICT'
   | 'DUPLICATE_NAME'
@@ -371,6 +372,90 @@ export class OutboundRepository {
           },
         },
       },
+    });
+  }
+
+  findProductByUpc(upc: string) {
+    return this.prisma.productUpc.findUnique({
+      where: { upc },
+      include: { product: true },
+    });
+  }
+
+  async updateItemInBox(input: {
+    boxId: string;
+    inventoryItemId: string;
+    operatorId: string;
+    expectedBoxUpdatedAt: Date;
+    data: {
+      productId: string;
+      upc: string;
+      upsTrackingNo: string;
+      imei: string | null;
+      serial: string | null;
+    };
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const before = await tx.outboundBox.findUnique({
+        where: { id: input.boxId },
+        include: outboundBoxInclude,
+      });
+      if (!before) throw new OutboundBoxUpdateConflictError('NOT_FOUND');
+      if (before.status !== OutboundBoxStatus.OPEN) {
+        throw new OutboundBoxUpdateConflictError('NOT_OPEN');
+      }
+      if (before.updatedAt.getTime() !== input.expectedBoxUpdatedAt.getTime()) {
+        throw new OutboundBoxUpdateConflictError('VERSION_CONFLICT');
+      }
+      const beforeBoxItem = before.items.find(
+        (item) => item.inventoryItemId === input.inventoryItemId,
+      );
+      if (!beforeBoxItem) throw new OutboundBoxUpdateConflictError('ITEM_NOT_FOUND');
+
+      const versionUpdate = await tx.outboundBox.updateMany({
+        where: {
+          id: input.boxId,
+          status: OutboundBoxStatus.OPEN,
+          updatedAt: input.expectedBoxUpdatedAt,
+        },
+        data: { updatedAt: new Date() },
+      });
+      if (versionUpdate.count !== 1) {
+        throw new OutboundBoxUpdateConflictError('VERSION_CONFLICT');
+      }
+
+      const updatedInventoryItem = await tx.inventoryItem.update({
+        where: { id: input.inventoryItemId },
+        data: input.data,
+      });
+      await tx.inboundItem.updateMany({
+        where: { inventoryItemId: input.inventoryItemId },
+        data: input.data,
+      });
+
+      const updated = await tx.outboundBox.findUniqueOrThrow({
+        where: { id: input.boxId },
+        include: outboundBoxInclude,
+      });
+      await tx.auditLog.create({
+        data: {
+          action: AuditAction.OUTBOUND_BOX_UPDATE,
+          resourceType: 'outbound-box-item',
+          resourceId: beforeBoxItem.id,
+          operatorId: input.operatorId,
+          beforeSnapshot: this.toInventoryItemAuditSnapshot(beforeBoxItem.inventoryItem),
+          afterSnapshot: this.toInventoryItemAuditSnapshot(updatedInventoryItem),
+          metadata: {
+            changeType: 'ITEM_EDIT',
+            outboundBoxId: input.boxId,
+            inventoryItemId: input.inventoryItemId,
+            customerId: before.customerId,
+            warehouseId: before.warehouseId,
+          },
+        },
+      });
+
+      return updated;
     });
   }
 
@@ -798,6 +883,26 @@ export class OutboundRepository {
       itemIds: box.items.map((item) => item.inventoryItemId),
       photoIds: box.photos.map((photo) => photo.id),
       notes: box.notes,
+    };
+  }
+
+  private toInventoryItemAuditSnapshot(item: {
+    id: string;
+    productId: string;
+    upc: string;
+    upsTrackingNo: string | null;
+    imei: string | null;
+    serial: string | null;
+    status: InventoryStatus;
+  }) {
+    return {
+      id: item.id,
+      productId: item.productId,
+      upc: item.upc,
+      upsTrackingNo: item.upsTrackingNo,
+      imei: item.imei,
+      serial: item.serial,
+      status: item.status,
     };
   }
 }

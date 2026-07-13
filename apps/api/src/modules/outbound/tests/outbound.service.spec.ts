@@ -149,7 +149,17 @@ function createService(
     findBoxes: jest.fn().mockResolvedValue([1, [emptyBox]]),
     updateBoxWithAudit: jest.fn().mockResolvedValue(emptyBox),
     findInventoryItemById: jest.fn().mockResolvedValue(inventoryItem),
+    findProductByUpc: jest.fn().mockResolvedValue({
+      id: 'upc-1',
+      upc: inventoryItem.upc,
+      productId: product.id,
+      status: ProductStatus.ACTIVE,
+      createdAt: now,
+      updatedAt: now,
+      product,
+    }),
     addItemToBox: jest.fn().mockResolvedValue({ ...emptyBox, items: [boxItem] }),
+    updateItemInBox: jest.fn().mockResolvedValue({ ...emptyBox, items: [boxItem] }),
     removeItemFromBox: jest.fn().mockResolvedValue({
       deleted: boxItem,
       box: emptyBox,
@@ -690,6 +700,87 @@ describe('OutboundService', () => {
       inventoryItem.id,
       user.id,
     );
+  });
+
+  it('edits tracking, UPC, and IMEI for an item in an open box', async () => {
+    const openBoxWithItem = { ...emptyBox, items: [boxItem] };
+    const nextTrackingNo = '1Z999AA10123456785';
+    const nextImei = '356789012345679';
+    const { repository, service } = createService({
+      findBoxById: jest.fn().mockResolvedValue(openBoxWithItem),
+      updateItemInBox: jest.fn().mockResolvedValue({
+        ...openBoxWithItem,
+        updatedAt: new Date(now.getTime() + 1000),
+        items: [
+          {
+            ...boxItem,
+            inventoryItem: {
+              ...boxItem.inventoryItem,
+              upsTrackingNo: nextTrackingNo,
+              imei: nextImei,
+            },
+          },
+        ],
+      }),
+    });
+
+    await expect(
+      service.updateItem(
+        emptyBox.id,
+        boxItem.id,
+        {
+          upsTrackingNo: nextTrackingNo,
+          upc: inventoryItem.upc,
+          imeiOrSerial: nextImei,
+          expectedBoxUpdatedAt: now.toISOString(),
+        },
+        user,
+      ),
+    ).resolves.toMatchObject({
+      items: [
+        {
+          inventoryItem: {
+            upsTrackingNo: nextTrackingNo,
+            imei: nextImei,
+          },
+        },
+      ],
+    });
+    expect(repository.updateItemInBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        boxId: emptyBox.id,
+        inventoryItemId: inventoryItem.id,
+        expectedBoxUpdatedAt: now,
+        data: expect.objectContaining({
+          productId: product.id,
+          upc: inventoryItem.upc,
+          upsTrackingNo: nextTrackingNo,
+          imei: nextImei,
+          serial: null,
+        }),
+      }),
+    );
+  });
+
+  it('keeps invalid item edits out of the repository', async () => {
+    const { repository, service } = createService({
+      findBoxById: jest.fn().mockResolvedValue({ ...emptyBox, items: [boxItem] }),
+    });
+
+    await expect(
+      service.updateItem(
+        emptyBox.id,
+        boxItem.id,
+        {
+          upsTrackingNo: 'NOT-A-TRACKING',
+          upc: inventoryItem.upc,
+          imeiOrSerial: inventoryItem.imei ?? undefined,
+          expectedBoxUpdatedAt: now.toISOString(),
+        },
+        user,
+      ),
+    ).rejects.toThrow('物流单号格式不正确');
+    expect(repository.updateItemInBox).not.toHaveBeenCalled();
   });
 
   it('requires at least one item and one photo before sealing', async () => {

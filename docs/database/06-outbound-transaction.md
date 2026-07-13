@@ -46,6 +46,25 @@ The transaction:
 
 Sealed boxes must be reopened before their item rows can be changed.
 
+## Correct Item Transaction
+
+Editing one current-box row is transactional.
+
+The transaction:
+
+1. Rereads the outbound box with items and requires `OPEN` status.
+2. Verifies the item belongs to the box and the submitted `expectedBoxUpdatedAt` matches.
+3. Conditionally advances the box version so concurrent item or box edits cannot overwrite each other.
+4. Updates package tracking, product ID, UPC, and IMEI/Serial on `inventory_items`.
+5. Updates the linked `inbound_items` row with the same identity fields.
+6. Writes an `OUTBOUND_BOX_UPDATE` audit record using resource type `outbound-box-item` and the
+   before/after inventory snapshots.
+7. Returns the refreshed box.
+
+The service validates tracking format, active UPC/product mapping, product identity requirements,
+and duplicate IMEI/Serial before or during this transaction. Unique-identity conflicts roll back all
+changes.
+
 ## Clear Box Transaction
 
 Clearing an open box is transactional.

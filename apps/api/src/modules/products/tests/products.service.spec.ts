@@ -143,4 +143,131 @@ describe('ProductsService', () => {
       }),
     );
   });
+
+  it('updates an existing product by SKU when overwrite import is enabled', async () => {
+    const updatedProduct = {
+      ...product,
+      name: 'iPhone 16 Pro 256GB Natural Titanium Updated',
+    };
+    const productsRepository = {
+      findManyBySkus: jest.fn().mockResolvedValue([product]),
+      findExistingUpcs: jest
+        .fn()
+        .mockResolvedValue([{ upc: '194253149189', productId: product.id }]),
+      importProducts: jest.fn().mockResolvedValue([updatedProduct]),
+    } as unknown as jest.Mocked<ProductsRepository>;
+    const auditLogsService = { record: jest.fn() };
+    const service = new ProductsService(productsRepository, auditLogsService as never);
+
+    await expect(
+      service.importProducts(
+        {
+          updateExisting: true,
+          products: [
+            {
+              sku: product.sku,
+              name: updatedProduct.name,
+              upcs: ['194253149189'],
+            },
+          ],
+        },
+        operator,
+      ),
+    ).resolves.toMatchObject({ importedCount: 0, updatedCount: 1 });
+
+    expect(productsRepository.importProducts).toHaveBeenCalledWith([
+      expect.objectContaining({
+        existingProductId: product.id,
+        updateData: expect.objectContaining({
+          name: updatedProduct.name,
+          upcs: expect.objectContaining({ deleteMany: {} }),
+        }),
+      }),
+    ]);
+    expect(auditLogsService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ importedCount: 0, updatedCount: 1 }),
+        beforeSnapshot: [expect.objectContaining({ sku: product.sku })],
+      }),
+    );
+  });
+
+  it('rejects overwrite import when a UPC belongs to another SKU', async () => {
+    const productsRepository = {
+      findManyBySkus: jest.fn().mockResolvedValue([product]),
+      findExistingUpcs: jest
+        .fn()
+        .mockResolvedValue([{ upc: '195949000001', productId: 'another-product' }]),
+      importProducts: jest.fn(),
+    } as unknown as jest.Mocked<ProductsRepository>;
+    const auditLogsService = { record: jest.fn() };
+    const service = new ProductsService(productsRepository, auditLogsService as never);
+
+    await expect(
+      service.importProducts(
+        {
+          updateExisting: true,
+          products: [
+            {
+              sku: product.sku,
+              name: product.name,
+              upcs: ['195949000001'],
+            },
+          ],
+        },
+        operator,
+      ),
+    ).rejects.toThrow('UPC already belongs to another SKU');
+
+    expect(productsRepository.importProducts).not.toHaveBeenCalled();
+    expect(auditLogsService.record).not.toHaveBeenCalled();
+  });
+
+  it('deletes an unused product and records the deleted snapshot', async () => {
+    const productsRepository = {
+      findManyByIds: jest.fn().mockResolvedValue([
+        {
+          ...product,
+          _count: { inboundItems: 0, inventoryItems: 0, exceptions: 0 },
+        },
+      ]),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    } as unknown as jest.Mocked<ProductsRepository>;
+    const auditLogsService = { record: jest.fn() };
+    const service = new ProductsService(productsRepository, auditLogsService as never);
+
+    await expect(service.deleteMany([product.id], operator)).resolves.toEqual({
+      deletedCount: 1,
+      deletedIds: [product.id],
+    });
+    expect(productsRepository.deleteMany).toHaveBeenCalledWith([product.id]);
+    expect(auditLogsService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: AuditAction.UPC_PRODUCT_CHANGE,
+        resourceId: product.id,
+        beforeSnapshot: expect.objectContaining({ sku: product.sku }),
+        metadata: expect.objectContaining({ changeType: 'DELETE' }),
+      }),
+    );
+  });
+
+  it('rejects the whole deletion when any selected product has business history', async () => {
+    const productsRepository = {
+      findManyByIds: jest.fn().mockResolvedValue([
+        {
+          ...product,
+          _count: { inboundItems: 1, inventoryItems: 1, exceptions: 0 },
+        },
+      ]),
+      deleteMany: jest.fn(),
+    } as unknown as jest.Mocked<ProductsRepository>;
+    const auditLogsService = { record: jest.fn() };
+    const service = new ProductsService(productsRepository, auditLogsService as never);
+
+    await expect(service.deleteMany([product.id], operator)).rejects.toThrow(
+      '以下商品已有业务记录，不能删除',
+    );
+    expect(productsRepository.deleteMany).not.toHaveBeenCalled();
+    expect(auditLogsService.record).not.toHaveBeenCalled();
+  });
 });

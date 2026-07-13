@@ -1,10 +1,21 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
+import { BulkDeleteProductsDto } from './dto/bulk-delete-products.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ImportProductsDto } from './dto/import-products.dto';
 import { ListProductsQueryDto } from './dto/list-products-query.dto';
@@ -61,5 +72,15 @@ export class ProductsController {
   @Post('import')
   importProducts(@Body() dto: ImportProductsDto, @CurrentUser() user: AuthenticatedUser) {
     return this.productsService.importProducts(dto, user);
+  }
+
+  @Post('bulk-delete')
+  bulkDelete(@Body() dto: BulkDeleteProductsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.productsService.deleteMany(dto.ids, user);
+  }
+
+  @Delete(':id')
+  delete(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.productsService.deleteMany([id], user);
   }
 }

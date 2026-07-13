@@ -151,6 +151,9 @@ The outbound packing page uses these filters to keep the created-box area from g
 - Default view sends `status = OPEN` and shows only unfinished boxes.
 - `仓库今日` and `近7仓库日` send `createdFrom` / `createdTo` ranges calculated from the selected
   warehouse timezone.
+- The custom start/end date controls send the same `createdFrom` / `createdTo` fields. Either bound
+  may be omitted, both bounds include the complete warehouse business day, and a reversed range is
+  blocked on the frontend before this endpoint is queried.
 - `已封箱` sends `status = SEALED`.
 - `全部历史` omits `status` and date range, except voided boxes remain excluded by default.
 
@@ -225,6 +228,39 @@ Rules:
 - The item must belong to the box.
 - On success, the inventory item status returns to `IN_STOCK` and `packedAt` is cleared.
 - Removing an item writes an `OUTBOUND_BOX_ITEM_REMOVE` audit log.
+
+The current-box workspace exposes this endpoint as a row-level `删除` action beside `编辑`. The
+frontend asks for confirmation, disables both row actions while the request is pending, refreshes the
+current box from the response, and refreshes available inventory so the returned `IN_STOCK` row can
+be packed again. The box detail modal remains read-only for row deletion.
+
+## PATCH /outbound/boxes/:id/items/:itemId
+
+Corrects one row in an open outbound box. `itemId` may be the outbound box item ID or inventory item
+ID.
+
+Request:
+
+```json
+{
+  "upsTrackingNo": "1Z999AA10123456784",
+  "upc": "194253149189",
+  "imeiOrSerial": "356789012345678",
+  "expectedBoxUpdatedAt": "2026-07-10T12:00:00.000Z"
+}
+```
+
+Rules:
+
+- The box must be `OPEN` and the item must belong to it.
+- `expectedBoxUpdatedAt` must equal the latest box version; stale edits return `409 Conflict`.
+- Package tracking and UPC must pass the shared validators.
+- UPC must resolve to an active UPC mapping and active product; product identity is rematched.
+- Products requiring IMEI must receive a valid IMEI or Apple Serial value.
+- IMEI/Serial cannot duplicate another inventory row.
+- The linked `inventory_items` and `inbound_items` identity fields are updated in the same transaction.
+- The transaction advances the box version and writes an `OUTBOUND_BOX_UPDATE` audit record with
+  `resourceType = outbound-box-item`, before/after snapshots, and `changeType = ITEM_EDIT`.
 
 ## DELETE /outbound/boxes/:id/items
 

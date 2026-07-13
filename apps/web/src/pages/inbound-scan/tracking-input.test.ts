@@ -11,6 +11,9 @@ describe('inbound tracking focus decisions', () => {
   it('auto-advances only complete fixed-boundary auto-accepted values', () => {
     expect(getTrackingAdvanceDecision('1Z999AA10123456784', 'AUTO')).toBe('REVIEW_AND_ADVANCE');
     expect(getTrackingAdvanceDecision('9622123456789012345678', 'AUTO')).toBe('REVIEW_AND_ADVANCE');
+    expect(getTrackingAdvanceDecision('9632080400867523570500482328409684', 'AUTO')).toBe(
+      'REVIEW_AND_ADVANCE',
+    );
   });
 
   it.each([
@@ -62,7 +65,7 @@ describe('inbound tracking focus decisions', () => {
     expect(isTrackingScanFormatValid(manualReview)).toBe(true);
     expect(isTrackingScanAutoAccepted(manualReview)).toBe(false);
     expect(buildTrackingWarningReasons(manualReview)).toEqual([
-      '该 USPS 或非 9622 FedEx 单号格式合法，需要人工确认',
+      '该物流单号格式合法，但不在自动放行规则内，需要人工确认',
     ]);
     expect(buildTrackingWarningReasons(invalid)).toEqual([
       '物流单号格式不正确，请检查是否少输、多输或输错字符',

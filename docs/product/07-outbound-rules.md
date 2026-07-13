@@ -82,6 +82,10 @@ Rules:
   `timezone` to calculate the business date. They must not use the operator's browser timezone or
   China time, because US warehouse staff may create boxes while China-based staff download details
   on the next calendar day.
+- Operators can also enter an optional start date, end date, or both above the created-box list.
+  These custom date boundaries use the selected warehouse timezone and include the complete start
+  and end business days. A reversed range must be rejected before the box query is sent. Clearing
+  the custom range returns the list to the default `未完成` view.
 - `已封箱` and `全部历史` are explicit history views. Operators should switch to those views only
   when downloading or reviewing old boxes.
 
@@ -223,6 +227,11 @@ Allowed operations for an open box:
 - Download packing detail data for selected created boxes from the created-box list.
 - Seal the box.
 
+The current-box table exposes both `编辑` and `删除` on each packed row. Deletion requires an
+operator confirmation, removes only the selected box-item relationship, returns that inventory row
+to `IN_STOCK`, clears its packed time, refreshes the current box, and makes the item available for
+packing again. A sealed box must be reopened before the row-level delete action becomes available.
+
 The box detail modal that opens after creating or selecting a box must expose the same editable box
 settings before sealing: visible box name, size preset or custom size, weight, outbound shipment or
 label number, and notes. Saving from the modal updates the current box, created-box list, and modal
@@ -258,6 +267,30 @@ When an inventory row is added to an open box:
 When an inventory row is removed from an open box:
 
 - `inventory_items.status` changes from `PACKED` back to `IN_STOCK`.
+
+## Current Box Item Correction
+
+The current-box workspace allows an operator to edit an open box item, but it does not expose
+single-row or batch item deletion. The box detail modal also remains read-only for item deletion.
+
+Editable fields are:
+
+- Package tracking number.
+- UPC.
+- IMEI or Serial.
+
+Saving a correction must revalidate the tracking number, resolve the UPC to an active product, and
+validate the product's IMEI/Serial requirement. The same correction is written to the inventory row
+and its linked inbound item so inventory, inbound history, outbound detail, and reports do not show
+different identities. The box `updatedAt` is a required concurrency token; stale edits are rejected
+instead of overwriting another operator. Every successful edit writes an audit record with the old
+and new inventory identity fields.
+
+The current-box table must reserve stable widths for package tracking, product, IMEI/Serial, packed
+time, and actions. Package tracking numbers must remain horizontal and may not collapse into a
+character-per-line column after selection controls are removed. On narrow screens, the table should
+scroll horizontally instead of compressing operational identifiers.
+
 - `inventory_items.packedAt` is cleared.
 
 When a box is sealed:

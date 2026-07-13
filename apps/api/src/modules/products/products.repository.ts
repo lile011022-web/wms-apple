@@ -41,9 +41,32 @@ export class ProductsRepository {
     });
   }
 
+  findManyByIds(ids: string[]) {
+    return this.prisma.product.findMany({
+      where: { id: { in: ids } },
+      include: {
+        ...productInclude,
+        _count: {
+          select: {
+            inboundItems: true,
+            inventoryItems: true,
+            exceptions: true,
+          },
+        },
+      },
+    });
+  }
+
   findBySku(sku: string) {
     return this.prisma.product.findUnique({
       where: { sku },
+      include: productInclude,
+    });
+  }
+
+  findManyBySkus(skus: string[]) {
+    return this.prisma.product.findMany({
+      where: { sku: { in: skus } },
       include: productInclude,
     });
   }
@@ -77,15 +100,34 @@ export class ProductsRepository {
     });
   }
 
-  importProducts(products: Prisma.ProductCreateInput[]) {
+  importProducts(
+    products: Array<{
+      existingProductId?: string;
+      createData: Prisma.ProductCreateInput;
+      updateData?: Prisma.ProductUpdateInput;
+    }>,
+  ) {
     return this.prisma.$transaction(
-      products.map((data) =>
-        this.prisma.product.create({
-          data,
-          include: productInclude,
-        }),
+      products.map((product) =>
+        product.existingProductId && product.updateData
+          ? this.prisma.product.update({
+              where: { id: product.existingProductId },
+              data: product.updateData,
+              include: productInclude,
+            })
+          : this.prisma.product.create({
+              data: product.createData,
+              include: productInclude,
+            }),
       ),
     );
+  }
+
+  deleteMany(ids: string[]) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.productUpc.deleteMany({ where: { productId: { in: ids } } });
+      return tx.product.deleteMany({ where: { id: { in: ids } } });
+    });
   }
 
   private toWhere(
