@@ -9,7 +9,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   CustomerStatus,
-  ExceptionType,
   InboundBatchStatus,
   InboundItemStatus,
   InventoryStatus,
@@ -20,8 +19,10 @@ import {
   isValidImei,
   isAutoAcceptedPackageTracking,
   isValidPackageTracking,
+  isValidUpsTracking,
   isValidSerial,
   isValidUpc,
+  isWarehouseCompensationTracking,
   normalizePackageTracking,
 } from '@wms-scan/shared';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
@@ -530,6 +531,7 @@ export class InboundService {
     if (imei && serial) {
       throw new BadRequestException('Use either IMEI or Serial for one inbound item, not both.');
     }
+    this.assertScanFieldsNotMixed(upsTrackingNo, upc, imei, serial);
 
     const productUpc = await this.inboundRepository.findProductByUpc(upc);
     if (
@@ -799,6 +801,36 @@ export class InboundService {
       throw new BadRequestException('Invalid UPC format.');
     }
     return normalized;
+  }
+
+  private assertScanFieldsNotMixed(
+    trackingValue: string,
+    upcValue: string,
+    imei?: string,
+    serial?: string,
+  ) {
+    if (trackingValue === upcValue) {
+      throw new BadRequestException('UPC 不能与物流单号相同，请重新扫描 UPC。');
+    }
+
+    const identity = imei ?? serial;
+    if (!identity) {
+      return;
+    }
+    if (
+      identity === trackingValue ||
+      isValidUpsTracking(identity) ||
+      isWarehouseCompensationTracking(identity)
+    ) {
+      throw new BadRequestException(
+        `${imei ? 'IMEI' : 'Serial'} 位置扫入了物流单号，请重新扫描正确设备标识。`,
+      );
+    }
+    if (identity === upcValue) {
+      throw new BadRequestException(
+        `${imei ? 'IMEI' : 'Serial'} 不能与 UPC 相同，请重新扫描设备标识。`,
+      );
+    }
   }
 
   private normalizeUps(value: string, allowUnsupportedFormat = false) {

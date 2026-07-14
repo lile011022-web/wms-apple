@@ -150,7 +150,7 @@ Query parameters:
 - `status`: optional `IN_STOCK`, `PACKED`, `OUTBOUND`, `EXCEPTION`, or `VOIDED`.
 - `upc`, `imei`, `serial`, `upsTrackingNo`: optional exact-field contains filters.
 - `search`: optional search across customer code/name, UPC, IMEI, Serial, UPS, inbound batch number,
-  outbound box number/name, SKU, and product name.
+  outbound box number/name, force-inbound reason, SKU, and product name.
 - `availableForOutbound`: optional boolean. When true, only `IN_STOCK` rows are returned.
 - `dateFrom`, `dateTo`: optional business date range using status-aware date anchors. Packed rows are filtered by `packedAt`, outbound rows by `outboundAt`, and other rows by `receivedAt`.
 - `page`, `pageSize`, `sortBy`, `sortOrder`: standard pagination and sorting.
@@ -168,7 +168,9 @@ When `sortBy=status`, the API sorts inventory status first and then `updatedAt d
 status. Outbound packing uses this when operators search UPC/product values so `IN_STOCK` rows appear
 before already packed rows while still allowing packed rows to be traced.
 
-Rows include customer, warehouse, product, inbound batch, inbound item, latest outbound box, exception summary, and timestamps.
+Rows include customer, warehouse, product, inbound batch, inbound item, latest outbound box,
+exception summary, and timestamps. `inboundItem` includes `forcedInbound`, `forceReason`, and
+`forcedAt`; the customer inventory page displays the reason as `补货留言`.
 
 Customer inventory IMEI detail rows should show both time anchors:
 

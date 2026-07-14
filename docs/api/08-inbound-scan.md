@@ -186,6 +186,10 @@ Rules:
 - UPC must match an active UPC mapping and active product. Unmatched UPC values are rejected before
   a preview row is saved, so the operator must first maintain the UPC in 商品管理 and scan again.
 - In `STANDARD` mode, products with `requiresImei = true` require a valid IMEI. IMEI validation accepts 15-digit numeric phone IMEI values and 10-18 character uppercase alphanumeric iPad identifiers such as `SH9LRL91YFC`.
+- Scan fields must remain distinct. UPC cannot equal the package tracking value. IMEI/Serial cannot
+  equal UPC or the package tracking value, and recognizable alphanumeric UPS / `BB0000` package
+  numbers are rejected when submitted as IMEI/Serial. These errors reject the row before it is
+  created so the web client can keep focus on the field that must be rescanned.
 - In `STANDARD` mode, products with `requiresImei = false` require either Serial or IMEI in this phase.
 - IMEI or Serial duplicated inside the same active draft is rejected immediately and must not create
   another `PENDING` preview row.

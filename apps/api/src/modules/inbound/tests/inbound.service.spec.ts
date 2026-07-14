@@ -530,6 +530,40 @@ describe('InboundService', () => {
     expect(repository.createItem).not.toHaveBeenCalled();
   });
 
+  it('rejects a UPS package number scanned into the IMEI field', async () => {
+    const { repository, service } = createService({});
+
+    await expect(
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: '1Z999AA10123456784',
+          upc: '194253149189',
+          imei: '1Z9265F30352351025',
+        },
+        operator,
+      ),
+    ).rejects.toThrow('IMEI 位置扫入了物流单号');
+    expect(repository.createItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects repeated values across inbound scan fields', async () => {
+    const { repository, service } = createService({});
+
+    await expect(
+      service.addItem(
+        'draft-1',
+        {
+          upsTrackingNo: 'BB0000194253149189',
+          upc: '194253149189',
+          imei: 'BB0000194253149189',
+        },
+        operator,
+      ),
+    ).rejects.toThrow('IMEI 位置扫入了物流单号');
+    expect(repository.createItem).not.toHaveBeenCalled();
+  });
+
   it('force-confirms a matched exception item with a required reason', async () => {
     const exceptionItem = {
       ...pendingItem,

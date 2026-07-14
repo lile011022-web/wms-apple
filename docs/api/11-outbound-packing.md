@@ -91,6 +91,8 @@ Rules:
 - `customSize` is required when `sizePreset` is `CUSTOM`.
 - The outbound packing detail modal can submit the same editable settings as the quick editor:
   box name, size, weight, outbound shipment or label number, and notes.
+- The web detail editor keeps unsaved box-name text stable while the modal is open and closes only
+  through an explicit close/cancel action; backdrop interaction must not discard a full-name edit.
 - `shippingTrackingNo` stores the outbound shipment or label number shown beside the box evidence controls.
 - Updating box settings writes an `OUTBOUND_BOX_UPDATE` audit log.
 

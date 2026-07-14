@@ -605,7 +605,7 @@ export function CustomerInventoryPage() {
                 setDetailSearch(event.target.value);
                 setDetailPage(1);
               }}
-              placeholder="搜索单号、入库单、箱号、IMEI、UPC 或商品"
+              placeholder="搜索单号、入库单、箱号、IMEI、UPC、商品或补货留言"
             />
           </label>
         </PaginationControls>
@@ -632,6 +632,7 @@ export function CustomerInventoryPage() {
                 <th>型号代码</th>
                 <th>扫描时间</th>
                 <th>入库时间</th>
+                <th>补货留言</th>
                 <th>状态</th>
               </tr>
             </thead>
@@ -662,13 +663,23 @@ export function CustomerInventoryPage() {
                     <TimeCell value={item.receivedAt} />
                   </td>
                   <td>
+                    {item.inboundItem?.forcedInbound ? (
+                      <div className="inventory-force-note">
+                        <strong>{item.inboundItem.forceReason || '强制入库（未填留言）'}</strong>
+                        <span>强制入库留言</span>
+                      </div>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
+                  <td>
                     <span className={inventoryStatusClass(item.status)}>{item.status}</span>
                   </td>
                 </tr>
               ))}
               {!inventory || inventory.items.length === 0 ? (
                 <tr>
-                  <td colSpan={12}>暂无库存</td>
+                  <td colSpan={13}>暂无库存</td>
                 </tr>
               ) : null}
             </tbody>
@@ -734,7 +745,12 @@ type InventoryItem = {
   receivedAt: string | null;
   customer?: { id: string; code: string; name: string } | null;
   product: { name: string; modelCode?: string | null };
-  inboundItem?: { scannedAt?: string | null } | null;
+  inboundItem?: {
+    scannedAt?: string | null;
+    forcedInbound?: boolean;
+    forceReason?: string | null;
+    forcedAt?: string | null;
+  } | null;
   inboundBatch?: { batchNo: string } | null;
   latestOutboundBox?: { boxNo: string } | null;
 };

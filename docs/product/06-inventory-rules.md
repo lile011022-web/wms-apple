@@ -73,6 +73,9 @@ Detail rows should preserve:
 - Current inventory status.
 - Latest outbound box when packed or outbound.
 - Exception summary.
+- Force-inbound marker, force reason, and force time from the linked inbound item. The customer
+  inventory table labels the reason as `补货留言`, so operational notes such as `chen补给JH`
+  are visible to data staff.
 - Customer code/name as a first-class visible column so cross-customer searches remain identifiable.
 
 The customer inventory detail table should provide a search box for narrowing item rows without
@@ -80,7 +83,7 @@ leaving the page. Search should use the inventory item list API's broad `search`
 can find rows by customer code/name, package tracking number, IMEI, Serial, UPC, SKU, or product name
 while preserving the selected customer and warehouse filters when a customer is selected. The search
 should also cover inbound batch number and latest outbound box number/name because those columns are
-visible in the detail table.
+visible in the detail table. Force-inbound reasons are searchable as well.
 
 The customer inventory detail table should provide a direct `导出明细` action. The export must use
 the current customer, warehouse, business time range, status card, and detail search filters so downloaded

@@ -156,6 +156,8 @@ The system must:
 - Reject rows that already have inventory.
 - Reject duplicate IMEI or Serial values even when force inbound is used.
 - Require an operator reason and keep it on the inbound item.
+- Return the force-inbound marker and reason with linked customer inventory rows so data operators
+  can see notes such as `chen补给JH` without opening audit logs.
 - Resolve the row's open exception records and write an `INBOUND_FORCE_CONFIRM` audit log.
 
 Force inbound is not a way to bypass UPC matching or duplicate IMEI/Serial protection. If the product cannot be identified, the UPC/product data must be fixed first.
@@ -189,6 +191,13 @@ legacy draft may be restored only after the original account's current session a
 
 After a row is automatically or manually added, the scan entry form should restore keyboard focus to
 the next receiving input so operators can continue with a scanner without clicking the mouse again.
+Package tracking, UPC, and IMEI/Serial are separate scan positions. If a recognizable UPS or
+`BB0000` package number is scanned into IMEI/Serial, or if the same value is repeated across scan
+positions, the page must stop automatic submission, keep the incorrect value visible, flash the
+incorrect field, and return focus to that field. The API must enforce the same separation so direct
+requests cannot save a package number as an IMEI/Serial. Invalid package numbers, invalid or
+unmatched UPC values, invalid identities, and duplicate identities remain hard stops until the
+operator fixes the relevant field.
 Automatic focus movement and Enter-key movement must use the same package-tracking decision and API
 review path. A complete UPS value, a complete 9622-prefixed FedEx value, or an exactly 34-digit
 9632-prefixed FedEx value can move to UPC automatically

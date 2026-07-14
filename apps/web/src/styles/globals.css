@@ -4269,6 +4269,46 @@ button:disabled {
   color: #b91c1c;
 }
 
+.scan-input-blocked {
+  border-color: #dc2626 !important;
+  background: #fff1f2 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.18) !important;
+  animation: inboundScanBlockedPulse 720ms ease-in-out infinite alternate;
+}
+
+.scan-blocking-error {
+  border-width: 2px;
+  animation: inboundScanBlockedPulse 720ms ease-in-out infinite alternate;
+}
+
+.inventory-force-note {
+  display: grid;
+  min-width: 140px;
+  gap: 2px;
+}
+
+.inventory-force-note strong {
+  color: #9a3412;
+  overflow-wrap: anywhere;
+}
+
+.inventory-force-note span {
+  color: #c2410c;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+@keyframes inboundScanBlockedPulse {
+  from {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.12);
+  }
+  to {
+    opacity: 0.72;
+    box-shadow: 0 0 0 5px rgba(220, 38, 38, 0.22);
+  }
+}
+
 .placeholder-card {
   min-height: 180px;
 }

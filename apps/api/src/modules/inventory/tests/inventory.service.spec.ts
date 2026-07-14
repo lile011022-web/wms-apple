@@ -90,6 +90,9 @@ const inventoryItem = {
     id: 'inbound-item-1',
     scannedAt: new Date('2026-06-17T00:00:00Z'),
     status: 'CONFIRMED',
+    forcedInbound: true,
+    forceReason: 'chen补给JH',
+    forcedAt: new Date('2026-06-17T00:05:00Z'),
   },
   outboundBoxItems: [],
   exceptions: [],
@@ -250,6 +253,23 @@ describe('InventoryService', () => {
       total: 1,
       items: [{ id: 'inventory-1', imei: '356789012345678', availableForOutbound: true }],
     });
+    await expect(
+      service.listItems({
+        customerId: 'customer-1',
+        page: 1,
+        pageSize: 10,
+        sortOrder: 'desc',
+      }),
+    ).resolves.toMatchObject({
+      items: [
+        {
+          inboundItem: {
+            forcedInbound: true,
+            forceReason: 'chen补给JH',
+          },
+        },
+      ],
+    });
     expect(repository.findItems).toHaveBeenCalledWith(
       expect.objectContaining({
         skip: 10,
@@ -333,6 +353,11 @@ describe('InventoryService', () => {
         { serial: { contains: 'BOX-BB0001', mode: 'insensitive' } },
         { upsTrackingNo: { contains: 'BOX-BB0001', mode: 'insensitive' } },
         { inboundBatch: { batchNo: { contains: 'BOX-BB0001', mode: 'insensitive' } } },
+        {
+          inboundItem: {
+            forceReason: { contains: 'BOX-BB0001', mode: 'insensitive' },
+          },
+        },
         {
           outboundBoxItems: {
             some: {

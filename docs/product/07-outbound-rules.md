@@ -203,7 +203,8 @@ Box detail printing:
 - Clicking `打印明细` opens a printable preview modal instead of printing the whole workbench.
 - The preview groups the current box items by product name and prints one line per product in the
   format `商品名称*数量`, followed by `|Total: N|`.
-- The preview title must use the current box context only: date, customer name, and box name.
+- The preview title uses `date + customer name` once, followed by one short box-label line such as
+  `箱2`. It must not repeat the full visible box name and the same box suffix on adjacent lines.
 - Operators must click `确认打印` in the preview before the browser print dialog opens.
 - `确认打印` must send a standalone print document containing only the current box detail text, not
   the surrounding workbench or modal layout. The printable document must fit the complete current
@@ -227,16 +228,20 @@ Allowed operations for an open box:
 - Download packing detail data for selected created boxes from the created-box list.
 - Seal the box.
 
-The current-box table exposes both `编辑` and `删除` on each packed row. Deletion requires an
-operator confirmation, removes only the selected box-item relationship, returns that inventory row
-to `IN_STOCK`, clears its packed time, refreshes the current box, and makes the item available for
-packing again. A sealed box must be reopened before the row-level delete action becomes available.
+The current-box table exposes both `编辑` and `删除` on each packed row. Single-row deletion
+runs immediately from the delete button without an extra browser confirmation, removes only the
+selected box-item relationship, returns that inventory row to `IN_STOCK`, clears its packed time,
+refreshes the current box, and makes the item available for packing again. Whole-box and batch-box
+deletion keep their explicit confirmation protection. A sealed box must be reopened before the
+row-level delete action becomes available.
 
 The box detail modal that opens after creating or selecting a box must expose the same editable box
 settings before sealing: visible box name, size preset or custom size, weight, outbound shipment or
 label number, and notes. Saving from the modal updates the current box, created-box list, and modal
 summary together so operators do not need to leave the detail view to correct box information.
 Validation and concurrency errors must be shown inside the modal rather than behind its backdrop.
+The detail modal closes only through an explicit close/cancel control. Selecting or replacing the
+full box-name text must not dismiss the modal or reset the operator's unsaved edit.
 
 Every open-box settings save must include the `updatedAt` value from the latest box response. If
 another operator or browser session changed the box first, the stale save is rejected with `409`

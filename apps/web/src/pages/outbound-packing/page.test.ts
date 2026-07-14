@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCreatedBoxViewDateRange } from './page';
+import { buildPrintDetailLines, getCreatedBoxViewDateRange } from './page';
 
 describe('outbound created box date range', () => {
   it('converts a custom warehouse date into the complete Los Angeles business day', () => {
@@ -32,5 +32,27 @@ describe('outbound created box date range', () => {
       createdTo: undefined,
       invalid: true,
     });
+  });
+});
+
+describe('outbound box print detail', () => {
+  it('prints the date and customer once, then keeps the short box label on its own line', () => {
+    const lines = buildPrintDetailLines({
+      createdAt: '2026-07-10T12:00:00',
+      boxNo: 'BOX-2',
+      name: 'chen20260710第一批手机箱2',
+      items: [
+        {
+          productName: 'iphone 17 pro max, silver, 256gb',
+          customerName: 'wangchen',
+        },
+      ],
+      raw: { customer: { name: 'wangchen' } },
+    } as never);
+
+    expect(lines[0]).toBe('7.10 wangchen');
+    expect(lines[0]).not.toContain('箱2');
+    expect(lines[1]).toBe('箱2');
+    expect(lines).toContain('iphone 17 pro max, silver, 256gb*1');
   });
 });

@@ -1520,13 +1520,7 @@ export function OutboundPackingPage() {
             setErrorMessage('');
           }}
           onRemove={(item) => {
-            if (
-              window.confirm(
-                `确定从当前箱子删除 ${item.imeiOrSerial ?? item.trackingNumber ?? '该货物'} 吗？删除后货物会退回客户库存。`,
-              )
-            ) {
-              removeItemMutation.mutate(item);
-            }
+            removeItemMutation.mutate(item);
           }}
           onReorder={() => setMessage('已按加入时间重新排序')}
         />
@@ -3345,7 +3339,7 @@ function BoxDetailModal(props: {
 
   useEffect(() => {
     setSettingsDraft(props.box ? toBoxSettingsValues(props.box) : createDefaultBoxSettingsValues());
-  }, [props.box?.id, props.box?.updatedAt]);
+  }, [props.box?.id]);
 
   if (!props.box) {
     return null;
@@ -3361,13 +3355,12 @@ function BoxDetailModal(props: {
   const imeiCount = box.items.filter((item) => item.imeiOrSerial).length;
   const upcSummaries = summarizeByUpc(box.items, props.availableItems);
   return (
-    <div className="outbound-modal-backdrop" role="presentation" onClick={props.onClose}>
+    <div className="outbound-modal-backdrop" role="presentation">
       <section
         className="outbound-detail-modal"
         role="dialog"
         aria-modal="true"
         aria-label={`${getBoxDisplayName(box)} 明细`}
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="outbound-modal-head">
           <div>
@@ -4518,7 +4511,7 @@ function summarizeByUpc(boxItems: PackingItem[], availableItems: PackingItem[]) 
   return Array.from(summaries.values()).sort((a, b) => b.packedCount - a.packedCount);
 }
 
-function buildPrintDetailLines(box: PackingBox) {
+export function buildPrintDetailLines(box: PackingBox) {
   const productCounts = new Map<string, number>();
   for (const item of box.items) {
     const productName = normalizePrintProductName(item.productName ?? item.upc ?? '未命名商品');
@@ -4688,11 +4681,7 @@ function escapeHtml(value: string) {
 }
 
 function buildPrintDetailTitle(box: PackingBox) {
-  return [
-    formatPrintMonthDay(box.createdAt || new Date().toISOString()),
-    getPrintCustomerName(box),
-    getBoxDisplayName(box),
-  ]
+  return [formatPrintMonthDay(box.createdAt || new Date().toISOString()), getPrintCustomerName(box)]
     .filter(Boolean)
     .join(' ');
 }

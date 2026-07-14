@@ -10,13 +10,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import {
-  isAutoAcceptedPackageTracking,
-  isValidImei,
-  isValidPackageTracking,
-  isValidUpc,
-  normalizePackageTracking,
-} from '@wms-scan/shared';
+import { isValidUpc, normalizePackageTracking } from '@wms-scan/shared';
 import {
   type ChangeEvent,
   type FormEvent,
@@ -40,6 +34,11 @@ import {
   type TrackingAdvanceTrigger,
   type TrackingScanResult,
 } from './tracking-input';
+import {
+  getInboundScanFieldIssue,
+  inferInboundScanErrorField,
+  type InboundScanField,
+} from './scan-fields';
 
 const inboundLockStorageKey = 'wms_scan_inbound_lock';
 const inboundImportTemplateHeaders = ['单号', 'upc', 'imei'];
@@ -253,6 +252,13 @@ export function InboundScanPage() {
     !!activeTrackingWarning &&
     !activeTrackingWarning.confirmed &&
     !isReusableTrackingWarningConfirmed;
+  const scanFieldIssue = getInboundScanFieldIssue({
+    scanMode,
+    upsTrackingNo,
+    upc,
+    imei,
+    trackingWarningConfirmed: isTrackingWarningConfirmed,
+  });
   const scanValidationMessage = getCurrentScanValidationMessage({
     scanMode,
     upsTrackingNo,
@@ -602,7 +608,12 @@ export function InboundScanPage() {
     },
     onError: (error) => {
       lastAutoAddKeyRef.current = '';
-      setErrorMessage(toUserErrorMessage(error, '添加入库明细失败'));
+      const errorText = toUserErrorMessage(error, '添加入库明细失败');
+      setErrorMessage(errorText);
+      const errorField = inferInboundScanErrorField(errorText);
+      if (errorField) {
+        focusScanInput(errorField);
+      }
     },
   });
   const confirmMutation = useMutation({
@@ -821,7 +832,26 @@ export function InboundScanPage() {
       return;
     }
     if (field === 'upc' && scanMode === 'STANDARD') {
+      const issue = getInboundScanFieldIssue({
+        scanMode,
+        upsTrackingNo,
+        upc,
+        imei,
+        trackingWarningConfirmed: isTrackingWarningConfirmed,
+      });
+      if (issue?.field === 'tracking' || issue?.field === 'upc') {
+        setMessage('');
+        setErrorMessage(issue.message);
+        focusScanInput(issue.field);
+        return;
+      }
       focusScanInput('imei');
+      return;
+    }
+    if (scanFieldIssue) {
+      setMessage('');
+      setErrorMessage(scanFieldIssue.message);
+      focusScanInput(scanFieldIssue.field);
       return;
     }
     if (canAddCurrentScan && !addItemMutation.isPending) {
@@ -913,7 +943,7 @@ export function InboundScanPage() {
       isTrackingWarningBlocking ||
       addItemMutation.isPending ||
       !upsTrackingNo.trim() ||
-      upc.trim().length < 12 ||
+      !isValidUpc(upc.trim()) ||
       imei.trim()
     ) {
       return;
@@ -1097,6 +1127,8 @@ export function InboundScanPage() {
             <span>物流单号</span>
             <input
               ref={trackingInputRef}
+              className={scanFieldIssue?.field === 'tracking' ? 'scan-input-blocked' : undefined}
+              aria-invalid={scanFieldIssue?.field === 'tracking'}
               value={upsTrackingNo}
               placeholder="UPS / USPS / FedEx / BB0000（手输完成后按 Enter）"
               disabled={!!blockingExceptionItem}
@@ -1136,6 +1168,8 @@ export function InboundScanPage() {
             <span>UPC</span>
             <input
               ref={upcInputRef}
+              className={scanFieldIssue?.field === 'upc' ? 'scan-input-blocked' : undefined}
+              aria-invalid={scanFieldIssue?.field === 'upc'}
               value={upc}
               disabled={!!blockingExceptionItem}
               onKeyDown={(event) => handleScanKeyDown(event, 'upc')}
@@ -1149,6 +1183,8 @@ export function InboundScanPage() {
             <span>IMEI</span>
             <input
               ref={imeiInputRef}
+              className={scanFieldIssue?.field === 'imei' ? 'scan-input-blocked' : undefined}
+              aria-invalid={scanFieldIssue?.field === 'imei'}
               disabled={!!blockingExceptionItem || scanMode === 'TRACKING_UPC'}
               placeholder={scanMode === 'TRACKING_UPC' ? '当前模式不需要 IMEI' : undefined}
               value={imei}
@@ -1241,7 +1277,11 @@ export function InboundScanPage() {
         />
       </section>
 
-      {scanValidationMessage ? <div className="inline-error">{scanValidationMessage}</div> : null}
+      {scanValidationMessage ? (
+        <div className={`inline-error${scanFieldIssue ? ' scan-blocking-error' : ''}`} role="alert">
+          {scanValidationMessage}
+        </div>
+      ) : null}
 
       {blockingExceptionItem ? (
         <div className="inline-error">
@@ -1311,7 +1351,6 @@ type InboundLockContext = {
   draftId?: string;
 };
 type InboundScanMode = keyof typeof inboundScanModes;
-type InboundScanField = 'tracking' | 'upc' | 'imei';
 type InboundDraftItem = {
   id: string;
   upsTrackingNo: string | null;
@@ -1948,6 +1987,11 @@ function getCurrentScanValidationMessage(input: {
   const trackingValue = normalizePackageTracking(input.upsTrackingNo);
   const upcValue = input.upc.trim();
   const imeiValue = input.imei.trim();
+  const fieldIssue = getInboundScanFieldIssue(input);
+
+  if (fieldIssue) {
+    return fieldIssue.message;
+  }
 
   if (!trackingValue && (upcValue || imeiValue)) {
     return '请先扫描物流单号。';
@@ -1961,19 +2005,6 @@ function getCurrentScanValidationMessage(input: {
   if (!trackingValue || !upcValue || (input.scanMode === 'STANDARD' && !imeiValue)) {
     return '';
   }
-  if (!isValidPackageTracking(trackingValue)) {
-    return `${trackingFormatErrorMessage}。`;
-  }
-  if (!isAutoAcceptedPackageTracking(trackingValue) && !input.trackingWarningConfirmed) {
-    return '该物流单号需要人工确认，请回到物流单号框按 Enter 完成检查。';
-  }
-  if (!isValidUpc(upcValue)) {
-    return 'UPC 格式不正确：请输入 8-14 位数字。';
-  }
-  if (input.scanMode === 'STANDARD' && !isValidImei(imeiValue)) {
-    return 'IMEI 格式不正确：请输入 15 位数字 IMEI，或 10-18 位大写字母数字的 Apple 设备标识。';
-  }
-
   return '';
 }
 

@@ -26,6 +26,9 @@ const inventoryItemInclude = {
       id: true,
       scannedAt: true,
       status: true,
+      forcedInbound: true,
+      forceReason: true,
+      forcedAt: true,
     },
   },
   outboundBoxItems: {
@@ -435,6 +438,7 @@ export class InventoryRepository {
         { serial: { contains: trimmed, mode: 'insensitive' } },
         { upsTrackingNo: { contains: trimmed, mode: 'insensitive' } },
         { inboundBatch: { batchNo: { contains: trimmed, mode: 'insensitive' } } },
+        { inboundItem: { forceReason: { contains: trimmed, mode: 'insensitive' } } },
         {
           outboundBoxItems: {
             some: {
