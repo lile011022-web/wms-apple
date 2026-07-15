@@ -1668,11 +1668,10 @@ export function OutboundPackingPage() {
 
       <PrintDetailModal
         box={printDetailBox}
-        warehouseTimezone={warehouseTimezone}
         onClose={() => setPrintDetailBox(null)}
         onConfirmPrint={() => {
           if (printDetailBox) {
-            printBoxDetail(printDetailBox, warehouseTimezone);
+            printBoxDetail(printDetailBox);
           }
         }}
       />
@@ -3669,14 +3668,13 @@ function BoxDetailModal(props: {
 
 function PrintDetailModal(props: {
   box: PackingBox | null;
-  warehouseTimezone: string;
   onClose: () => void;
   onConfirmPrint: () => void;
 }) {
   if (!props.box) {
     return null;
   }
-  const lines = buildPrintDetailLines(props.box, props.warehouseTimezone);
+  const lines = buildPrintDetailLines(props.box);
   return (
     <div className="outbound-modal-backdrop compact" role="presentation" onClick={props.onClose}>
       <section
@@ -4513,7 +4511,7 @@ function summarizeByUpc(boxItems: PackingItem[], availableItems: PackingItem[]) 
   return Array.from(summaries.values()).sort((a, b) => b.packedCount - a.packedCount);
 }
 
-export function buildPrintDetailLines(box: PackingBox, timeZone = 'America/Los_Angeles') {
+export function buildPrintDetailLines(box: PackingBox) {
   const productCounts = new Map<string, number>();
   for (const item of box.items) {
     const productName = normalizePrintProductName(item.productName ?? item.upc ?? '未命名商品');
@@ -4524,14 +4522,11 @@ export function buildPrintDetailLines(box: PackingBox, timeZone = 'America/Los_A
   );
   const total = Array.from(productCounts.values()).reduce((sum, count) => sum + count, 0);
 
-  const createdTime = formatPrintBoxCreatedTime(box.createdAt, timeZone);
-  const heading = [getBoxDisplayName(box), createdTime].filter(Boolean).join(' ');
-
-  return [heading, ...productLines, `|Total: ${total}|`];
+  return [getBoxDisplayName(box), ...productLines, `|Total: ${total}|`];
 }
 
-function printBoxDetail(box: PackingBox, timeZone: string) {
-  const lines = buildPrintDetailLines(box, timeZone);
+function printBoxDetail(box: PackingBox) {
+  const lines = buildPrintDetailLines(box);
   const frame = document.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
   frame.style.position = 'fixed';
@@ -4687,24 +4682,6 @@ function escapeHtml(value: string) {
 
 function normalizePrintProductName(value: string) {
   return value.replace(/\s+/g, ' ').trim();
-}
-
-function formatPrintBoxCreatedTime(value: string, timeZone: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date);
-  const getPart = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? '';
-  return `${getPart('month')}.${getPart('day')} ${getPart('hour')}:${getPart('minute')}`;
 }
 
 function classifyOutboundScanValue(value: string): 'UPC' | 'IMEI_SERIAL' {

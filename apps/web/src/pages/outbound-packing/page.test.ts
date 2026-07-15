@@ -36,24 +36,22 @@ describe('outbound created box date range', () => {
 });
 
 describe('outbound box print detail', () => {
-  it('prints the complete box name once with its warehouse-local creation time', () => {
-    const lines = buildPrintDetailLines(
-      {
-        createdAt: '2026-07-10T12:00:00.000Z',
-        boxNo: 'BOX-2',
-        name: 'chen20260710第一批手机箱2',
-        items: [
-          {
-            productName: 'iphone 17 pro max, silver, 256gb',
-            customerName: 'wangchen',
-          },
-        ],
-        raw: { customer: { name: 'wangchen' } },
-      } as never,
-      'America/Los_Angeles',
-    );
+  it('prints the complete box name once without creation time', () => {
+    const lines = buildPrintDetailLines({
+      createdAt: '2026-07-10T12:00:00.000Z',
+      boxNo: 'BOX-2',
+      name: 'chen20260710第一批手机箱2',
+      items: [
+        {
+          productName: 'iphone 17 pro max, silver, 256gb',
+          customerName: 'wangchen',
+        },
+      ],
+      raw: { customer: { name: 'wangchen' } },
+    } as never);
 
-    expect(lines[0]).toBe('chen20260710第一批手机箱2 07.10 05:00');
+    expect(lines[0]).toBe('chen20260710第一批手机箱2');
+    expect(lines[0]).not.toMatch(/\d{2}\.\d{2}\s+\d{2}:\d{2}/);
     expect(lines).not.toContain('7.10 wangchen');
     expect(lines.filter((line) => line.includes('箱2'))).toHaveLength(1);
     expect(lines).toContain('iphone 17 pro max, silver, 256gb*1');
