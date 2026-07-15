@@ -63,8 +63,8 @@ The customer must be locked before scan data becomes operational inventory. Pack
 - A package tracking value already confirmed in prior inbound records is treated as a duplicate package signal and can create `UPS_DUPLICATED` exceptions.
 - Package tracking validation distinguishes a supported format from an auto-accepted format. Complete
   UPS tracking numbers, FedEx tracking numbers that start with `9622` and contain 22 to 34 digits in
-  total, and the warehouse-confirmed `9632` format containing exactly 34 digits are supported and
-  auto-accepted. Only those complete values are eligible for automatic
+  total, and complete 34-digit numeric logistics barcodes such as
+  `1119212621960001972000533804475274` are supported and auto-accepted. Only those complete values are eligible for automatic
   focus movement from package tracking to UPC; partial, overlong, or otherwise malformed values must
   remain in the package tracking field.
 - `BB0000` package numbers are manually entered by warehouse operators when the warehouse
@@ -156,6 +156,8 @@ The system must:
 - Reject rows that already have inventory.
 - Reject duplicate IMEI or Serial values even when force inbound is used.
 - Require an operator reason and keep it on the inbound item.
+- When a force-inbound row is corrected later, saving the edited replenishment note must update
+  `forceReason` instead of keeping the old text. The correction remains audit logged.
 - Return the force-inbound marker and reason with linked customer inventory rows so data operators
   can see notes such as `chen补给JH` without opening audit logs.
 - Resolve the row's open exception records and write an `INBOUND_FORCE_CONFIRM` audit log.
@@ -198,9 +200,12 @@ incorrect field, and return focus to that field. The API must enforce the same s
 requests cannot save a package number as an IMEI/Serial. Invalid package numbers, invalid or
 unmatched UPC values, invalid identities, and duplicate identities remain hard stops until the
 operator fixes the relevant field.
+The same hard stop applies to every focus path. Enter, Tab, scanner suffix keys, automatic focus,
+and mouse clicks cannot move into UPC while package tracking is missing/invalid, or into IMEI while
+UPC is missing/invalid. Focus returns to the earliest field that needs correction.
 Automatic focus movement and Enter-key movement must use the same package-tracking decision and API
-review path. A complete UPS value, a complete 9622-prefixed FedEx value, or an exactly 34-digit
-9632-prefixed FedEx value can move to UPC automatically
+review path. A complete UPS value, a complete 9622-prefixed FedEx value, or a complete 34-digit
+numeric logistics barcode can move to UPC automatically
 after review succeeds. USPS and non-9622 FedEx values stay in the package tracking field until the
 operator confirms the format-valid warning. Unsupported values stay in the package tracking field and
 cannot be manually continued. `BB0000` values, with or without a suffix, require Enter or the scanner's

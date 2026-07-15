@@ -36,6 +36,7 @@ import {
 } from './tracking-input';
 import {
   getInboundScanFieldIssue,
+  getInboundScanFocusIssue,
   inferInboundScanErrorField,
   type InboundScanField,
 } from './scan-fields';
@@ -822,6 +823,29 @@ export function InboundScanPage() {
   };
 
   const handleScanKeyDown = (event: KeyboardEvent<HTMLInputElement>, field: InboundScanField) => {
+    if (event.key === 'Tab' && !event.shiftKey) {
+      const nextField = field === 'tracking' ? 'upc' : field === 'upc' ? 'imei' : null;
+      const issue = nextField
+        ? getInboundScanFocusIssue(
+            {
+              scanMode,
+              upsTrackingNo,
+              upc,
+              imei,
+              trackingWarningConfirmed: isTrackingWarningConfirmed,
+            },
+            nextField,
+          )
+        : null;
+      if (issue) {
+        event.preventDefault();
+        setMessage('');
+        setErrorMessage(issue.message);
+        focusScanInput(issue.field);
+        return;
+      }
+    }
+
     if (event.key !== 'Enter') {
       return;
     }
@@ -857,6 +881,25 @@ export function InboundScanPage() {
     if (canAddCurrentScan && !addItemMutation.isPending) {
       addItemMutation.mutate();
     }
+  };
+
+  const handleScanFieldFocus = (field: InboundScanField) => {
+    const issue = getInboundScanFocusIssue(
+      {
+        scanMode,
+        upsTrackingNo,
+        upc,
+        imei,
+        trackingWarningConfirmed: isTrackingWarningConfirmed,
+      },
+      field,
+    );
+    if (!issue) {
+      return;
+    }
+    setMessage('');
+    setErrorMessage(issue.message);
+    focusScanInput(issue.field);
   };
 
   const handleImportFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1132,6 +1175,7 @@ export function InboundScanPage() {
               value={upsTrackingNo}
               placeholder="UPS / USPS / FedEx / BB0000（手输完成后按 Enter）"
               disabled={!!blockingExceptionItem}
+              onFocus={() => handleScanFieldFocus('tracking')}
               onKeyDown={(event) => handleScanKeyDown(event, 'tracking')}
               onChange={(event) => {
                 setUpsTrackingNo(event.target.value);
@@ -1172,6 +1216,7 @@ export function InboundScanPage() {
               aria-invalid={scanFieldIssue?.field === 'upc'}
               value={upc}
               disabled={!!blockingExceptionItem}
+              onFocus={() => handleScanFieldFocus('upc')}
               onKeyDown={(event) => handleScanKeyDown(event, 'upc')}
               onChange={(event) => {
                 setUpc(event.target.value);
@@ -1188,6 +1233,7 @@ export function InboundScanPage() {
               disabled={!!blockingExceptionItem || scanMode === 'TRACKING_UPC'}
               placeholder={scanMode === 'TRACKING_UPC' ? '当前模式不需要 IMEI' : undefined}
               value={imei}
+              onFocus={() => handleScanFieldFocus('imei')}
               onKeyDown={(event) => handleScanKeyDown(event, 'imei')}
               onChange={(event) => {
                 setImei(event.target.value);

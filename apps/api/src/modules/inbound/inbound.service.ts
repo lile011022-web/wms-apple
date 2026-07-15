@@ -472,6 +472,7 @@ export class InboundService {
       serial: nextSerial,
       productId: productUpc.product.id,
       reason,
+      forceReason: item.forcedInbound ? reason : undefined,
     });
 
     return this.toItemResponse(corrected);

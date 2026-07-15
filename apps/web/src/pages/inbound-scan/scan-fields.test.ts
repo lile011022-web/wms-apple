@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { getInboundScanFieldIssue, inferInboundScanErrorField } from './scan-fields';
+import {
+  getInboundScanFieldIssue,
+  getInboundScanFocusIssue,
+  inferInboundScanErrorField,
+} from './scan-fields';
 
 const validInput = {
   scanMode: 'STANDARD' as const,
@@ -35,6 +39,19 @@ describe('inbound scan field hard stops', () => {
   it('keeps valid numeric and alphanumeric Apple identifiers available', () => {
     expect(getInboundScanFieldIssue(validInput)).toBeNull();
     expect(getInboundScanFieldIssue({ ...validInput, imei: 'SH9LRL91YFC' })).toBeNull();
+  });
+
+  it('keeps focus on every earlier invalid scan field before the next field can be used', () => {
+    expect(
+      getInboundScanFocusIssue({ ...validInput, upsTrackingNo: 'BAD', upc: '', imei: '' }, 'upc'),
+    ).toMatchObject({ field: 'tracking' });
+    expect(
+      getInboundScanFocusIssue({ ...validInput, upc: '358903505192909', imei: '' }, 'imei'),
+    ).toMatchObject({ field: 'upc' });
+    expect(getInboundScanFocusIssue({ ...validInput, upc: '', imei: '' }, 'imei')).toMatchObject({
+      field: 'upc',
+    });
+    expect(getInboundScanFocusIssue(validInput, 'imei')).toBeNull();
   });
 
   it('routes API errors back to the field that must be fixed', () => {

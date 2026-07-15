@@ -96,7 +96,8 @@ Response decision fields:
 - `formatValid` is `true` when the normalized value matches a supported UPS, USPS, FedEx, or
   `BB0000` warehouse-compensation format.
 - `autoAccepted` is `true` for complete UPS values, 9622-prefixed FedEx values containing 22 to 34
-  digits, exactly 34-digit 9632-prefixed FedEx values, and valid `BB0000` values. Duplicate status is reported separately and can still require
+  digits, complete 34-digit numeric logistics barcodes such as
+  `1119212621960001972000533804475274`, and valid `BB0000` values. Duplicate status is reported separately and can still require
   confirmation.
 - `valid` is the legacy compatibility alias for `autoAccepted`. Clients must not interpret it as the
   supported-format decision; new clients should read `formatValid` and `autoAccepted` directly.
@@ -125,8 +126,8 @@ Web focus rules using this endpoint:
 
 - Automatic focus and Enter must run the same local decision and `scanUps` review before moving to
   UPC. A stale asynchronous response for an older input value must not move focus.
-- Only a complete UPS value, a complete 9622-prefixed FedEx value, or an exactly 34-digit
-  9632-prefixed FedEx value is eligible for idle-timer automatic movement. USPS and other FedEx
+- Only a complete UPS value, a complete 9622-prefixed FedEx value, or a complete 34-digit numeric
+  logistics barcode is eligible for idle-timer automatic movement. USPS and other FedEx
   values stay in the package tracking field until the operator
   confirms their format-valid warning.
 - `BB0000` is API-auto-accepted, but the web page requires Enter or a scanner completion key before
@@ -345,6 +346,14 @@ Inbound record correction is for rows that already belong to a confirmed batch. 
 `DRAFT` batch must be edited or deleted from the inbound scan page before final confirmation. The API
 rejects record-correction requests against draft batches so a single row cannot create inventory and
 partially confirm a still-open receiving draft.
+
+`PATCH /api/v1/inbound/records/:id/correction`
+
+The request can correct package tracking, UPC, IMEI/Serial, and the required audit reason. When the
+record was previously force confirmed, the submitted reason is also saved back to `forceReason`, so
+an edited replenishment note such as `chen补给JH` remains visible after refresh and in customer
+inventory. The transaction updates the inbound row, linked in-stock inventory, and audit log
+together. Packed or outbound inventory remains protected from this correction path.
 
 ## List Records
 

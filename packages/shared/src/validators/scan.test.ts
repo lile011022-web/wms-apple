@@ -38,6 +38,7 @@ describe('shared scan validators', () => {
     expect(isValidFedexTracking('9611020987654312345672')).toBe(true);
     expect(isValidFedexTracking('96320804008675235705004823280')).toBe(true);
     expect(isValidFedexTracking('9632080400867523570500482328409684')).toBe(true);
+    expect(isValidFedexTracking('1119212621960001972000533804475274')).toBe(true);
     expect(isWarehouseCompensationTracking('bb0000')).toBe(true);
     expect(isValidPackageTracking('bb0000jh05')).toBe(true);
     expect(normalizePackageTracking(' 9400 1118 9922 3857 0000 00 ')).toBe(
@@ -52,6 +53,7 @@ describe('shared scan validators', () => {
     expect(isAutoAcceptedPackageTracking('9622123456789012345678')).toBe(true);
     expect(isAutoAcceptedPackageTracking('9622080430009579265100530689178')).toBe(true);
     expect(isAutoAcceptedPackageTracking('9632080400867523570500482328409684')).toBe(true);
+    expect(isAutoAcceptedPackageTracking('1119212621960001972000533804475274')).toBe(true);
     expect(isAutoAcceptedPackageTracking('bb0000')).toBe(true);
     expect(isAutoAcceptedPackageTracking('bb0000jh05')).toBe(true);
     expect(isAutoAcceptedPackageTracking('9400111899223857000000')).toBe(false);

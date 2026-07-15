@@ -798,6 +798,7 @@ export class InboundRepository {
     serial?: string;
     productId: string;
     reason: string;
+    forceReason?: string;
   }) {
     return this.prisma.$transaction(async (tx) => {
       const item = await tx.inboundItem.findUniqueOrThrow({
@@ -870,6 +871,7 @@ export class InboundRepository {
           productId: input.productId,
           inventoryItemId: inventoryItem.id,
           status: InboundItemStatus.CONFIRMED,
+          forceReason: input.forceReason,
         },
         include: inboundItemInclude,
       });
@@ -888,6 +890,7 @@ export class InboundRepository {
               serial: item.serial,
               status: item.status,
               productId: item.productId,
+              forceReason: item.forceReason,
             },
             inventoryItem: existingInventoryItem
               ? {
@@ -909,6 +912,7 @@ export class InboundRepository {
               serial: updatedItem.serial,
               status: updatedItem.status,
               productId: updatedItem.productId,
+              forceReason: updatedItem.forceReason,
             },
             inventoryItem: {
               id: inventoryItem.id,

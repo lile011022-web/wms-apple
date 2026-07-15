@@ -14,6 +14,9 @@ describe('inbound tracking focus decisions', () => {
     expect(getTrackingAdvanceDecision('9632080400867523570500482328409684', 'AUTO')).toBe(
       'REVIEW_AND_ADVANCE',
     );
+    expect(getTrackingAdvanceDecision('1119212621960001972000533804475274', 'AUTO')).toBe(
+      'REVIEW_AND_ADVANCE',
+    );
   });
 
   it.each([

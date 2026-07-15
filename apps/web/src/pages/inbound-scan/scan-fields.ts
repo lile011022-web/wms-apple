@@ -16,13 +16,17 @@ export type InboundScanFieldIssue = {
   message: string;
 };
 
-export function getInboundScanFieldIssue(input: {
+export type InboundScanFieldInput = {
   scanMode: 'STANDARD' | 'TRACKING_UPC';
   upsTrackingNo: string;
   upc: string;
   imei: string;
   trackingWarningConfirmed: boolean;
-}): InboundScanFieldIssue | null {
+};
+
+export function getInboundScanFieldIssue(
+  input: InboundScanFieldInput,
+): InboundScanFieldIssue | null {
   const trackingValue = normalizePackageTracking(input.upsTrackingNo);
   const upcValue = input.upc.trim();
   const imeiValue = input.imei.trim().toUpperCase();
@@ -72,6 +76,37 @@ export function getInboundScanFieldIssue(input: {
       field: 'imei',
       message: 'IMEI 格式不正确：请输入 15 位数字 IMEI，或 10-18 位大写字母数字的 Apple 设备标识。',
     };
+  }
+
+  return null;
+}
+
+export function getInboundScanFocusIssue(
+  input: InboundScanFieldInput,
+  requestedField: InboundScanField,
+): InboundScanFieldIssue | null {
+  if (requestedField === 'tracking') {
+    return null;
+  }
+
+  const trackingValue = normalizePackageTracking(input.upsTrackingNo);
+  if (!trackingValue) {
+    return { field: 'tracking', message: '请先扫描物流单号。' };
+  }
+
+  const issue = getInboundScanFieldIssue(input);
+  if (issue?.field === 'tracking') {
+    return issue;
+  }
+  if (requestedField === 'upc') {
+    return null;
+  }
+
+  if (!input.upc.trim()) {
+    return { field: 'upc', message: '请先扫描 UPC，正确后才能继续扫描 IMEI。' };
+  }
+  if (issue?.field === 'upc') {
+    return issue;
   }
 
   return null;

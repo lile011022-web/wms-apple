@@ -112,7 +112,7 @@ export function InboundRecordsPage() {
       upc: item.upc,
       identityType: item.serial ? 'SERIAL' : 'IMEI',
       identityValue: item.serial ?? item.imei ?? '',
-      reason: '入库记录人工修正',
+      reason: item.forcedInbound ? (item.forceReason ?? '') : '入库记录人工修正',
     });
     setMessage('');
     setErrorMessage('');
@@ -433,11 +433,11 @@ export function InboundRecordsPage() {
                 </select>
               </label>
               <label>
-                <span>修正备注</span>
+                <span>{editingRecord?.forcedInbound ? '补货 / 强制入库留言' : '修正备注'}</span>
                 <input
                   value={recordEdit.reason}
                   onChange={(event) => updateRecordEdit({ reason: event.target.value })}
-                  placeholder="用于审计记录"
+                  placeholder={editingRecord?.forcedInbound ? '例如：chen补给JH' : '用于审计记录'}
                 />
               </label>
             </div>

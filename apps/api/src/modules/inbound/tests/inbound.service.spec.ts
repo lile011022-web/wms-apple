@@ -265,6 +265,18 @@ describe('InboundService', () => {
       valid: true,
     });
     await expect(
+      service.scanUps(
+        'draft-1',
+        { upsTrackingNo: '1119 2126 2196 0001 9720 0053 3804 4752 74' },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      upsTrackingNo: '1119212621960001972000533804475274',
+      formatValid: true,
+      autoAccepted: true,
+      valid: true,
+    });
+    await expect(
       service.scanUps('draft-1', { upsTrackingNo: ' bb0000 jh05 ' }, operator),
     ).resolves.toMatchObject({
       upsTrackingNo: 'BB0000JH05',
@@ -286,6 +298,9 @@ describe('InboundService', () => {
     expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith(
       '9622080430009579265100530689178',
     );
+    expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith(
+      '1119212621960001972000533804475274',
+    );
     expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('BB0000JH05');
     expect(repository.countConfirmedItemsByUps).toHaveBeenCalledWith('BB0000');
     expect(repository.countDraftItemsByUps).toHaveBeenCalledWith('draft-1', '1Z999AA10123456784');
@@ -296,6 +311,10 @@ describe('InboundService', () => {
     expect(repository.countDraftItemsByUps).toHaveBeenCalledWith(
       'draft-1',
       '9622080430009579265100530689178',
+    );
+    expect(repository.countDraftItemsByUps).toHaveBeenCalledWith(
+      'draft-1',
+      '1119212621960001972000533804475274',
     );
     expect(repository.countDraftItemsByUps).toHaveBeenCalledWith('draft-1', 'BB0000JH05');
     expect(repository.countDraftItemsByUps).toHaveBeenCalledWith('draft-1', 'BB0000');
@@ -701,7 +720,57 @@ describe('InboundService', () => {
       serial: undefined,
       productId: nextProduct.id,
       reason: 'UPC scanned wrong during receiving',
+      forceReason: undefined,
     });
+  });
+
+  it('persists an edited replenishment note on a force-confirmed inbound record', async () => {
+    const forcedItem = {
+      ...confirmedItem,
+      forcedInbound: true,
+      forceReason: '旧补货留言',
+    };
+    const correctedItem = {
+      ...forcedItem,
+      forceReason: 'chen补给JH',
+    };
+    const { repository, service } = createService({
+      findItemById: jest.fn().mockResolvedValue(forcedItem),
+      findProductByUpc: jest.fn().mockResolvedValue({
+        id: 'upc-1',
+        upc: forcedItem.upc,
+        productId: product.id,
+        status: ProductStatus.ACTIVE,
+        createdAt: new Date('2026-06-17T00:00:00Z'),
+        updatedAt: new Date('2026-06-17T00:00:00Z'),
+        product,
+      }),
+      correctRecordUpc: jest.fn().mockResolvedValue(correctedItem),
+    });
+
+    await expect(
+      service.correctRecordUpc(
+        forcedItem.id,
+        {
+          upsTrackingNo: forcedItem.upsTrackingNo ?? undefined,
+          upc: forcedItem.upc,
+          imei: forcedItem.imei ?? undefined,
+          reason: ' chen补给JH ',
+        },
+        operator,
+      ),
+    ).resolves.toMatchObject({
+      forcedInbound: true,
+      forceReason: 'chen补给JH',
+    });
+
+    expect(repository.correctRecordUpc).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemId: forcedItem.id,
+        reason: 'chen补给JH',
+        forceReason: 'chen补给JH',
+      }),
+    );
   });
 
   it('rejects UPC correction after inventory is packed or outbound', async () => {
@@ -788,6 +857,7 @@ describe('InboundService', () => {
       serial: undefined,
       productId: product.id,
       reason: 'UPC and identity were scanned into the wrong fields',
+      forceReason: undefined,
     });
   });
 

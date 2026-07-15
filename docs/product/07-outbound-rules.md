@@ -203,8 +203,10 @@ Box detail printing:
 - Clicking `打印明细` opens a printable preview modal instead of printing the whole workbench.
 - The preview groups the current box items by product name and prints one line per product in the
   format `商品名称*数量`, followed by `|Total: N|`.
-- The preview title uses `date + customer name` once, followed by one short box-label line such as
-  `箱2`. It must not repeat the full visible box name and the same box suffix on adjacent lines.
+- The preview title uses the complete visible box name exactly once, followed by the box creation
+  time in the selected warehouse timezone using `MM.DD HH:mm`, for example
+  `chen20260714第一批手机箱7 07.14 12:40`. It must not substitute the customer name or print the
+  short box suffix again on another line.
 - Operators must click `确认打印` in the preview before the browser print dialog opens.
 - `确认打印` must send a standalone print document containing only the current box detail text, not
   the surrounding workbench or modal layout. The printable document must fit the complete current

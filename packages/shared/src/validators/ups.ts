@@ -11,12 +11,12 @@ export function isValidUspsTracking(value: string): boolean {
 
 export function isValidFedexTracking(value: string): boolean {
   const normalized = value.trim().replace(/\s+/g, '');
-  return /^(?:[0-9]{12}|[0-9]{15}|[0-9]{20}|[0-9]{22}|96[0-9]{20,32})$/.test(normalized);
+  return /^(?:[0-9]{12}|[0-9]{15}|[0-9]{20}|[0-9]{22}|96[0-9]{20,32}|[0-9]{34})$/.test(normalized);
 }
 
 export function isAutoAcceptedFedexTracking(value: string): boolean {
   const normalized = value.trim().replace(/\s+/g, '');
-  return /^(?:9622[0-9]{18,30}|9632[0-9]{30})$/.test(normalized);
+  return /^(?:9622[0-9]{18,30}|9632[0-9]{30}|[0-9]{34})$/.test(normalized);
 }
 
 export function isWarehouseCompensationTracking(value: string): boolean {
