@@ -36,6 +36,10 @@ Deployment workflow after local changes are complete:
 5. Run the production deploy script on the server. Use `infra/scripts/deploy.sh web` for web-only changes and `infra/scripts/deploy.sh api` for API/database changes when the scope allows it.
 6. Verify container status and `http://147.182.133.230/api/v1/health`.
 
+`infra/scripts/backup-postgres.sh` must preserve both PostgreSQL data and the server `uploads/`
+directory. Both source-built and prebuilt-image compose files must mount
+`./uploads:/app/apps/api/uploads` on the API service so packing photos survive container replacement.
+
 For GHCR prebuilt-image deployments, configure `WEB_IMAGE` and `API_IMAGE` in the server-only `.env.production`, then run:
 
 ```bash

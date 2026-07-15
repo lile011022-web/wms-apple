@@ -213,7 +213,9 @@ PROJECT_DIR=/opt/wms-scan \
 infra/scripts/deploy.sh
 ```
 
-This path still uses the same database backup, Prisma migration, container restart, and health-check expectations. It only moves the expensive Node/Docker build work away from the low-cost VPS.
+This path still uses the same database/upload backup, persistent `./uploads` API mount, Prisma
+migration, container restart, and health-check expectations. It only moves the expensive
+Node/Docker build work away from the low-cost VPS.
 
 Check for duplicate or development-mode processes after a deploy:
 
@@ -261,9 +263,9 @@ Create a backup before manual writes:
 PROJECT_DIR=/opt/wms-scan infra/scripts/backup-postgres.sh
 ```
 
-## Database Backup
+## Database and Upload Backup
 
-Run a compressed PostgreSQL backup:
+Run a compressed PostgreSQL backup and archive the persistent `uploads/` directory:
 
 ```bash
 chmod +x infra/scripts/backup-postgres.sh
@@ -274,6 +276,7 @@ Backups are saved under:
 
 ```text
 backups/wms-postgres-YYYYMMDD-HHMMSS.sql.gz
+backups/wms-uploads-YYYYMMDD-HHMMSS.tar.gz
 ```
 
 The script keeps the last 30 days by default:
